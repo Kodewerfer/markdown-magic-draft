@@ -3,6 +3,7 @@ import {h} from 'hastscript'
 
 //Regex for the custom MD syntax
 const SyntaxRegex = /@\[(.*?)]/g;
+const TagName ="span";
 const transformer = (ast: object) => {
     // At this stage, the custom MD syntax will be in a normal text syntax node due to it not being processed by previous plugins that only handled the general use cases.
     visit<any, any>(ast, 'text', visitor)
@@ -14,7 +15,7 @@ const transformer = (ast: object) => {
 
         let textNodeValue: string = node.value;
 
-        // const nodePosition = node.position;
+        const nodePosition = node.position;
 
         let match: RegExpExecArray | null;
 
@@ -35,7 +36,7 @@ const transformer = (ast: object) => {
             }
 
             // Add the Special link in the middle
-            const ConvertChildNode = h(`span`,
+            const ConvertChildNode = h(`${TagName}`,
                 {'data-link': `${matchedTextBare}`},
                 [`${matchedTextBare}`]);
 
@@ -48,8 +49,8 @@ const transformer = (ast: object) => {
                 bPostValuePlain = false;
                 textNodeValue = textPostValue;
 
-                // Now that the original text has been changed.
-                // Manually resetting the RegExp's index to 0 so that it can start again
+                // Since the original text has been changed,
+                // resetting the RegExp's index to 0 so that it can start again
                 // If we remove the `g` from the RegExp, this reset would not have been needed.
                 // but that way the RegExp won't know what has been searched already, and therefore go into a loop for the `normal` cases where the Post Text is plain
                 // in that case,
