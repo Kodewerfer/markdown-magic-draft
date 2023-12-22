@@ -3,8 +3,8 @@ import {h} from 'hastscript'
 
 //Regex for the custom MD syntax
 const SyntaxRegex = /@\[(.*?)]/g;
-const TagName ="span";
-const transformer = (ast: object) => {
+const TagName: string = "span";
+const MDTransformer = (ast: object) => {
     // At this stage, the custom MD syntax will be in a normal text syntax node due to it not being processed by previous plugins that only handled the general use cases.
     visit<any, any>(ast, 'text', visitor)
 
@@ -37,9 +37,8 @@ const transformer = (ast: object) => {
 
             // Add the Special link in the middle
             const ConvertChildNode = h(`${TagName}`,
-                {'data-link': `${matchedTextBare}`},
+                {'dataLinkTo': `${matchedTextBare}`},
                 [`${matchedTextBare}`]);
-
 
             NewChildNodesForParent.push(ConvertChildNode);
 
@@ -93,6 +92,23 @@ const transformer = (ast: object) => {
     }
 };
 
-const SpecialLinkSyntax = () => transformer;
+const HTMLTransformer = (ast: object) => {
+    visit<any, any>(ast, 'element', visitor)
 
-export default SpecialLinkSyntax
+    // console.log(ast);
+
+    function visitor(node: any, index: any, parent: any) {
+        if (node.tagName !== TagName) return;
+
+        if (!node.properties['dataLinkTo']) {
+            // console.log(node);
+            return;
+        }
+        console.log(node);
+
+    }
+}
+
+export const MDSpecialLinks = () => MDTransformer;
+
+export const HTMLSpecialLinks = () => HTMLTransformer;

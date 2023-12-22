@@ -5,6 +5,7 @@ import React, {
     Fragment,
     useRef
 } from "react";
+import {renderToString} from "react-dom/server";
 import {unified} from 'unified'
 import remarkParse from 'remark-parse'
 import remarkGfm from 'remark-gfm'
@@ -16,35 +17,12 @@ import rehypeParse from "rehype-parse";
 import rehypeRemark from "rehype-remark";
 import remarkStringify from "remark-stringify";
 
-import SpecialLinkSyntax from "../UnifiedPlugins/SpecialLinkSyntax"
-import {renderToString} from "react-dom/server";
-
-function EditableInner({DisplayValue, onChange}: { DisplayValue?: any, onChange?: Function }) {
-
-    const EditableRef = useRef<HTMLDivElement | null>(null)
-
-    useEffect(() => {
-        if (DisplayValue && EditableRef.current && EditableRef.current.textContent !== DisplayValue) {
-            EditableRef.current.textContent = DisplayValue;
-        }
-    });
-
-    return (
-        <div
-            contentEditable="true"
-            ref={EditableRef}
-            onInput={event => {
-                if (onChange)
-                    onChange((event.target as HTMLElement)?.innerHTML);
-            }}
-        />
-    );
-}
+import {MDSpecialLinks, HTMLSpecialLinks} from "../UnifiedPlugins/SpecialLinksSyntax"
+import useEditMonitor from "../hooks/useEditMonitor";
 
 function SpecialLinkComponent(props: any) {
-    return (
-        <span data-link={""}>{props.children}</span>
-    )
+    const {children, ...otherProps} = props;
+    return React.createElement('span', otherProps, children);
 }
 
 function TextWrapper(props: any) {
@@ -100,7 +78,7 @@ export default function Editor() {
                 .use(remarkParse)
                 .use(remarkGfm)
                 .use(remarkRehype)
-                .use(SpecialLinkSyntax)
+                .use(MDSpecialLinks)
                 .use(rehypeStringify)
                 .process(MakrdownContent);
 
@@ -121,38 +99,25 @@ export default function Editor() {
 
     }, [])
 
-    const testElement = (
-        <>
-            <p>
-                <TextWrapper>aaabbbcccdddd</TextWrapper>
-                <strong><TextWrapper>STONK!</TextWrapper></strong>
-            </p>
-            <h1><TextWrapper>Title</TextWrapper></h1>
-        </>
-    )
-
     let HTMLToMD = async () => {
 
         let MDOutput = await unified()
             .use(rehypeParse)
+            .use(HTMLSpecialLinks)
             .use(rehypeRemark)
             .use(remarkStringify)
-            .process(renderToString(testElement));
+            .process(renderToString(CurrentContent));
 
         console.log(String(MDOutput));
     }
 
-
-    let OnInnerChange = (value: String) => {
-        console.log(value);
-    }
+    // useEditMonitor(EditorRef);
 
     return (
         <>
             <button className={"bg-amber-600"} onClick={HTMLToMD}>Save</button>
             <div className="Editor" ref={EditorRef}>
                 {CurrentContent}
-                <hr></hr>
             </div>
         </>
     )
