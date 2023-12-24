@@ -15,6 +15,7 @@ const MDTransformer = (ast: object) => {
 
         let textNodeValue: string = node.value;
 
+        // No use for the positional information yet.
         const nodePosition = node.position;
 
         let match: RegExpExecArray | null;
@@ -97,15 +98,28 @@ const HTMLTransformer = (ast: object) => {
 
     // console.log(ast);
 
-    function visitor(node: any, index: any, parent: any) {
+    function visitor(node: any, nodeIndex: any, parentNode: any) {
         if (node.tagName !== TagName) return;
 
         if (!node.properties['dataLinkTo']) {
-            // console.log(node);
             return;
         }
-        console.log(node);
 
+        const LinkToValue = node.properties['dataLinkTo'];
+
+        const ConvertedTextNode = {
+            type: 'text',
+            value: `@[${LinkToValue}]`
+        }
+
+        let parentNodeModified = {
+            children: [
+                ...parentNode.children.slice(0, nodeIndex),
+                ConvertedTextNode,
+                ...parentNode.children.slice(nodeIndex + 1)
+            ]
+        };
+        Object.assign(parentNode, parentNodeModified);
     }
 }
 
