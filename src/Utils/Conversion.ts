@@ -3,20 +3,19 @@ import {Compatible} from "unified/lib";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkRehype from "remark-rehype";
-import {HTMLSpecialLinks, MDSpecialLinks} from "./UnifiedPlugins/SpecialLinksSyntax";
-import rehypeStringify from "rehype-stringify";
+import {HTMLSpecialLinks, MDSpecialLinks} from "../UnifiedPlugins/SpecialLinksSyntax";
 import rehypeParse from "rehype-parse";
 import rehypeReact from "rehype-react";
 import rehypeRemark from "rehype-remark";
 import remarkStringify from "remark-stringify";
 import React, {} from "react";
 import * as reactJsxRuntime from 'react/jsx-runtime'
+import rehypeStringify from "rehype-stringify";
 
 
 export async function MD2HTML(MarkdownContent: Compatible) {
     return await unified()
         .use(remarkParse)
-        // .use(TestPlugin)
         .use(remarkGfm)
         .use(remarkRehype)
         .use(MDSpecialLinks)
