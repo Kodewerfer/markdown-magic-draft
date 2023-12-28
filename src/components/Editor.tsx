@@ -9,7 +9,7 @@ const MarkdownFakeDate = `
 
  Hi! I'm your first Markdown file in **Editor**.
 
- custom link **syntax**: @[ccc] AHHHHHHHHH
+ custom link **syntax**: @[ccc] AHHHHHHHHH [123](google.com)
  
  Test with no sibling
 `
@@ -70,33 +70,38 @@ export default function Editor() {
 }
 
 // Map all possible text-containing tags to TextContainer component and therefore manage them.
-const TextNodesMappingConfig = ['a', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong']
+const TextNodesMappingConfig = ['a', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong',]
     .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
-        acc[tagName] = (props: any) => <TextContainer {...props} tagName={tagName}/>;
+        acc[tagName] = (props: any) => <SyntaxRenderer {...props} tagName={tagName}/>;
         return acc;
     }, {});
 
 const HTML2EditorCompos = async (md2HTML: Compatible) => {
     const componentOptions = {
         ...TextNodesMappingConfig,
-        "span": (props: any) => <SpecialLinkComponent {...props}/>
+        "span": (props: any) => {
+            if (props['data-link-to'])
+                return <SpecialLinkComponent {...props}/>
+            else
+                return <SyntaxRenderer {...props} />
+        }
     }
 
     return await HTML2React(md2HTML, componentOptions);
 }
 
-function TextContainer(props: any) {
+function SyntaxRenderer(props: any) {
 
     const {children, tagName, ...otherProps} = props;
 
-    const NewChildrenNodes = React.Children.map(children,
-        (childNode) =>
-            typeof childNode === 'string'
-                ? <TextWrapper>{childNode}</TextWrapper>
-                : childNode
-    );
+    // const NewChildrenNodes = React.Children.map(children,
+    //     (childNode) =>
+    //         typeof childNode === 'string'
+    //             ? <TextWrapper>{childNode}</TextWrapper>
+    //             : childNode
+    // );
 
-    return React.createElement(tagName, otherProps, NewChildrenNodes);
+    return React.createElement(tagName, otherProps, children);
 }
 
 function SpecialLinkComponent(props: any) {
@@ -104,9 +109,9 @@ function SpecialLinkComponent(props: any) {
     return React.createElement('span', otherProps, children);
 }
 
-function TextWrapper(props: any) {
-    const {children} = props;
-    return (
-        <span className={"Text-Wrapper"}>{children}</span>
-    )
-}
+// function TextWrapper(props: any) {
+//     const {children} = props;
+//     return (
+//         <span className={"Text-Wrapper"}>{children}</span>
+//     )
+// }

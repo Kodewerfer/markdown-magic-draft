@@ -9,7 +9,7 @@
  */
 
 
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
 type TDaemonState = {
@@ -33,7 +33,7 @@ export default function useEditorHTMLDaemon(
         }
 
         if (typeof MutationObserver) {
-            state.Observer = new MutationObserver((mutationList: MutationRecord[], observer: any) => {
+            state.Observer = new MutationObserver((mutationList: MutationRecord[]) => {
                 state.MutationQueue.push(...mutationList);
             });
         }
@@ -78,11 +78,12 @@ export default function useEditorHTMLDaemon(
         let mutation: MutationRecord | void;
         while ((mutation = DaemonState.MutationQueue.pop())) {
 
-            // rollback
-            // mutation.target.textContent = mutation.oldValue;
-
             // Text Changed
             if (mutation.oldValue !== null) {
+
+                // rollback
+                // mutation.target.textContent = mutation.oldValue;
+
                 const textContent = mutation.target.textContent;
 
                 const xPath = GetXPath(mutation.target);
@@ -142,31 +143,31 @@ export default function useEditorHTMLDaemon(
     const UpdateDocRef = {
         'Text': (XPath: string, Text: string | null) => {
 
-            const NodeResult = ElementDocRef.current?.evaluate(XPath, ElementDocRef.current, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+            const NodeResult = GetNode(ElementDocRef.current!, XPath);
             if (!NodeResult) return;
 
             NodeResult.textContent = Text;
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
-            const parentNode = ElementDocRef.current?.evaluate(XPathParent, ElementDocRef.current, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+            const parentNode = GetNode(ElementDocRef.current!, XPathParent);
             if (!parentNode) return;
 
-            const targetNode = ElementDocRef.current?.evaluate(XPathSelf, ElementDocRef.current, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+            const targetNode = GetNode(ElementDocRef.current!, XPathSelf);
             if (!targetNode) return;
 
             parentNode.removeChild(targetNode);
         },
         'Add': (XPathParent: string, XPathSelf: string, XPathSibling: string | null) => {
 
-            const parentNode = ElementDocRef.current?.evaluate(XPathParent, ElementDocRef.current, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+            const parentNode = GetNode(ElementDocRef.current!, XPathParent);
             if (!parentNode) return;
 
-            const targetNode = ElementDocRef.current?.evaluate(XPathSelf, ElementDocRef.current, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+            const targetNode = GetNode(ElementDocRef.current!, XPathSelf);
             if (!targetNode) return;
 
             let SiblingNode = null
             if (XPathSibling) {
-                SiblingNode = ElementDocRef.current?.evaluate(XPathSibling, ElementDocRef.current, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+                SiblingNode = GetNode(ElementDocRef.current!, XPathSibling);
                 if (SiblingNode === undefined)
                     SiblingNode = null;
             }
@@ -262,4 +263,9 @@ function GetXPath(node: Node): string {
     }
 
     return '';
+}
+
+function GetNode(doc: Document, XPath: string) {
+    if (!doc) return;
+    return doc.evaluate(XPath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
 }
