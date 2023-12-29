@@ -155,7 +155,7 @@ export default function useEditorHTMLDaemon(
         let operation: OperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeText, parentNode, siblingNode} = operation;
-
+            console.log(operation);
             if (type === OperationType.TEXT) {
                 UpdateDocRef.Text((node as string), nodeText!);
             }
@@ -287,6 +287,7 @@ export default function useEditorHTMLDaemon(
 }
 
 function GetXPath(node: Node): string {
+    let parent = node.parentNode;
 
     if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
         return '//*[@id="' + (node as HTMLElement).id + '"]';
@@ -296,20 +297,38 @@ function GetXPath(node: Node): string {
         return '//body';
     }
 
-    let nodeCount: number = 0;
+    // text nodes
+    if (node.nodeType === Node.TEXT_NODE) {
+        // For text nodes, count previous sibling text nodes for accurate XPath generation
+        let textNodeIndex: number = 1;
+        let sibling = node.previousSibling;
 
-    if (!node.parentNode) return ''; //no parent found, very unlikely unless reached HTML tag somehow
-
-    for (let i = 0; i < node.parentNode.childNodes.length; i++) {
-        let sibling = node.parentNode.childNodes[i];
-        if (sibling === node) {
-
-            if (node.nodeType === Node.TEXT_NODE) {
-                return GetXPath(node.parentNode) + '/text()[' + (nodeCount + 1) + ']';
+        // Counting preceding sibling Text nodes
+        while (sibling) {
+            if (sibling.nodeType === Node.TEXT_NODE) {
+                textNodeIndex++;
             }
+            sibling = sibling.previousSibling;
+        }
 
-            return GetXPath(node.parentNode) + '/' + node.nodeName.toLowerCase()
-                + '[' + (nodeCount + 1) + ']';
+        // Determine XPath based on whether a parent node exists. If it does use parent's path, else just the textNode.
+        if (parent) {
+            return GetXPath(parent) + '/text()' + `[${textNodeIndex}]`;
+        } else {
+            return 'text()' + `[${textNodeIndex}]`;
+        }
+    }
+
+    if (!parent) return ''; // If no parent found, very unlikely scenario and possibly pointing at the HTML node
+
+    // For Non-text nodes
+    let nodeCount: number = 0;
+    for (let i = 0; i < parent.childNodes.length; i++) {
+        let sibling = parent.childNodes[i];
+
+        if (sibling === node) {
+            // Recurse on the parent node, then append this node's details to form an XPath string
+            return GetXPath(parent) + '/' + node.nodeName.toLowerCase() + '[' + (nodeCount + 1) + ']';
         }
         if (sibling.nodeType === 1 && sibling.nodeName === node.nodeName) {
             nodeCount++;
