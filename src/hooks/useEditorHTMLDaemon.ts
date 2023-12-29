@@ -12,27 +12,6 @@
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
-type TDaemonState = {
-    Observer: MutationObserver,
-    MutationQueue: MutationRecord[]
-}
-
-enum OperationType {
-    TEXT = "TEXT",
-    ADD = "ADD",
-    REMOVE = "REMOVE"
-}
-
-type TargetNode = string | Node;
-
-type OperationLog = {
-    type: OperationType,
-    node: TargetNode,
-    nodeText?: string | null,
-    parentNode?: string | null,
-    siblingNode?: string | null
-}
-
 export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
     SourceDocRef: { current: Document | undefined | null },
@@ -92,7 +71,7 @@ export default function useEditorHTMLDaemon(
         // Rollback Changes
         // TODO: there is an unfortunate "flash" between rolling back and parent re-rendering.
         let mutation: MutationRecord | void;
-        let OperationLog: OperationLog[] = []
+        let operationLogs: TOperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
 
             // Text Changed
@@ -100,11 +79,17 @@ export default function useEditorHTMLDaemon(
 
                 // rollback
                 // mutation.target.textContent = mutation.oldValue;
-                OperationLog.push({
-                    type: OperationType.TEXT,
+
+                const Operation: TOperationLog = {
+                    type: TOperationType.TEXT,
                     node: getXPathFromNode(mutation.target),
                     nodeText: mutation.target.textContent
-                })
+                }
+
+                const latestOperationLog = operationLogs[operationLogs.length - 1];
+
+                if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
+                    operationLogs.push(Operation)
             }
 
             // Nodes removed
@@ -116,8 +101,8 @@ export default function useEditorHTMLDaemon(
                     mutation.nextSibling,
                 );
 
-                OperationLog.push({
-                    type: OperationType.REMOVE,
+                operationLogs.push({
+                    type: TOperationType.REMOVE,
                     node: getXPathFromNode(mutation.removedNodes[i]),
                     parentNode: getXPathFromNode(mutation.target)
                 })
@@ -130,8 +115,8 @@ export default function useEditorHTMLDaemon(
                 if (mutation.addedNodes[i].parentNode)
                     mutation.target.removeChild(mutation.addedNodes[i]);
 
-                OperationLog.push({
-                    type: OperationType.ADD,
+                operationLogs.push({
+                    type: TOperationType.ADD,
                     node: mutation.addedNodes[i].cloneNode(),
                     parentNode: getXPathFromNode(mutation.target),
                     siblingNode: mutation.nextSibling ? getXPathFromNode(mutation.nextSibling) : null
@@ -139,7 +124,7 @@ export default function useEditorHTMLDaemon(
             }
         }
 
-        SyncDOMs(OperationLog);
+        SyncDOMs(operationLogs);
 
         FinalizeChanges();
 
@@ -203,21 +188,21 @@ export default function useEditorHTMLDaemon(
         return '';
     }
 
-    const SyncDOMs = (Operations: OperationLog[]) => {
+    const SyncDOMs = (Operations: TOperationLog[]) => {
 
         if (!Operations.length) return;
 
-        let operation: OperationLog | void;
+        let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeText, parentNode, siblingNode} = operation;
             console.log(operation);
-            if (type === OperationType.TEXT) {
+            if (type === TOperationType.TEXT) {
                 UpdateDocRef.Text((node as string), nodeText!);
             }
-            if (type === OperationType.REMOVE) {
+            if (type === TOperationType.REMOVE) {
                 UpdateDocRef.Remove(parentNode!, (node as string));
             }
-            if (type === OperationType.ADD) {
+            if (type === TOperationType.ADD) {
                 UpdateDocRef.Add(parentNode!, (node as Node), siblingNode!)
             }
 
@@ -309,10 +294,12 @@ export default function useEditorHTMLDaemon(
 
             WatchedElement.contentEditable = 'true';
 
+            // plaintext-only actually introduces unwanted behavior
             // try {
             //     WatchedElement.contentEditable = 'plaintext-only';
             // } catch (e) {
-            //     WatchedElement.contentEditable = 'true';
+            //     // WatchedElement.contentEditable = 'true';
+            //     throw e;
             // }
         }
 
@@ -348,4 +335,23 @@ function getNodeFromXPath(doc: Document, XPath: string) {
         return;
     }
     return doc.evaluate(XPath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+}
+
+type TDaemonState = {
+    Observer: MutationObserver,
+    MutationQueue: MutationRecord[]
+}
+
+enum TOperationType {
+    TEXT = "TEXT",
+    ADD = "ADD",
+    REMOVE = "REMOVE"
+}
+
+type TOperationLog = {
+    type: TOperationType,
+    node: string | Node,
+    nodeText?: string | null,
+    parentNode?: string | null,
+    siblingNode?: string | null
 }
