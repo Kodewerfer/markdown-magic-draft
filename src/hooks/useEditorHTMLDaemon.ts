@@ -102,7 +102,7 @@ export default function useEditorHTMLDaemon(
                 // mutation.target.textContent = mutation.oldValue;
                 OperationLog.push({
                     type: OperationType.TEXT,
-                    node: GetXPath(mutation.target),
+                    node: getXPathFromNode(mutation.target),
                     nodeText: mutation.target.textContent
                 })
             }
@@ -118,8 +118,8 @@ export default function useEditorHTMLDaemon(
 
                 OperationLog.push({
                     type: OperationType.REMOVE,
-                    node: GetXPath(mutation.removedNodes[i]),
-                    parentNode: GetXPath(mutation.target)
+                    node: getXPathFromNode(mutation.removedNodes[i]),
+                    parentNode: getXPathFromNode(mutation.target)
                 })
             }
 
@@ -133,8 +133,8 @@ export default function useEditorHTMLDaemon(
                 OperationLog.push({
                     type: OperationType.ADD,
                     node: mutation.addedNodes[i].cloneNode(),
-                    parentNode: GetXPath(mutation.target),
-                    siblingNode: mutation.nextSibling ? GetXPath(mutation.nextSibling) : null
+                    parentNode: getXPathFromNode(mutation.target),
+                    siblingNode: mutation.nextSibling ? getXPathFromNode(mutation.nextSibling) : null
                 })
             }
         }
@@ -146,6 +146,61 @@ export default function useEditorHTMLDaemon(
         // Start observing again.
         // TODO: this will not be needed once the changes are reported to the parent and therefore re-rendered
         return toggleObserve(true);
+    }
+
+    function getXPathFromNode(node: Node): string {
+
+        if (!WatchElementRef.current) return '';
+        let parent = node.parentNode;
+
+        // XPath upper limit: when reached an element with ID
+        if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
+            return '//*[@id="' + (node as HTMLElement).id + '"]';
+        }
+
+        // XPath upper limit: The Editor Inner.
+        if ((node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
+            return '//body';
+        }
+
+        // text nodes
+        if (node.nodeType === Node.TEXT_NODE) {
+            // For text nodes, count previous sibling text nodes for accurate XPath generation
+            let textNodeIndex: number = 1;
+            let sibling = node.previousSibling;
+
+            // Counting preceding sibling Text nodes
+            while (sibling) {
+                if (sibling.nodeType === Node.TEXT_NODE) {
+                    textNodeIndex++;
+                }
+                sibling = sibling.previousSibling;
+            }
+
+            if (parent) {
+                return getXPathFromNode(parent) + '/text()' + `[${textNodeIndex}]`;
+            } else {
+                return 'text()' + `[${textNodeIndex}]`;
+            }
+        }
+
+        if (!parent) return ''; // If no parent found, very unlikely scenario and possibly pointing at the HTML node
+
+        // For Non-text nodes
+        let nodeCount: number = 0;
+        for (let i = 0; i < parent.childNodes.length; i++) {
+            let sibling = parent.childNodes[i];
+
+            if (sibling === node) {
+                // Recurse on the parent node, then append this node's details to form an XPath string
+                return getXPathFromNode(parent) + '/' + node.nodeName.toLowerCase() + '[' + (nodeCount + 1) + ']';
+            }
+            if (sibling.nodeType === 1 && sibling.nodeName === node.nodeName) {
+                nodeCount++;
+            }
+        }
+
+        return '';
     }
 
     const SyncDOMs = (Operations: OperationLog[]) => {
@@ -179,7 +234,7 @@ export default function useEditorHTMLDaemon(
                 return;
             }
 
-            const NodeResult = GetNode(SourceDocRef.current!, XPath);
+            const NodeResult = getNodeFromXPath(SourceDocRef.current!, XPath);
             if (!NodeResult) return;
 
             if (!Text) Text = "";
@@ -193,10 +248,10 @@ export default function useEditorHTMLDaemon(
                 return;
             }
 
-            const parentNode = GetNode(SourceDocRef.current!, XPathParent);
+            const parentNode = getNodeFromXPath(SourceDocRef.current!, XPathParent);
             if (!parentNode) return;
 
-            const targetNode = GetNode(SourceDocRef.current!, XPathSelf);
+            const targetNode = getNodeFromXPath(SourceDocRef.current!, XPathSelf);
             if (!targetNode) return;
 
             parentNode.removeChild(targetNode);
@@ -208,7 +263,7 @@ export default function useEditorHTMLDaemon(
                 return;
             }
 
-            const parentNode = GetNode(SourceDocRef.current!, XPathParent);
+            const parentNode = getNodeFromXPath(SourceDocRef.current!, XPathParent);
             if (!parentNode) return;
 
             const targetNode = Node;
@@ -216,7 +271,7 @@ export default function useEditorHTMLDaemon(
 
             let SiblingNode = null
             if (XPathSibling) {
-                SiblingNode = GetNode(SourceDocRef.current!, XPathSibling);
+                SiblingNode = getNodeFromXPath(SourceDocRef.current!, XPathSibling);
                 if (SiblingNode === undefined)
                     SiblingNode = null;
             }
@@ -286,59 +341,11 @@ export default function useEditorHTMLDaemon(
     }, [WatchElementRef.current!])
 }
 
-function GetXPath(node: Node): string {
-    let parent = node.parentNode;
 
-    if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
-        return '//*[@id="' + (node as HTMLElement).id + '"]';
+function getNodeFromXPath(doc: Document, XPath: string) {
+    if (!doc) {
+        console.error("getNodeFromXPath: Invalid Doc");
+        return;
     }
-
-    if ((node as HTMLElement).className === "Editor-Inner" && (node as HTMLElement).tagName === "MAIN") {
-        return '//body';
-    }
-
-    // text nodes
-    if (node.nodeType === Node.TEXT_NODE) {
-        // For text nodes, count previous sibling text nodes for accurate XPath generation
-        let textNodeIndex: number = 1;
-        let sibling = node.previousSibling;
-
-        // Counting preceding sibling Text nodes
-        while (sibling) {
-            if (sibling.nodeType === Node.TEXT_NODE) {
-                textNodeIndex++;
-            }
-            sibling = sibling.previousSibling;
-        }
-
-        // Determine XPath based on whether a parent node exists. If it does use parent's path, else just the textNode.
-        if (parent) {
-            return GetXPath(parent) + '/text()' + `[${textNodeIndex}]`;
-        } else {
-            return 'text()' + `[${textNodeIndex}]`;
-        }
-    }
-
-    if (!parent) return ''; // If no parent found, very unlikely scenario and possibly pointing at the HTML node
-
-    // For Non-text nodes
-    let nodeCount: number = 0;
-    for (let i = 0; i < parent.childNodes.length; i++) {
-        let sibling = parent.childNodes[i];
-
-        if (sibling === node) {
-            // Recurse on the parent node, then append this node's details to form an XPath string
-            return GetXPath(parent) + '/' + node.nodeName.toLowerCase() + '[' + (nodeCount + 1) + ']';
-        }
-        if (sibling.nodeType === 1 && sibling.nodeName === node.nodeName) {
-            nodeCount++;
-        }
-    }
-
-    return '';
-}
-
-function GetNode(doc: Document, XPath: string) {
-    if (!doc) return;
     return doc.evaluate(XPath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
 }
