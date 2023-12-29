@@ -7,9 +7,9 @@ import {renderToString} from "react-dom/server";
 const MarkdownFakeDate = `
  # Welcome to @[aaa] Editor! @[bbb]
 
- Hi! I'm your first Markdown file in **Editor**.
+ Hi! I'm your ~~first~~ Markdown file in **Editor**.
 
- custom link **syntax**: @[ccc] AHHHHHHHHH [123](google.com)
+ **custom** link **syntax**: @[ccc] AHHHHHHHHH [123](google.com)
  
  Test with no sibling
 `
