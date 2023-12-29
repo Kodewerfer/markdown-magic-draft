@@ -17,6 +17,22 @@ type TDaemonState = {
     MutationQueue: MutationRecord[]
 }
 
+enum OperationType {
+    TEXT = "TEXT",
+    ADD = "ADD",
+    REMOVE = "REMOVE"
+}
+
+type TargetNode = string | Node;
+
+type OperationLog = {
+    type: OperationType,
+    node: TargetNode,
+    nodeText?: string | null,
+    parentNode?: string | null,
+    siblingNode?: string | null
+}
+
 export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
     SourceDocRef: { current: Document | undefined | null },
@@ -53,15 +69,13 @@ export default function useEditorHTMLDaemon(
             return;
         }
 
-        const ObserverConfig: MutationObserverInit = {
+        return DaemonState.Observer.observe(WatchElementRef.current, {
             childList: true,
             subtree: true,
             characterData: true,
             characterDataOldValue: true,
 
-        };
-
-        return DaemonState.Observer.observe(WatchElementRef.current, ObserverConfig);
+        });
     };
 
 
@@ -75,31 +89,26 @@ export default function useEditorHTMLDaemon(
 
         toggleObserve(false);
 
-        // start handing changed nodes before rolling back
+        // Rollback Changes
         // TODO: there is an unfortunate "flash" between rolling back and parent re-rendering.
         let mutation: MutationRecord | void;
+        let OperationLog: OperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
-
-            console.log(mutation);
-
 
             // Text Changed
             if (mutation.oldValue !== null && mutation.type === "characterData") {
 
                 // rollback
                 // mutation.target.textContent = mutation.oldValue;
-
-                const textContent = mutation.target.textContent;
-
-                const xPath = GetXPath(mutation.target);
-
-                UpdateDocRef.Text(xPath, textContent);
-
+                OperationLog.push({
+                    type: OperationType.TEXT,
+                    node: GetXPath(mutation.target),
+                    nodeText: mutation.target.textContent
+                })
             }
 
             // Nodes removed
             for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
-
 
                 // rollback
                 mutation.target.insertBefore(
@@ -107,41 +116,30 @@ export default function useEditorHTMLDaemon(
                     mutation.nextSibling,
                 );
 
-
-                let parentXPath = GetXPath(mutation.target);
-                let removedNodeXPath = GetXPath(mutation.removedNodes[i]);
-
-                // Also remove the parent tag when only child
-                // if (mutation.target.firstChild === mutation.removedNodes[i] && mutation.target.lastChild === mutation.removedNodes[i] && mutation.target.parentNode) {
-                //     parentXPath = GetXPath(mutation.target.parentNode)
-                //     removedNodeXPath = GetXPath(mutation.target)
-                // }
-
-
-                UpdateDocRef.Remove(parentXPath, removedNodeXPath);
-
+                OperationLog.push({
+                    type: OperationType.REMOVE,
+                    node: GetXPath(mutation.removedNodes[i]),
+                    parentNode: GetXPath(mutation.target)
+                })
             }
 
             // Nodes added
             for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
 
-                // if it was a BR
-
-                const parentXPath = GetXPath(mutation.target);
-
-                let nextSiblingXPath: null | string = null;
-                if (mutation.nextSibling)
-                    nextSiblingXPath = GetXPath(mutation.nextSibling);
-
-                UpdateDocRef.Add(parentXPath, mutation.addedNodes[i].cloneNode(), nextSiblingXPath);
-
                 // rollback
                 if (mutation.addedNodes[i].parentNode)
                     mutation.target.removeChild(mutation.addedNodes[i]);
 
-
+                OperationLog.push({
+                    type: OperationType.ADD,
+                    node: mutation.addedNodes[i].cloneNode(),
+                    parentNode: GetXPath(mutation.target),
+                    siblingNode: mutation.nextSibling ? GetXPath(mutation.nextSibling) : null
+                })
             }
         }
+
+        SyncDOMs(OperationLog);
 
         FinalizeChanges();
 
@@ -150,16 +148,51 @@ export default function useEditorHTMLDaemon(
         return toggleObserve(true);
     }
 
+    const SyncDOMs = (Operations: OperationLog[]) => {
+
+        if (!Operations.length) return;
+
+        let operation: OperationLog | void;
+        while ((operation = Operations.pop())) {
+            const {type, node, nodeText, parentNode, siblingNode} = operation;
+
+            if (type === OperationType.TEXT) {
+                UpdateDocRef.Text((node as string), nodeText!);
+            }
+            if (type === OperationType.REMOVE) {
+                UpdateDocRef.Remove(parentNode!, (node as string));
+            }
+            if (type === OperationType.ADD) {
+                UpdateDocRef.Add(parentNode!, (node as Node), siblingNode!)
+            }
+
+        }
+
+    }
+
     // TODO: performance
     const UpdateDocRef = {
         'Text': (XPath: string, Text: string | null) => {
 
+            if (!XPath) {
+                console.error("UpdateDocRef.Text: Invalid Parameter");
+                return;
+            }
+
             const NodeResult = GetNode(SourceDocRef.current!, XPath);
             if (!NodeResult) return;
+
+            if (!Text) Text = "";
 
             NodeResult.textContent = Text;
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
+
+            if (!XPathParent || !XPathSelf) {
+                console.error("UpdateDocRef.Remove: Invalid Parameter");
+                return;
+            }
+
             const parentNode = GetNode(SourceDocRef.current!, XPathParent);
             if (!parentNode) return;
 
@@ -169,6 +202,11 @@ export default function useEditorHTMLDaemon(
             parentNode.removeChild(targetNode);
         },
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
+
+            if (!XPathParent || !Node) {
+                console.error("UpdateDocRef.Add: Invalid Parameter");
+                return;
+            }
 
             const parentNode = GetNode(SourceDocRef.current!, XPathParent);
             if (!parentNode) return;
