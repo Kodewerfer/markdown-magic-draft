@@ -19,8 +19,9 @@ type TDaemonState = {
 
 export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
-    ElementDocRef: { current: Document | undefined | null },
-    FinalizeChanges: Function
+    SourceDocRef: { current: Document | undefined | null },
+    FinalizeChanges: Function,
+    EditableElement = true
 ) {
 
     // Persistent Variables
@@ -63,6 +64,7 @@ export default function useEditorHTMLDaemon(
         return DaemonState.Observer.observe(WatchElementRef.current, ObserverConfig);
     };
 
+
     const FlushQueue = () => {
 
         // OB's callback is asynchronous
@@ -78,8 +80,11 @@ export default function useEditorHTMLDaemon(
         let mutation: MutationRecord | void;
         while ((mutation = DaemonState.MutationQueue.pop())) {
 
+            console.log(mutation);
+
+
             // Text Changed
-            if (mutation.oldValue !== null) {
+            if (mutation.oldValue !== null && mutation.type === "characterData") {
 
                 // rollback
                 // mutation.target.textContent = mutation.oldValue;
@@ -95,38 +100,44 @@ export default function useEditorHTMLDaemon(
             // Nodes removed
             for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
 
+
                 // rollback
                 mutation.target.insertBefore(
                     mutation.removedNodes[i],
                     mutation.nextSibling,
                 );
 
-                if (mutation.removedNodes[i].parentNode) {
 
-                    const parentXPath = GetXPath(mutation.target);
-                    const removedNodeXPath = GetXPath(mutation.removedNodes[i]);
+                let parentXPath = GetXPath(mutation.target);
+                let removedNodeXPath = GetXPath(mutation.removedNodes[i]);
 
-                    UpdateDocRef.Remove(parentXPath, removedNodeXPath);
-                }
+                // Also remove the parent tag when only child
+                // if (mutation.target.firstChild === mutation.removedNodes[i] && mutation.target.lastChild === mutation.removedNodes[i] && mutation.target.parentNode) {
+                //     parentXPath = GetXPath(mutation.target.parentNode)
+                //     removedNodeXPath = GetXPath(mutation.target)
+                // }
+
+
+                UpdateDocRef.Remove(parentXPath, removedNodeXPath);
 
             }
 
             // Nodes added
             for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
 
-                // rollback
-                if (mutation.addedNodes[i].parentNode)
-                    mutation.target.removeChild(mutation.addedNodes[i]);
-
+                // if it was a BR
 
                 const parentXPath = GetXPath(mutation.target);
-                const addedNodeXPath = GetXPath(mutation.addedNodes[i]);
 
                 let nextSiblingXPath: null | string = null;
                 if (mutation.nextSibling)
                     nextSiblingXPath = GetXPath(mutation.nextSibling);
 
-                UpdateDocRef.Add(parentXPath, addedNodeXPath, nextSiblingXPath);
+                UpdateDocRef.Add(parentXPath, mutation.addedNodes[i].cloneNode(), nextSiblingXPath);
+
+                // rollback
+                if (mutation.addedNodes[i].parentNode)
+                    mutation.target.removeChild(mutation.addedNodes[i]);
 
 
             }
@@ -143,31 +154,31 @@ export default function useEditorHTMLDaemon(
     const UpdateDocRef = {
         'Text': (XPath: string, Text: string | null) => {
 
-            const NodeResult = GetNode(ElementDocRef.current!, XPath);
+            const NodeResult = GetNode(SourceDocRef.current!, XPath);
             if (!NodeResult) return;
 
             NodeResult.textContent = Text;
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
-            const parentNode = GetNode(ElementDocRef.current!, XPathParent);
+            const parentNode = GetNode(SourceDocRef.current!, XPathParent);
             if (!parentNode) return;
 
-            const targetNode = GetNode(ElementDocRef.current!, XPathSelf);
+            const targetNode = GetNode(SourceDocRef.current!, XPathSelf);
             if (!targetNode) return;
 
             parentNode.removeChild(targetNode);
         },
-        'Add': (XPathParent: string, XPathSelf: string, XPathSibling: string | null) => {
+        'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
 
-            const parentNode = GetNode(ElementDocRef.current!, XPathParent);
+            const parentNode = GetNode(SourceDocRef.current!, XPathParent);
             if (!parentNode) return;
 
-            const targetNode = GetNode(ElementDocRef.current!, XPathSelf);
+            const targetNode = Node;
             if (!targetNode) return;
 
             let SiblingNode = null
             if (XPathSibling) {
-                SiblingNode = GetNode(ElementDocRef.current!, XPathSibling);
+                SiblingNode = GetNode(SourceDocRef.current!, XPathSibling);
                 if (SiblingNode === undefined)
                     SiblingNode = null;
             }
@@ -195,16 +206,21 @@ export default function useEditorHTMLDaemon(
 
     useLayoutEffect(() => {
 
-        if (!WatchElementRef.current) {
+        if (!WatchElementRef.current || !SourceDocRef.current) {
             return;
         }
         const WatchedElement = WatchElementRef.current;
-
         const contentEditableCached = WatchedElement.contentEditable;
-        try {
-            WatchedElement.contentEditable = 'plaintext-only';
-        } catch (e) {
+
+        if (EditableElement) {
+
             WatchedElement.contentEditable = 'true';
+
+            // try {
+            //     WatchedElement.contentEditable = 'plaintext-only';
+            // } catch (e) {
+            //     WatchedElement.contentEditable = 'true';
+            // }
         }
 
         const flushQueueDebounced = _.debounce(FlushQueue, 500);
