@@ -1,7 +1,7 @@
 /**
  *  This hook handles the backend heavy lifting
  *
- *  At its core, it monitors the changes made in the first ref, rolls them back, and performs the same operation on the second ref.
+ *  At its core, it monitors the changes made in the first ref(the watched ref), rolls them back, and performs the same operation on the second ref(the mirrored ref).
  *  The reason for this convoluted logic is that, for the best UX, I made the main editing area as an editable HTML element that handles rendering of MD as well as user-editing.
  *  it allowed editing and rendering on the fly, but it also means that the virtual DOM and the actual DOM are now out of sync.
  *  If I've simply turned the actual DOM back to React compos again, React will crash because it may need to remove elements that are no longer there, etc.
@@ -12,15 +12,37 @@
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
+// Hook's persistent variables
+type TDaemonState = {
+    Observer: MutationObserver, //Mutation Observer instance
+    MutationQueue: MutationRecord[] // All records will be pushed to here
+}
+
+//Type of actions to perform on the mirror document
+enum TOperationType {
+    TEXT = "TEXT",
+    ADD = "ADD",
+    REMOVE = "REMOVE"
+}
+
+// Instructions for DOM manipulations on the mirror document
+type TOperationLog = {
+    type: TOperationType,
+    node: string | Node,
+    nodeText?: string | null,
+    parentNode?: string | null,
+    siblingNode?: string | null
+}
+
 export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
-    SourceDocRef: { current: Document | undefined | null },
+    MirrorDocumentRef: { current: Document | undefined | null },
     FinalizeChanges: Function,
     EditableElement = true
 ) {
 
     // Persistent Variables
-    // Easier set up type and init using state, but really acts like a ref.
+    // Easier to set up type and to init using state, but really acts as a ref.
     const DaemonState: TDaemonState = useState(() => {
 
         const state: TDaemonState = {
@@ -35,7 +57,6 @@ export default function useEditorHTMLDaemon(
         }
 
         return state;
-
     })[0];
 
     const toggleObserve = (bObserver: boolean) => {
@@ -57,7 +78,7 @@ export default function useEditorHTMLDaemon(
         });
     };
 
-
+    // Flush all changes in the MutationQueue
     const FlushQueue = () => {
 
         // OB's callback is asynchronous
@@ -71,7 +92,7 @@ export default function useEditorHTMLDaemon(
         // Rollback Changes
         // TODO: there is an unfortunate "flash" between rolling back and parent re-rendering.
         let mutation: MutationRecord | void;
-        let operationLogs: TOperationLog[] = []
+        let OperationLogs: TOperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
 
             // Text Changed
@@ -86,10 +107,10 @@ export default function useEditorHTMLDaemon(
                     nodeText: mutation.target.textContent
                 }
 
-                const latestOperationLog = operationLogs[operationLogs.length - 1];
+                const latestOperationLog = OperationLogs[OperationLogs.length - 1];
 
                 if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
-                    operationLogs.push(Operation)
+                    OperationLogs.push(Operation)
             }
 
             // Nodes removed
@@ -101,7 +122,7 @@ export default function useEditorHTMLDaemon(
                     mutation.nextSibling,
                 );
 
-                operationLogs.push({
+                OperationLogs.push({
                     type: TOperationType.REMOVE,
                     node: getXPathFromNode(mutation.removedNodes[i]),
                     parentNode: getXPathFromNode(mutation.target)
@@ -115,16 +136,16 @@ export default function useEditorHTMLDaemon(
                 if (mutation.addedNodes[i].parentNode)
                     mutation.target.removeChild(mutation.addedNodes[i]);
 
-                operationLogs.push({
+                OperationLogs.push({
                     type: TOperationType.ADD,
-                    node: mutation.addedNodes[i].cloneNode(),
+                    node: mutation.addedNodes[i].cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
                     parentNode: getXPathFromNode(mutation.target),
                     siblingNode: mutation.nextSibling ? getXPathFromNode(mutation.nextSibling) : null
                 })
             }
         }
 
-        SyncDOMs(operationLogs);
+        SyncToMirror(OperationLogs);
 
         FinalizeChanges();
 
@@ -133,17 +154,18 @@ export default function useEditorHTMLDaemon(
         return toggleObserve(true);
     }
 
+    // Helper to get the precise location in the original DOM tree
     function getXPathFromNode(node: Node): string {
 
         if (!WatchElementRef.current) return '';
         let parent = node.parentNode;
 
-        // XPath upper limit: when reached an element with ID
+        // XPath upper limit: any element with an ID
         if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
             return '//*[@id="' + (node as HTMLElement).id + '"]';
         }
 
-        // XPath upper limit: The Editor Inner.
+        // XPath upper limit: The watched element.
         if ((node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
             return '//body';
         }
@@ -188,7 +210,8 @@ export default function useEditorHTMLDaemon(
         return '';
     }
 
-    const SyncDOMs = (Operations: TOperationLog[]) => {
+    // Sync to the mirror document, middleman function
+    const SyncToMirror = (Operations: TOperationLog[]) => {
 
         if (!Operations.length) return;
 
@@ -197,13 +220,13 @@ export default function useEditorHTMLDaemon(
             const {type, node, nodeText, parentNode, siblingNode} = operation;
             console.log(operation);
             if (type === TOperationType.TEXT) {
-                UpdateDocRef.Text((node as string), nodeText!);
+                UpdateMirrorDocument.Text((node as string), nodeText!);
             }
             if (type === TOperationType.REMOVE) {
-                UpdateDocRef.Remove(parentNode!, (node as string));
+                UpdateMirrorDocument.Remove(parentNode!, (node as string));
             }
             if (type === TOperationType.ADD) {
-                UpdateDocRef.Add(parentNode!, (node as Node), siblingNode!)
+                UpdateMirrorDocument.Add(parentNode!, (node as Node), siblingNode!)
             }
 
         }
@@ -211,15 +234,15 @@ export default function useEditorHTMLDaemon(
     }
 
     // TODO: performance
-    const UpdateDocRef = {
+    const UpdateMirrorDocument = {
         'Text': (XPath: string, Text: string | null) => {
 
             if (!XPath) {
-                console.error("UpdateDocRef.Text: Invalid Parameter");
+                console.error("UpdateMirrorDocument.Text: Invalid Parameter");
                 return;
             }
 
-            const NodeResult = getNodeFromXPath(SourceDocRef.current!, XPath);
+            const NodeResult = getNodeFromXPath(MirrorDocumentRef.current!, XPath);
             if (!NodeResult) return;
 
             if (!Text) Text = "";
@@ -229,14 +252,14 @@ export default function useEditorHTMLDaemon(
         'Remove': (XPathParent: string, XPathSelf: string) => {
 
             if (!XPathParent || !XPathSelf) {
-                console.error("UpdateDocRef.Remove: Invalid Parameter");
+                console.error("UpdateMirrorDocument.Remove: Invalid Parameter");
                 return;
             }
 
-            const parentNode = getNodeFromXPath(SourceDocRef.current!, XPathParent);
+            const parentNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) return;
 
-            const targetNode = getNodeFromXPath(SourceDocRef.current!, XPathSelf);
+            const targetNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
             if (!targetNode) return;
 
             parentNode.removeChild(targetNode);
@@ -244,11 +267,11 @@ export default function useEditorHTMLDaemon(
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
 
             if (!XPathParent || !Node) {
-                console.error("UpdateDocRef.Add: Invalid Parameter");
+                console.error("UpdateMirrorDocument.Add: Invalid Parameter");
                 return;
             }
 
-            const parentNode = getNodeFromXPath(SourceDocRef.current!, XPathParent);
+            const parentNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) return;
 
             const targetNode = Node;
@@ -256,7 +279,7 @@ export default function useEditorHTMLDaemon(
 
             let SiblingNode = null
             if (XPathSibling) {
-                SiblingNode = getNodeFromXPath(SourceDocRef.current!, XPathSibling);
+                SiblingNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathSibling);
                 if (SiblingNode === undefined)
                     SiblingNode = null;
             }
@@ -281,10 +304,9 @@ export default function useEditorHTMLDaemon(
 
     });
 
-
     useLayoutEffect(() => {
 
-        if (!WatchElementRef.current || !SourceDocRef.current) {
+        if (!WatchElementRef.current || !MirrorDocumentRef.current) {
             return;
         }
         const WatchedElement = WatchElementRef.current;
@@ -294,7 +316,7 @@ export default function useEditorHTMLDaemon(
 
             WatchedElement.contentEditable = 'true';
 
-            // plaintext-only actually introduces unwanted behavior
+            // !!plaintext-only actually introduces unwanted behavior
             // try {
             //     WatchedElement.contentEditable = 'plaintext-only';
             // } catch (e) {
@@ -335,23 +357,4 @@ function getNodeFromXPath(doc: Document, XPath: string) {
         return;
     }
     return doc.evaluate(XPath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
-}
-
-type TDaemonState = {
-    Observer: MutationObserver,
-    MutationQueue: MutationRecord[]
-}
-
-enum TOperationType {
-    TEXT = "TEXT",
-    ADD = "ADD",
-    REMOVE = "REMOVE"
-}
-
-type TOperationLog = {
-    type: TOperationType,
-    node: string | Node,
-    nodeText?: string | null,
-    parentNode?: string | null,
-    siblingNode?: string | null
 }
