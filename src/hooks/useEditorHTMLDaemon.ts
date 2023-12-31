@@ -8,14 +8,14 @@
  *  So, the original DOM needs to be kept as-is; the changes will be made on the other DOM ref instead, which will later be turned to React components so that React can do proper diffing and DOM manipulation.
  */
 
-
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
 // Hook's persistent variables
 type TDaemonState = {
     Observer: MutationObserver, //Mutation Observer instance
-    MutationQueue: MutationRecord[] // All records will be pushed to here
+    MutationQueue: MutationRecord[], // All records will be pushed to here
+    SelectionStatusCache: SelectionStatus | null
 }
 
 //Type of actions to perform on the mirror document
@@ -34,6 +34,13 @@ type TOperationLog = {
     siblingNode?: string | null
 }
 
+type SelectionStatus = {
+    CaretPosition: number,
+    SelectionExtent: number,
+    CurrentLineContents: string,
+    CurrentLineNumber: number
+}
+
 export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
     MirrorDocumentRef: { current: Document | undefined | null },
@@ -47,7 +54,8 @@ export default function useEditorHTMLDaemon(
 
         const state: TDaemonState = {
             Observer: null as any,
-            MutationQueue: []
+            MutationQueue: [],
+            SelectionStatusCache: null
         }
 
         if (typeof MutationObserver) {
@@ -74,7 +82,6 @@ export default function useEditorHTMLDaemon(
             subtree: true,
             characterData: true,
             characterDataOldValue: true,
-
         });
     };
 
@@ -146,6 +153,10 @@ export default function useEditorHTMLDaemon(
         }
 
         SyncToMirror(OperationLogs);
+
+        const selectionStatus = getSelectionStatus((WatchElementRef.current as Element));
+        if (selectionStatus)
+            DaemonState.SelectionStatusCache = selectionStatus;
 
         FinalizeChanges();
 
@@ -290,10 +301,12 @@ export default function useEditorHTMLDaemon(
 
     useLayoutEffect(() => {
 
-
-        if (!WatchElementRef.current) {
+        if (!WatchElementRef.current)
             return;
-        }
+
+
+        if (DaemonState.SelectionStatusCache)
+            restoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
 
         toggleObserve(true);
 
@@ -313,43 +326,49 @@ export default function useEditorHTMLDaemon(
         const contentEditableCached = WatchedElement.contentEditable;
 
         if (EditableElement) {
-
-            WatchedElement.contentEditable = 'true';
-
             // !!plaintext-only actually introduces unwanted behavior
-            // try {
-            //     WatchedElement.contentEditable = 'plaintext-only';
-            // } catch (e) {
-            //     // WatchedElement.contentEditable = 'true';
-            //     throw e;
-            // }
+            WatchedElement.contentEditable = 'true';
         }
 
         const flushQueueDebounced = _.debounce(FlushQueue, 500);
 
         // bind Events
-        const InputHandler = (ev: Event) => {
-            console.log("input")
+        const KeyDownHandler = (ev: Event) => {
+            //Placeholder
+        }
+
+        const KeyUpHandler = (ev: Event) => {
+            console.log("key up")
+
             flushQueueDebounced();
         }
-        WatchedElement.addEventListener("input", InputHandler);
 
         const PastHandler = (ev: ClipboardEvent) => {
             console.log("paste")
+            // TODO: plain text are okay, but elements needed to be filter out. Also pasted text might all stuck in for example a strong tag.
             flushQueueDebounced();
         }
-        WatchedElement.addEventListener("paste", PastHandler);
 
+        const SelectionHandler = (ev: Event) => {
+            //Placeholder
+        }
+
+        WatchedElement.addEventListener("keydown", KeyDownHandler);
+        WatchedElement.addEventListener("keyup", KeyUpHandler);
+        WatchedElement.addEventListener("paste", PastHandler);
+        WatchedElement.addEventListener("selectstart", SelectionHandler);
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
-            WatchedElement.removeEventListener("input", InputHandler);
+            WatchedElement.removeEventListener("keydown", KeyDownHandler);
+            WatchedElement.removeEventListener("keyup", KeyUpHandler);
             WatchedElement.removeEventListener("paste", PastHandler);
+            WatchedElement.removeEventListener("selectstart", SelectionHandler);
+
         }
 
 
     }, [WatchElementRef.current!])
 }
-
 
 function getNodeFromXPath(doc: Document, XPath: string) {
     if (!doc) {
@@ -357,4 +376,74 @@ function getNodeFromXPath(doc: Document, XPath: string) {
         return;
     }
     return doc.evaluate(XPath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
+}
+
+function getSelectionStatus(targetElement: Element): SelectionStatus | null {
+    const CurrentSelection = window.getSelection();
+
+    if (!CurrentSelection || !CurrentSelection.anchorNode || !CurrentSelection.focusNode) {
+        return null;
+    }
+    const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
+
+    const SelectedTextRange = CurrentSelection.getRangeAt(0);
+
+    const FullRange = document.createRange();
+    FullRange.setStart(targetElement, 0);
+    FullRange.setEnd(SelectedTextRange.startContainer, SelectedTextRange.startOffset);
+
+    const ContentUntilCaret = FullRange.toString();
+
+    const CaretPosition = ContentUntilCaret.length;
+
+    const LineContents = ContentUntilCaret.split('\n');
+
+    const CurrentLineNumber = LineContents.length - 1;
+
+    const CurrentLineContents = LineContents[CurrentLineNumber];
+
+    return {CaretPosition, SelectionExtent, CurrentLineContents, CurrentLineNumber};
+}
+
+function restoreSelectionStatus(SelectedElement: Element, SavedState: SelectionStatus) {
+
+    const currentSelection = window.getSelection();
+    if (!currentSelection) return;
+
+    // Type narrowing
+    if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
+        return;
+
+
+    // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
+    const Walker = document.createTreeWalker(
+        SelectedElement,
+        NodeFilter.SHOW_TEXT, // only interested in text nodes
+        null
+    );
+
+    let AnchorNode;
+    let CharsToCaretPosition = SavedState.CaretPosition;
+
+    // check all text nodes
+    while (AnchorNode = Walker.nextNode()) {
+
+        CharsToCaretPosition -= AnchorNode!.textContent!.length;
+        // the anchor AnchorNode found.
+        if (CharsToCaretPosition <= 0)
+            break;
+
+    }
+
+    // Type narrowing
+    if (!AnchorNode || !AnchorNode.textContent) return;
+
+    // reconstruct the old currentSelection range
+    const RangeCached = document.createRange();
+    RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
+    RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
+
+    // Replace the current currentSelection.
+    currentSelection.removeAllRanges();
+    currentSelection.addRange(RangeCached);
 }
