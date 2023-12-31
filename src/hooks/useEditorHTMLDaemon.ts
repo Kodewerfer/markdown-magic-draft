@@ -34,6 +34,7 @@ type TOperationLog = {
     siblingNode?: string | null
 }
 
+// For storing selection before parent re-rendering
 type SelectionStatus = {
     CaretPosition: number,
     SelectionExtent: number,
@@ -86,7 +87,7 @@ export default function useEditorHTMLDaemon(
     };
 
     // Flush all changes in the MutationQueue
-    const FlushQueue = () => {
+    const rollbackAndSync = () => {
 
         // OB's callback is asynchronous
         // make sure no records are left behind
@@ -152,17 +153,14 @@ export default function useEditorHTMLDaemon(
             }
         }
 
-        SyncToMirror(OperationLogs);
+        syncToMirror(OperationLogs);
 
-        const selectionStatus = getSelectionStatus((WatchElementRef.current as Element));
-        if (selectionStatus)
-            DaemonState.SelectionStatusCache = selectionStatus;
+        // either the status is saved, or a null is cache.
+        // If null, the selection restoration won't run on next render.
+        DaemonState.SelectionStatusCache = getSelectionStatus((WatchElementRef.current as Element));
 
+        // Notify parent
         FinalizeChanges();
-
-        // Start observing again.
-        // TODO: this will not be needed once the changes are reported to the parent and therefore re-rendered
-        return toggleObserve(true);
     }
 
     // Helper to get the precise location in the original DOM tree
@@ -202,7 +200,7 @@ export default function useEditorHTMLDaemon(
             }
         }
 
-        if (!parent) return ''; // If no parent found, very unlikely scenario and possibly pointing at the HTML node
+        if (!parent) return ''; // If no parent found, very unlikely
 
         // For Non-text nodes
         let nodeCount: number = 0;
@@ -222,14 +220,16 @@ export default function useEditorHTMLDaemon(
     }
 
     // Sync to the mirror document, middleman function
-    const SyncToMirror = (Operations: TOperationLog[]) => {
+    const syncToMirror = (Operations: TOperationLog[]) => {
 
         if (!Operations.length) return;
 
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeText, parentNode, siblingNode} = operation;
+            // FIXME:
             console.log(operation);
+
             if (type === TOperationType.TEXT) {
                 UpdateMirrorDocument.Text((node as string), nodeText!);
             }
@@ -304,6 +304,8 @@ export default function useEditorHTMLDaemon(
         if (!WatchElementRef.current)
             return;
 
+        // FIXME:
+        console.log(DaemonState.SelectionStatusCache);
 
         if (DaemonState.SelectionStatusCache)
             restoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
@@ -330,7 +332,7 @@ export default function useEditorHTMLDaemon(
             WatchedElement.contentEditable = 'true';
         }
 
-        const flushQueueDebounced = _.debounce(FlushQueue, 500);
+        const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
 
         // bind Events
         const KeyDownHandler = (ev: Event) => {
@@ -340,13 +342,13 @@ export default function useEditorHTMLDaemon(
         const KeyUpHandler = (ev: Event) => {
             console.log("key up")
 
-            flushQueueDebounced();
+            rollbackAndSyncDebounced();
         }
 
         const PastHandler = (ev: ClipboardEvent) => {
             console.log("paste")
             // TODO: plain text are okay, but elements needed to be filter out. Also pasted text might all stuck in for example a strong tag.
-            flushQueueDebounced();
+            rollbackAndSyncDebounced();
         }
 
         const SelectionHandler = (ev: Event) => {
@@ -407,8 +409,8 @@ function getSelectionStatus(targetElement: Element): SelectionStatus | null {
 
 function restoreSelectionStatus(SelectedElement: Element, SavedState: SelectionStatus) {
 
-    const currentSelection = window.getSelection();
-    if (!currentSelection) return;
+    const CurrentSelection = window.getSelection();
+    if (!CurrentSelection) return;
 
     // Type narrowing
     if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
@@ -438,12 +440,12 @@ function restoreSelectionStatus(SelectedElement: Element, SavedState: SelectionS
     // Type narrowing
     if (!AnchorNode || !AnchorNode.textContent) return;
 
-    // reconstruct the old currentSelection range
+    // reconstruct the old CurrentSelection range
     const RangeCached = document.createRange();
     RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
     RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
 
-    // Replace the current currentSelection.
-    currentSelection.removeAllRanges();
-    currentSelection.addRange(RangeCached);
+    // Replace the current CurrentSelection.
+    CurrentSelection.removeAllRanges();
+    CurrentSelection.addRange(RangeCached);
 }
