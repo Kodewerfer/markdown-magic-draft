@@ -6,6 +6,7 @@ import remarkRehype from "remark-rehype";
 import {HTMLSpecialLinks, MDSpecialLinks} from "../UnifiedPlugins/SpecialLinksSyntax";
 import rehypeParse from "rehype-parse";
 import rehypeReact from "rehype-react";
+import rehypeSanitize, {defaultSchema} from "rehype-sanitize";
 import rehypeRemark from "rehype-remark";
 import remarkStringify from "remark-stringify";
 import React, {} from "react";
@@ -13,11 +14,15 @@ import * as reactJsxRuntime from 'react/jsx-runtime'
 import rehypeStringify from "rehype-stringify";
 
 
+let SanitizSchema = Object.assign({}, defaultSchema);
+SanitizSchema!.attributes!['*'] = SanitizSchema!.attributes!['*'].concat(['data*'])
+
 export async function MD2HTML(MarkdownContent: Compatible) {
     return await unified()
         .use(remarkParse)
         .use(remarkGfm)
         .use(remarkRehype)
+        .use(rehypeSanitize, SanitizSchema)
         .use(MDSpecialLinks)
         .use(rehypeStringify)
         .process(MarkdownContent);
@@ -31,19 +36,23 @@ type ComponentOptions = {
 }
 
 export async function HTML2React(HTMLContent: Compatible, componentOptions?: ComponentOptions) {
+
     return await unified()
         .use(rehypeParse, {fragment: true})
+        .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
         .use(rehypeReact, {
             ...jsxElementConfig,
             components: componentOptions
-        }).process(HTMLContent);
+        })
+        .process(HTMLContent);
 }
 
 export async function HTML2MD(CurrentContent: Compatible) {
 
     return await unified()
         .use(rehypeParse)
-        .use(HTMLSpecialLinks)
+        .use(remarkGfm)
+        .use(HTMLSpecialLinks) //FIXME Don't work, syntax are escaped
         .use(rehypeRemark)
         .use(remarkStringify)
         .process(CurrentContent);
