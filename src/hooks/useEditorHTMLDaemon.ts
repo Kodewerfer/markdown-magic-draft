@@ -15,7 +15,7 @@ import _ from 'lodash';
 type TDaemonState = {
     Observer: MutationObserver, //Mutation Observer instance
     MutationQueue: MutationRecord[], // All records will be pushed to here
-    SelectionStatusCache: SelectionStatus | null
+    SelectionStatusCache: TSelectionStatus | null
 }
 
 //Type of actions to perform on the mirror document
@@ -35,11 +35,10 @@ type TOperationLog = {
 }
 
 // For storing selection before parent re-rendering
-type SelectionStatus = {
+type TSelectionStatus = {
     CaretPosition: number,
     SelectionExtent: number,
-    CurrentLineContents: string,
-    CurrentLineNumber: number
+    AnchorNodeXPath: string,
 }
 
 export default function useEditorHTMLDaemon(
@@ -48,36 +47,35 @@ export default function useEditorHTMLDaemon(
     FinalizeChanges: Function,
     EditableElement = true
 ) {
-
+    
     // Persistent Variables
     // Easier to set up type and to init using state, but really acts as a ref.
     const DaemonState: TDaemonState = useState(() => {
-
+        
         const state: TDaemonState = {
             Observer: null as any,
             MutationQueue: [],
             SelectionStatusCache: null
         }
-
+        
         if (typeof MutationObserver) {
             state.Observer = new MutationObserver((mutationList: MutationRecord[]) => {
                 state.MutationQueue.push(...mutationList);
             });
         }
-
+        
         return state;
     })[0];
-
+    
     const toggleObserve = (bObserver: boolean) => {
-
-        if (!bObserver) {
+        
+        if (!bObserver)
             return DaemonState.Observer.disconnect();
-        }
-
-        if (!WatchElementRef.current) {
+        
+        
+        if (!WatchElementRef.current)
             return;
-        }
-
+        
         return DaemonState.Observer.observe(WatchElementRef.current, {
             childList: true,
             subtree: true,
@@ -85,106 +83,102 @@ export default function useEditorHTMLDaemon(
             characterDataOldValue: true,
         });
     };
-
+    
     // Flush all changes in the MutationQueue
     const rollbackAndSync = () => {
-
+        
         // OB's callback is asynchronous
         // make sure no records are left behind
         DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords());
-
+        
         if (!DaemonState.MutationQueue.length) return;
-
+        
         toggleObserve(false);
-
+        
         // Rollback Changes
         // TODO: there is an unfortunate "flash" between rolling back and parent re-rendering.
         let mutation: MutationRecord | void;
         let OperationLogs: TOperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
-
+            
             // Text Changed
             if (mutation.oldValue !== null && mutation.type === "characterData") {
-
+                
                 // rollback
                 // mutation.target.textContent = mutation.oldValue;
-
+                
                 const Operation: TOperationLog = {
                     type: TOperationType.TEXT,
-                    node: getXPathFromNode(mutation.target),
+                    node: GetXPathFromNode(mutation.target),
                     nodeText: mutation.target.textContent
                 }
-
+                
                 const latestOperationLog = OperationLogs[OperationLogs.length - 1];
-
+                
                 if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
                     OperationLogs.push(Operation)
             }
-
+            
             // Nodes removed
             for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
-
+                
                 // rollback
                 mutation.target.insertBefore(
                     mutation.removedNodes[i],
                     mutation.nextSibling,
                 );
-
+                
                 OperationLogs.push({
                     type: TOperationType.REMOVE,
-                    node: getXPathFromNode(mutation.removedNodes[i]),
-                    parentNode: getXPathFromNode(mutation.target)
+                    node: GetXPathFromNode(mutation.removedNodes[i]),
+                    parentNode: GetXPathFromNode(mutation.target)
                 })
             }
-
+            
             // Nodes added
             for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
-
+                
                 // rollback
                 if (mutation.addedNodes[i].parentNode)
                     mutation.target.removeChild(mutation.addedNodes[i]);
-
+                
                 OperationLogs.push({
                     type: TOperationType.ADD,
                     node: mutation.addedNodes[i].cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
-                    parentNode: getXPathFromNode(mutation.target),
-                    siblingNode: mutation.nextSibling ? getXPathFromNode(mutation.nextSibling) : null
+                    parentNode: GetXPathFromNode(mutation.target),
+                    siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                 })
             }
         }
-
+        
         syncToMirror(OperationLogs);
-
-        // either the status is saved, or a null is cache.
-        // If null, the selection restoration won't run on next render.
-        DaemonState.SelectionStatusCache = getSelectionStatus((WatchElementRef.current as Element));
-
+        
         // Notify parent
         FinalizeChanges();
     }
-
+    
     // Helper to get the precise location in the original DOM tree
-    function getXPathFromNode(node: Node): string {
-
+    function GetXPathFromNode(node: Node): string {
+        
         if (!WatchElementRef.current) return '';
         let parent = node.parentNode;
-
+        
         // XPath upper limit: any element with an ID
         if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
             return '//*[@id="' + (node as HTMLElement).id + '"]';
         }
-
+        
         // XPath upper limit: The watched element.
         if ((node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
             return '//body';
         }
-
+        
         // text nodes
         if (node.nodeType === Node.TEXT_NODE) {
             // For text nodes, count previous sibling text nodes for accurate XPath generation
             let textNodeIndex: number = 1;
             let sibling = node.previousSibling;
-
+            
             // Counting preceding sibling Text nodes
             while (sibling) {
                 if (sibling.nodeType === Node.TEXT_NODE) {
@@ -192,44 +186,120 @@ export default function useEditorHTMLDaemon(
                 }
                 sibling = sibling.previousSibling;
             }
-
+            
             if (parent) {
-                return getXPathFromNode(parent) + '/text()' + `[${textNodeIndex}]`;
+                return GetXPathFromNode(parent) + '/text()' + `[${textNodeIndex}]`;
             } else {
                 return 'text()' + `[${textNodeIndex}]`;
             }
         }
-
+        
         if (!parent) return ''; // If no parent found, very unlikely
-
+        
         // For Non-text nodes
         let nodeCount: number = 0;
         for (let i = 0; i < parent.childNodes.length; i++) {
             let sibling = parent.childNodes[i];
-
+            
             if (sibling === node) {
                 // Recurse on the parent node, then append this node's details to form an XPath string
-                return getXPathFromNode(parent) + '/' + node.nodeName.toLowerCase() + '[' + (nodeCount + 1) + ']';
+                return GetXPathFromNode(parent) + '/' + node.nodeName.toLowerCase() + '[' + (nodeCount + 1) + ']';
             }
             if (sibling.nodeType === 1 && sibling.nodeName === node.nodeName) {
                 nodeCount++;
             }
         }
-
+        
         return '';
     }
-
+    
+    function GetSelectionStatus(targetElement: Element): TSelectionStatus | null {
+        const CurrentSelection = window.getSelection();
+        
+        if (!CurrentSelection || !CurrentSelection.anchorNode) {
+            return null;
+        }
+        
+        const AnchorNodeXPath: string = GetXPathFromNode(CurrentSelection.anchorNode);
+        
+        const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
+        
+        const SelectedTextRange = CurrentSelection.getRangeAt(0);
+        
+        const FullRange = document.createRange();
+        FullRange.setStart(targetElement, 0);
+        FullRange.setEnd(SelectedTextRange.startContainer, SelectedTextRange.startOffset);
+        
+        const ContentUntilCaret = FullRange.toString();
+        
+        const CaretPosition = ContentUntilCaret.length;
+        
+        // const LineContents = ContentUntilCaret.split('\n');
+        //
+        // const CurrentLineNumber = LineContents.length - 1;
+        //
+        // const CurrentLineContents = LineContents[CurrentLineNumber];
+        
+        return {CaretPosition, SelectionExtent, AnchorNodeXPath};
+    }
+    
+    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
+        
+        const CurrentSelection = window.getSelection();
+        if (!CurrentSelection) return;
+        
+        // Type narrowing
+        if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
+            return;
+        
+        
+        // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
+        const Walker = document.createTreeWalker(
+            SelectedElement,
+            NodeFilter.SHOW_TEXT, // only interested in text nodes
+            null
+        );
+        
+        let AnchorNode;
+        let CharsToCaretPosition = SavedState.CaretPosition;
+        // check all text nodes
+        while (AnchorNode = Walker.nextNode()) {
+            
+            CharsToCaretPosition -= AnchorNode!.textContent!.length;
+            // the anchor AnchorNode found.
+            if (CharsToCaretPosition <= 0)
+                // after breaking a new line, the CharsToCaretPosition for the end of the last line
+                // and the beginning of the new line will still be the same,
+                // So needed to check XPath to make sure the caret moved to the correct text node
+                if (GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath)
+                    break;
+            
+        }
+        
+        // Type narrowing
+        if (!AnchorNode || !AnchorNode.textContent) return;
+        
+        // reconstruct the old CurrentSelection range
+        const RangeCached = document.createRange();
+        RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
+        RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
+        
+        // Replace the current CurrentSelection.
+        CurrentSelection.removeAllRanges();
+        CurrentSelection.addRange(RangeCached);
+    }
+    
     // Sync to the mirror document, middleman function
     const syncToMirror = (Operations: TOperationLog[]) => {
-
+        
         if (!Operations.length) return;
-
+        
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeText, parentNode, siblingNode} = operation;
             // FIXME:
-            console.log(operation);
-
+            // console.log(operation);
+            
             if (type === TOperationType.TEXT) {
                 UpdateMirrorDocument.Text((node as string), nodeText!);
             }
@@ -239,122 +309,138 @@ export default function useEditorHTMLDaemon(
             if (type === TOperationType.ADD) {
                 UpdateMirrorDocument.Add(parentNode!, (node as Node), siblingNode!)
             }
-
+            
         }
-
+        
     }
-
+    
     // TODO: performance
     const UpdateMirrorDocument = {
         'Text': (XPath: string, Text: string | null) => {
-
+            
             if (!XPath) {
                 console.error("UpdateMirrorDocument.Text: Invalid Parameter");
                 return;
             }
-
-            const NodeResult = getNodeFromXPath(MirrorDocumentRef.current!, XPath);
+            
+            const NodeResult = GetNodeFromXPath(MirrorDocumentRef.current!, XPath);
             if (!NodeResult) return;
-
+            
             if (!Text) Text = "";
-
+            
             NodeResult.textContent = Text;
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
-
+            
             if (!XPathParent || !XPathSelf) {
                 console.error("UpdateMirrorDocument.Remove: Invalid Parameter");
                 return;
             }
-
-            const parentNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
+            
+            const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) return;
-
-            const targetNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
+            
+            const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
             if (!targetNode) return;
-
+            
             parentNode.removeChild(targetNode);
         },
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
-
+            
             if (!XPathParent || !Node) {
                 console.error("UpdateMirrorDocument.Add: Invalid Parameter");
                 return;
             }
-
-            const parentNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
+            
+            const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) return;
-
+            
             const targetNode = Node;
             if (!targetNode) return;
-
+            
             let SiblingNode = null
             if (XPathSibling) {
-                SiblingNode = getNodeFromXPath(MirrorDocumentRef.current!, XPathSibling);
+                SiblingNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSibling);
                 if (SiblingNode === undefined)
                     SiblingNode = null;
             }
-
+            
             parentNode.insertBefore(targetNode, SiblingNode);
         }
     }
-
+    
     useLayoutEffect(() => {
-
+        
         if (!WatchElementRef.current)
             return;
-
-        // FIXME:
-        console.log(DaemonState.SelectionStatusCache);
-
+        
+        if (WatchElementRef.current.style.whiteSpace !== 'pre')
+            WatchElementRef.current.style.whiteSpace = 'pre-wrap'
+        
+        // FIXME
+        WatchElementRef.current.focus();
+        
         if (DaemonState.SelectionStatusCache)
-            restoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
-
+            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
+        
         toggleObserve(true);
-
+        
         // clean up
         return () => {
             toggleObserve(false);
         }
-
+        
     });
-
+    
     useLayoutEffect(() => {
-
+        
         if (!WatchElementRef.current || !MirrorDocumentRef.current) {
             return;
         }
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
-
+        
+        
         if (EditableElement) {
             // !!plaintext-only actually introduces unwanted behavior
             WatchedElement.contentEditable = 'true';
         }
-
+        
         const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
-
+        const updateSelectionStatusDebounced = _.debounce(() => {
+            DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
+        }, 500);
+        
         // bind Events
-        const KeyDownHandler = (ev: Event) => {
-            //Placeholder
+        const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
+            //placeholder
         }
-
-        const KeyUpHandler = (ev: Event) => {
-            console.log("key up")
-
+        
+        const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
+            
+            updateSelectionStatusDebounced();
             rollbackAndSyncDebounced();
+            
+            WatchedElement.focus();
         }
-
+        
         const PastHandler = (ev: ClipboardEvent) => {
-            console.log("paste")
+            
             // TODO: plain text are okay, but elements needed to be filter out. Also pasted text might all stuck in for example a strong tag.
+            console.log("paste")
+            updateSelectionStatusDebounced();
             rollbackAndSyncDebounced();
         }
-
+        
         const SelectionHandler = (ev: Event) => {
-            //Placeholder
+            
+            // DaemonState.SelectionStatusCache =
+            //     window.getSelection()!.rangeCount && ev.target === WatchedElement
+            //         ? GetSelectionStatus((WatchElementRef.current as Element))
+            //         : null;
+            
         }
-
+        
         WatchedElement.addEventListener("keydown", KeyDownHandler);
         WatchedElement.addEventListener("keyup", KeyUpHandler);
         WatchedElement.addEventListener("paste", PastHandler);
@@ -365,87 +451,16 @@ export default function useEditorHTMLDaemon(
             WatchedElement.removeEventListener("keyup", KeyUpHandler);
             WatchedElement.removeEventListener("paste", PastHandler);
             WatchedElement.removeEventListener("selectstart", SelectionHandler);
-
+            
         }
-
-
+        
     }, [WatchElementRef.current!])
 }
 
-function getNodeFromXPath(doc: Document, XPath: string) {
+function GetNodeFromXPath(doc: Document, XPath: string) {
     if (!doc) {
         console.error("getNodeFromXPath: Invalid Doc");
         return;
     }
     return doc.evaluate(XPath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE).singleNodeValue;
-}
-
-function getSelectionStatus(targetElement: Element): SelectionStatus | null {
-    const CurrentSelection = window.getSelection();
-
-    if (!CurrentSelection || !CurrentSelection.anchorNode || !CurrentSelection.focusNode) {
-        return null;
-    }
-    const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
-
-    const SelectedTextRange = CurrentSelection.getRangeAt(0);
-
-    const FullRange = document.createRange();
-    FullRange.setStart(targetElement, 0);
-    FullRange.setEnd(SelectedTextRange.startContainer, SelectedTextRange.startOffset);
-
-    const ContentUntilCaret = FullRange.toString();
-
-    const CaretPosition = ContentUntilCaret.length;
-
-    const LineContents = ContentUntilCaret.split('\n');
-
-    const CurrentLineNumber = LineContents.length - 1;
-
-    const CurrentLineContents = LineContents[CurrentLineNumber];
-
-    return {CaretPosition, SelectionExtent, CurrentLineContents, CurrentLineNumber};
-}
-
-function restoreSelectionStatus(SelectedElement: Element, SavedState: SelectionStatus) {
-
-    const CurrentSelection = window.getSelection();
-    if (!CurrentSelection) return;
-
-    // Type narrowing
-    if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
-        return;
-
-
-    // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
-    const Walker = document.createTreeWalker(
-        SelectedElement,
-        NodeFilter.SHOW_TEXT, // only interested in text nodes
-        null
-    );
-
-    let AnchorNode;
-    let CharsToCaretPosition = SavedState.CaretPosition;
-
-    // check all text nodes
-    while (AnchorNode = Walker.nextNode()) {
-
-        CharsToCaretPosition -= AnchorNode!.textContent!.length;
-        // the anchor AnchorNode found.
-        if (CharsToCaretPosition <= 0)
-            break;
-
-    }
-
-    // Type narrowing
-    if (!AnchorNode || !AnchorNode.textContent) return;
-
-    // reconstruct the old CurrentSelection range
-    const RangeCached = document.createRange();
-    RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
-    RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
-
-    // Replace the current CurrentSelection.
-    CurrentSelection.removeAllRanges();
-    CurrentSelection.addRange(RangeCached);
 }
