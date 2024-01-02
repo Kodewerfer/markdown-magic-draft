@@ -1,5 +1,5 @@
 import React, {createElement, Fragment, useEffect, useRef, useState} from "react";
-import {HTML2React, MD2HTML, HTML2MD} from "../Utils/Conversion";
+import {HTML2React, MD2HTML, HTML2MD, HTML2ReactSnyc} from "../Utils/Conversion";
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import {renderToString} from "react-dom/server";
@@ -32,7 +32,7 @@ export default function Editor() {
             const md2HTML = await MD2HTML(sourceMD);
             
             // Convert HTML to React
-            const convertToComponents = await HTML2EditorCompos(md2HTML);
+            const convertToComponents = HTML2EditorCompos(md2HTML);
             
             // Save a copy of HTML
             const HTMLParser = new DOMParser()
@@ -53,7 +53,7 @@ export default function Editor() {
     
     let ReloadEditorContent = async () => {
         if (!EditorHTMLSourceRef.current) return;
-        const NewComponents = await HTML2EditorCompos(EditorHTMLSourceRef.current?.documentElement.innerHTML);
+        const NewComponents = HTML2EditorCompos(EditorHTMLSourceRef.current?.documentElement.innerHTML);
         
         setEditorContent(NewComponents.result);
     }
@@ -79,11 +79,11 @@ const TextNodesMappingConfig = ['span', 'a', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 
         return acc;
     }, {});
 
-const HTML2EditorCompos = async (md2HTML: Compatible) => {
+const HTML2EditorCompos = (md2HTML: Compatible) => {
     const componentOptions = {
         ...TextNodesMappingConfig,
     }
-    return await HTML2React(md2HTML, componentOptions);
+    return HTML2ReactSnyc(md2HTML, componentOptions);
 }
 
 function SyntaxRenderer(props: any) {

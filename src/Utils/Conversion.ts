@@ -36,7 +36,7 @@ type ComponentOptions = {
 }
 
 export async function HTML2React(HTMLContent: Compatible, componentOptions?: ComponentOptions) {
-
+    
     return await unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
@@ -47,8 +47,20 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Com
         .process(HTMLContent);
 }
 
-export async function HTML2MD(CurrentContent: Compatible) {
+export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: ComponentOptions) {
+    
+    return unified()
+        .use(rehypeParse, {fragment: true})
+        .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
+        .use(rehypeReact, {
+            ...jsxElementConfig,
+            components: componentOptions
+        })
+        .processSync(HTMLContent);
+}
 
+export async function HTML2MD(CurrentContent: Compatible) {
+    
     return await unified()
         .use(rehypeParse)
         .use(remarkGfm)
@@ -56,5 +68,5 @@ export async function HTML2MD(CurrentContent: Compatible) {
         .use(rehypeRemark)
         .use(remarkStringify)
         .process(CurrentContent);
-
+    
 }
