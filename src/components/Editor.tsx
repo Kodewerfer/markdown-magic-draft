@@ -2,7 +2,6 @@ import React, {createElement, Fragment, useEffect, useRef, useState} from "react
 import {HTML2React, MD2HTML, HTML2MD, HTML2ReactSnyc} from "../Utils/Conversion";
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
-import {renderToString} from "react-dom/server";
 import "./Editor.css";
 
 const MarkdownFakeDate = `
@@ -20,10 +19,9 @@ export default function Editor() {
     
     const EditorHTMLSourceRef = useRef<Document | null>(null);
     
-    const [EditorContent, setEditorContent] = useState(createElement(Fragment));
-    
-    //Has to set the type for typescript
     const EditorCurrentRef = useRef<HTMLElement | null>(null)
+    
+    const [EditorHTMLString, setEditorHTMLString] = useState('');
     
     
     useEffect(() => {
@@ -31,31 +29,26 @@ export default function Editor() {
             // convert MD to HTML
             const md2HTML = await MD2HTML(sourceMD);
             
-            // Convert HTML to React
-            const convertToComponents = HTML2EditorCompos(md2HTML);
-            
             // Save a copy of HTML
             const HTMLParser = new DOMParser()
-            EditorHTMLSourceRef.current = HTMLParser.parseFromString(renderToString(convertToComponents.result), "text/html");
+            EditorHTMLSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
             
-            // Set render
-            setEditorContent(convertToComponents.result);
-            
+            setEditorHTMLString(String(md2HTML));
         })()
         
     }, [sourceMD])
     
     let ExtractMD = async () => {
-        const ConvertedMarkdown = await HTML2MD(renderToString(EditorContent));
+        const ConvertedMarkdown = await HTML2MD(EditorHTMLString);
         
         console.log(String(ConvertedMarkdown));
     }
     
     let ReloadEditorContent = async () => {
         if (!EditorHTMLSourceRef.current) return;
-        const NewComponents = HTML2EditorCompos(EditorHTMLSourceRef.current?.documentElement.innerHTML);
-        
-        setEditorContent(NewComponents.result);
+        const bodyElement: HTMLBodyElement | null = EditorHTMLSourceRef.current.documentElement.querySelector('body');
+        if (bodyElement)
+            setEditorHTMLString(String(bodyElement!.innerHTML))
     }
     
     useEditorHTMLDaemon(EditorCurrentRef, EditorHTMLSourceRef, ReloadEditorContent);
@@ -65,7 +58,7 @@ export default function Editor() {
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorCurrentRef}>
-                    {EditorContent}
+                    {HTML2EditorCompos(EditorHTMLString).result}
                 </main>
             </section>
         </>
