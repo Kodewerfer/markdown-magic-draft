@@ -16,6 +16,7 @@ type TDaemonState = {
     Observer: MutationObserver, //Mutation Observer instance
     MutationQueue: MutationRecord[], // All records will be pushed to here
     SelectionStatusCache: TSelectionStatus | null
+    RollbackHidden: HTMLElement[]
 }
 
 //Type of actions to perform on the mirror document
@@ -55,7 +56,8 @@ export default function useEditorHTMLDaemon(
         const state: TDaemonState = {
             Observer: null as any,
             MutationQueue: [],
-            SelectionStatusCache: null
+            SelectionStatusCache: null,
+            RollbackHidden: []
         }
         
         if (typeof MutationObserver) {
@@ -94,20 +96,15 @@ export default function useEditorHTMLDaemon(
         if (!DaemonState.MutationQueue.length) return;
         
         toggleObserve(false);
-        
         WatchElementRef.current!.contentEditable = 'false';
         
         // Rollback Changes
-        // TODO: there is an unfortunate "flash" between rolling back and parent re-rendering.
         let mutation: MutationRecord | void;
         let OperationLogs: TOperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
             
             // Text Changed
             if (mutation.oldValue !== null && mutation.type === "characterData") {
-                
-                // rollback
-                // mutation.target.textContent = mutation.oldValue;
                 
                 const Operation: TOperationLog = {
                     type: TOperationType.TEXT,
@@ -126,8 +123,11 @@ export default function useEditorHTMLDaemon(
                 
                 let removedNode = mutation.removedNodes[i] as HTMLElement;
                 
-                // if (removedNode.style)
-                //     removedNode.style.display = 'none';
+                if (removedNode.style) {
+                    console.log(removedNode.style.display);
+                    removedNode.style.display = 'none';
+                    DaemonState.RollbackHidden.push(removedNode);
+                }
                 
                 // rollback
                 mutation.target.insertBefore(
@@ -304,7 +304,7 @@ export default function useEditorHTMLDaemon(
         while ((operation = Operations.pop())) {
             const {type, node, nodeText, parentNode, siblingNode} = operation;
             // FIXME:
-            // console.log(operation);
+            console.log(operation);
             
             if (type === TOperationType.TEXT) {
                 UpdateMirrorDocument.Text((node as string), nodeText!);
@@ -389,6 +389,13 @@ export default function useEditorHTMLDaemon(
             WatchedElement.contentEditable = 'true';
         }
         
+        if (DaemonState.RollbackHidden.length) {
+            DaemonState.RollbackHidden.forEach(node => {
+                node.style.display = '';
+            })
+            DaemonState.RollbackHidden = [];
+        }
+        
         // FIXME
         WatchElementRef.current.focus();
         
@@ -413,20 +420,20 @@ export default function useEditorHTMLDaemon(
         const WatchedElement = WatchElementRef.current;
         
         
-        const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 250);
+        const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
         const updateSelectionStatusDebounced = _.debounce(() => {
             DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
-        }, 250);
+        }, 450);
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            updateSelectionStatusDebounced();
-            rollbackAndSyncDebounced();
+        
         }
         
         const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
-            
             WatchedElement.focus();
+            updateSelectionStatusDebounced();
+            rollbackAndSyncDebounced();
         }
         
         const PastHandler = (ev: ClipboardEvent) => {
