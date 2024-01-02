@@ -28,6 +28,17 @@ export async function MD2HTML(MarkdownContent: Compatible) {
         .process(MarkdownContent);
 }
 
+export function MD2HTMLSync(MarkdownContent: Compatible) {
+    return unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .use(remarkRehype)
+        .use(rehypeSanitize, SanitizSchema)
+        .use(MDSpecialLinks)
+        .use(rehypeStringify)
+        .processSync(MarkdownContent);
+}
+
 // @ts-expect-error: the react types are missing.
 const jsxElementConfig = {Fragment: reactJsxRuntime.Fragment, jsx: reactJsxRuntime.jsx, jsxs: reactJsxRuntime.jsxs}
 
