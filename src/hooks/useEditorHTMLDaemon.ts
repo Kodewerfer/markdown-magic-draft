@@ -39,6 +39,7 @@ type TOperationLog = {
 type TSelectionStatus = {
     CaretPosition: number,
     SelectionExtent: number,
+    AnchorNodeType: number,
     AnchorNodeXPath: string,
 }
 
@@ -116,6 +117,9 @@ export default function useEditorHTMLDaemon(
                 
                 if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
                     OperationLogs.push(Operation)
+                
+                // rollback
+                // mutation.target.textContent = mutation.oldValue;
             }
             
             // Nodes removed
@@ -124,7 +128,6 @@ export default function useEditorHTMLDaemon(
                 let removedNode = mutation.removedNodes[i] as HTMLElement;
                 
                 if (removedNode.style) {
-                    console.log(removedNode.style.display);
                     removedNode.style.display = 'none';
                     DaemonState.RollbackHidden.push(removedNode);
                 }
@@ -140,6 +143,10 @@ export default function useEditorHTMLDaemon(
                     node: GetXPathFromNode(mutation.removedNodes[i]),
                     parentNode: GetXPathFromNode(mutation.target)
                 })
+                
+                // Redo
+                // if (mutation.removedNodes[i].parentNode)
+                //     mutation.target.removeChild(mutation.removedNodes[i]);
             }
             
             // Nodes added
@@ -155,6 +162,12 @@ export default function useEditorHTMLDaemon(
                     parentNode: GetXPathFromNode(mutation.target),
                     siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                 })
+                
+                // redo
+                // mutation.target!.insertBefore(
+                //     mutation.addedNodes[i].cloneNode(true),
+                //     mutation.addedNodes[i].nextSibling,
+                // );
             }
         }
         
@@ -227,6 +240,7 @@ export default function useEditorHTMLDaemon(
             return null;
         }
         
+        
         const AnchorNodeXPath: string = GetXPathFromNode(CurrentSelection.anchorNode);
         
         const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
@@ -241,13 +255,18 @@ export default function useEditorHTMLDaemon(
         
         const CaretPosition = ContentUntilCaret.length;
         
-        return {CaretPosition, SelectionExtent, AnchorNodeXPath};
+        const AnchorNodeType = CurrentSelection.anchorNode.nodeType;
+        
+        return {CaretPosition, SelectionExtent, AnchorNodeType, AnchorNodeXPath,};
     }
     
     function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
         
         const CurrentSelection = window.getSelection();
         if (!CurrentSelection) return;
+        
+        // FIXME:
+        // console.log(SavedState)
         
         // Type narrowing
         if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
@@ -257,7 +276,7 @@ export default function useEditorHTMLDaemon(
         // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
         const Walker = document.createTreeWalker(
             SelectedElement,
-            NodeFilter.SHOW_TEXT, // only interested in text nodes
+            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
             null
         );
         
@@ -266,31 +285,47 @@ export default function useEditorHTMLDaemon(
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
             
-            CharsToCaretPosition -= AnchorNode!.textContent!.length;
+            if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
+                CharsToCaretPosition -= AnchorNode!.textContent.length;
+            }
             // the anchor AnchorNode found.
-            if (CharsToCaretPosition <= 0)
+            if (CharsToCaretPosition <= 0) {
+                
                 // after breaking a new line, the CharsToCaretPosition for the end of the last line
                 // and the beginning of the new line will still be the same,
                 // So needed to check XPath to make sure the caret moved to the correct text node
-                if (GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath)
+                if (AnchorNode.nodeType === SavedState.AnchorNodeType && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath) {
                     break;
+                }
+            }
+            
             
         }
         
         // Type narrowing
-        if (!AnchorNode || !AnchorNode.textContent) return;
+        if (!AnchorNode) return;
         
         // reconstruct the old CurrentSelection range
         const RangeCached = document.createRange();
         
         try {
-            RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
-            RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
+            RangeCached.setStart(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition);
+            RangeCached.setEnd(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition + SavedState.SelectionExtent);
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
             CurrentSelection.addRange(RangeCached);
+            
+            
         } catch (e) {
             console.error(e);
+            
+            RangeCached.setStart(AnchorNode, 0);
+            RangeCached.setEnd(AnchorNode, SavedState.SelectionExtent);
+            // Replace the current CurrentSelection.
+            CurrentSelection.removeAllRanges();
+            CurrentSelection.addRange(RangeCached);
+            
+            
         }
         
     }
@@ -303,8 +338,9 @@ export default function useEditorHTMLDaemon(
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeText, parentNode, siblingNode} = operation;
+            
             // FIXME:
-            console.log(operation);
+            // console.log(operation);
             
             if (type === TOperationType.TEXT) {
                 UpdateMirrorDocument.Text((node as string), nodeText!);
@@ -427,13 +463,13 @@ export default function useEditorHTMLDaemon(
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-        
+            updateSelectionStatusDebounced();
+            rollbackAndSyncDebounced();
         }
         
         const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
-            WatchedElement.focus();
-            updateSelectionStatusDebounced();
-            rollbackAndSyncDebounced();
+            // WatchedElement.focus();
+            
         }
         
         const PastHandler = (ev: ClipboardEvent) => {
@@ -449,7 +485,10 @@ export default function useEditorHTMLDaemon(
         }
         
         const SelectionHandler = (ev: Event) => {
-            // Placeholder
+            DaemonState.SelectionStatusCache =
+                window.getSelection()!.rangeCount && ev.target === WatchedElement
+                    ? GetSelectionStatus(WatchedElement)
+                    : null;
         }
         
         const DragStartHandler = (ev: HTMLElementEventMap['dragstart']) => {
