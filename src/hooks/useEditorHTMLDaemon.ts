@@ -95,6 +95,8 @@ export default function useEditorHTMLDaemon(
         
         toggleObserve(false);
         
+        WatchElementRef.current!.contentEditable = 'false';
+        
         // Rollback Changes
         // TODO: there is an unfortunate "flash" between rolling back and parent re-rendering.
         let mutation: MutationRecord | void;
@@ -122,9 +124,14 @@ export default function useEditorHTMLDaemon(
             // Nodes removed
             for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
                 
+                let removedNode = mutation.removedNodes[i] as HTMLElement;
+                
+                // if (removedNode.style)
+                //     removedNode.style.display = 'none';
+                
                 // rollback
                 mutation.target.insertBefore(
-                    mutation.removedNodes[i],
+                    removedNode,
                     mutation.nextSibling,
                 );
                 
@@ -234,12 +241,6 @@ export default function useEditorHTMLDaemon(
         
         const CaretPosition = ContentUntilCaret.length;
         
-        // const LineContents = ContentUntilCaret.split('\n');
-        //
-        // const CurrentLineNumber = LineContents.length - 1;
-        //
-        // const CurrentLineContents = LineContents[CurrentLineNumber];
-        
         return {CaretPosition, SelectionExtent, AnchorNodeXPath};
     }
     
@@ -281,12 +282,17 @@ export default function useEditorHTMLDaemon(
         
         // reconstruct the old CurrentSelection range
         const RangeCached = document.createRange();
-        RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
-        RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
         
-        // Replace the current CurrentSelection.
-        CurrentSelection.removeAllRanges();
-        CurrentSelection.addRange(RangeCached);
+        try {
+            RangeCached.setStart(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition);
+            RangeCached.setEnd(AnchorNode, AnchorNode.textContent.length + CharsToCaretPosition + SavedState.SelectionExtent);
+            // Replace the current CurrentSelection.
+            CurrentSelection.removeAllRanges();
+            CurrentSelection.addRange(RangeCached);
+        } catch (e) {
+            console.error(e);
+        }
+        
     }
     
     // Sync to the mirror document, middleman function
@@ -374,8 +380,14 @@ export default function useEditorHTMLDaemon(
         if (!WatchElementRef.current)
             return;
         
-        if (WatchElementRef.current.style.whiteSpace !== 'pre')
-            WatchElementRef.current.style.whiteSpace = 'pre-wrap'
+        const WatchedElement = WatchElementRef.current;
+        const contentEditableCached = WatchedElement.contentEditable;
+        
+        
+        if (EditableElement) {
+            // !!plaintext-only actually introduces unwanted behavior
+            WatchedElement.contentEditable = 'true';
+        }
         
         // FIXME
         WatchElementRef.current.focus();
@@ -387,6 +399,7 @@ export default function useEditorHTMLDaemon(
         
         // clean up
         return () => {
+            WatchedElement.contentEditable = contentEditableCached;
             toggleObserve(false);
         }
         
@@ -398,59 +411,57 @@ export default function useEditorHTMLDaemon(
             return;
         }
         const WatchedElement = WatchElementRef.current;
-        const contentEditableCached = WatchedElement.contentEditable;
         
         
-        if (EditableElement) {
-            // !!plaintext-only actually introduces unwanted behavior
-            WatchedElement.contentEditable = 'true';
-        }
-        
-        const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
+        const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 250);
         const updateSelectionStatusDebounced = _.debounce(() => {
             DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
-        }, 500);
+        }, 250);
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            //placeholder
+            updateSelectionStatusDebounced();
+            rollbackAndSyncDebounced();
         }
         
         const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
-            
-            updateSelectionStatusDebounced();
-            rollbackAndSyncDebounced();
             
             WatchedElement.focus();
         }
         
         const PastHandler = (ev: ClipboardEvent) => {
+            ev.preventDefault();
             
-            // TODO: plain text are okay, but elements needed to be filter out. Also pasted text might all stuck in for example a strong tag.
-            console.log("paste")
+            const text = ev.clipboardData!.getData('text/plain');
+            
+            // TODO: best to find a replacement for execCommand
+            document.execCommand('insertText', false, text);
+            
             updateSelectionStatusDebounced();
             rollbackAndSyncDebounced();
         }
         
         const SelectionHandler = (ev: Event) => {
-            
-            // DaemonState.SelectionStatusCache =
-            //     window.getSelection()!.rangeCount && ev.target === WatchedElement
-            //         ? GetSelectionStatus((WatchElementRef.current as Element))
-            //         : null;
-            
+            // Placeholder
+        }
+        
+        const DragStartHandler = (ev: HTMLElementEventMap['dragstart']) => {
+            // drag and drop text introduces too many potential problems
+            ev.preventDefault();
         }
         
         WatchedElement.addEventListener("keydown", KeyDownHandler);
         WatchedElement.addEventListener("keyup", KeyUpHandler);
         WatchedElement.addEventListener("paste", PastHandler);
         WatchedElement.addEventListener("selectstart", SelectionHandler);
+        WatchedElement.addEventListener("dragstart", DragStartHandler);
+        
         return () => {
-            WatchedElement.contentEditable = contentEditableCached;
             WatchedElement.removeEventListener("keydown", KeyDownHandler);
             WatchedElement.removeEventListener("keyup", KeyUpHandler);
             WatchedElement.removeEventListener("paste", PastHandler);
             WatchedElement.removeEventListener("selectstart", SelectionHandler);
+            WatchedElement.removeEventListener("dragstart", DragStartHandler);
             
         }
         
