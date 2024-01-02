@@ -413,8 +413,10 @@ export default function useEditorHTMLDaemon(
     
     useLayoutEffect(() => {
         
-        if (!WatchElementRef.current)
+        if (!WatchElementRef.current){
+            console.log("Invalid Watched Element");
             return;
+        }
         
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
