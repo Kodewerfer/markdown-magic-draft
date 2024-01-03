@@ -1,4 +1,4 @@
-import React, {createElement, Fragment, useEffect, useRef, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import {HTML2React, MD2HTML, HTML2MD, HTML2ReactSnyc} from "../Utils/Conversion";
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
@@ -58,7 +58,10 @@ export default function Editor() {
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorCurrentRef}>
-                    {HTML2EditorCompos(EditorHTMLString).result}
+                    {React.Children.map(HTML2EditorCompos(EditorHTMLString).result.props.children, (child, index) => {
+                        console.log(child);
+                        return (child);
+                    })}
                 </main>
             </section>
         </>
@@ -79,7 +82,7 @@ const HTML2EditorCompos = (md2HTML: Compatible) => {
     return HTML2ReactSnyc(md2HTML, componentOptions);
 }
 
-function SyntaxRenderer(props: any) {
+const SyntaxRenderer = React.memo((props: any) => {
     
     const {children, tagName, ...otherProps} = props;
     
@@ -88,7 +91,7 @@ function SyntaxRenderer(props: any) {
     }
     
     return React.createElement(tagName, otherProps, children);
-}
+});
 
 function SpecialLinkComponent(props: any) {
     const {children, tagName, ...otherProps} = props;
