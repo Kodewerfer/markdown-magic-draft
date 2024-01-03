@@ -42,11 +42,7 @@ export function MD2HTMLSync(MarkdownContent: Compatible) {
 // @ts-expect-error: the react types are missing.
 const jsxElementConfig = {Fragment: reactJsxRuntime.Fragment, jsx: reactJsxRuntime.jsx, jsxs: reactJsxRuntime.jsxs}
 
-type ComponentOptions = {
-    [tagName: string]: React.ComponentType<any> | (() => React.ComponentType<any>);
-}
-
-export async function HTML2React(HTMLContent: Compatible, componentOptions?: ComponentOptions) {
+export async function HTML2React(HTMLContent: Compatible, componentOptions?: Record<string, React.FunctionComponent<any>>) {
     
     return await unified()
         .use(rehypeParse, {fragment: true})
@@ -58,14 +54,22 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Com
         .process(HTMLContent);
 }
 
-export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: ComponentOptions) {
+export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Record<string, React.FunctionComponent<any>>) {
+    
+    const components: Record<string, React.FunctionComponent<any>> = {
+        ...componentOptions
+    };
+    
+    Object.keys(components).forEach(
+        key => (components[key] = React.memo(components[key]))
+    );
     
     return unified()
-        .use(rehypeParse, {fragment: true})
+        .use(rehypeParse, {fragment: false})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
         .use(rehypeReact, {
             ...jsxElementConfig,
-            components: componentOptions
+            components: components
         })
         .processSync(HTMLContent);
 }

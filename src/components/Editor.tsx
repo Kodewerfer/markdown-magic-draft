@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from "react";
-import {HTML2React, MD2HTML, HTML2MD, HTML2ReactSnyc} from "../Utils/Conversion";
+import {MD2HTML, HTML2MD, HTML2ReactSnyc} from "../Utils/Conversion";
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
@@ -21,7 +21,9 @@ export default function Editor() {
     
     const EditorCurrentRef = useRef<HTMLElement | null>(null)
     
-    const [EditorHTMLString, setEditorHTMLString] = useState('');
+    const EditorHTMLString = useRef('');
+    
+    const [EditorContentCompo, setEditorContentCompo] = useState(HTML2EditorCompos(EditorHTMLString.current))
     
     
     useEffect(() => {
@@ -32,14 +34,16 @@ export default function Editor() {
             // Save a copy of HTML
             const HTMLParser = new DOMParser()
             EditorHTMLSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
-            
-            setEditorHTMLString(String(md2HTML));
+            EditorHTMLString.current = String(md2HTML);
+            setEditorContentCompo((prev) => {
+                return HTML2EditorCompos(EditorHTMLString.current)
+            })
         })()
         
     }, [sourceMD])
     
     let ExtractMD = async () => {
-        const ConvertedMarkdown = await HTML2MD(EditorHTMLString);
+        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
         
         console.log(String(ConvertedMarkdown));
     }
@@ -48,7 +52,11 @@ export default function Editor() {
         if (!EditorHTMLSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorHTMLSourceRef.current.documentElement.querySelector('body');
         if (bodyElement)
-            setEditorHTMLString(String(bodyElement!.innerHTML))
+            EditorHTMLString.current = String(bodyElement!.innerHTML);
+        
+        setEditorContentCompo((prev) => {
+            return HTML2EditorCompos(EditorHTMLString.current)
+        })
     }
     
     useEditorHTMLDaemon(EditorCurrentRef, EditorHTMLSourceRef, ReloadEditorContent);
@@ -58,10 +66,7 @@ export default function Editor() {
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorCurrentRef}>
-                    {React.Children.map(HTML2EditorCompos(EditorHTMLString).result.props.children, (child, index) => {
-                        console.log(child);
-                        return (child);
-                    })}
+                    {EditorContentCompo}
                 </main>
             </section>
         </>
@@ -69,20 +74,21 @@ export default function Editor() {
 }
 
 // Map all possible text-containing tags to TextContainer component and therefore manage them.
-const TextNodesMappingConfig = ['span', 'a', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
+const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
     .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
         acc[tagName] = (props: any) => <SyntaxRenderer {...props} tagName={tagName}/>;
         return acc;
     }, {});
 
+
 const HTML2EditorCompos = (md2HTML: Compatible) => {
     const componentOptions = {
         ...TextNodesMappingConfig,
     }
-    return HTML2ReactSnyc(md2HTML, componentOptions);
+    return HTML2ReactSnyc(md2HTML, componentOptions).result;
 }
 
-const SyntaxRenderer = React.memo((props: any) => {
+const SyntaxRenderer = (props: any) => {
     
     const {children, tagName, ...otherProps} = props;
     
@@ -91,7 +97,7 @@ const SyntaxRenderer = React.memo((props: any) => {
     }
     
     return React.createElement(tagName, otherProps, children);
-});
+};
 
 function SpecialLinkComponent(props: any) {
     const {children, tagName, ...otherProps} = props;
