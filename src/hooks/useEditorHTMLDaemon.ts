@@ -294,6 +294,9 @@ export default function useEditorHTMLDaemon(
         
         let AnchorNode;
         let CharsToCaretPosition = SavedState.CaretPosition;
+        let NodeOverflowCount = 0;
+        const NodeOverflowBreak = 2;
+        const NodeOverflowBreakCharBreak = -5;
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
             
@@ -302,11 +305,15 @@ export default function useEditorHTMLDaemon(
             }
             // the anchor AnchorNode found.
             if (CharsToCaretPosition <= 0) {
-                
+                NodeOverflowCount += 1;
                 // after breaking a new line, the CharsToCaretPosition for the end of the last line
                 // and the beginning of the new line will still be the same,
                 // So needed to check XPath to make sure the caret moved to the correct text node
                 if (AnchorNode.nodeType === SavedState.AnchorNodeType && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath) {
+                    break;
+                }
+                
+                if (CharsToCaretPosition <= NodeOverflowBreakCharBreak || NodeOverflowCount >= NodeOverflowBreak) {
                     break;
                 }
             }
