@@ -89,7 +89,6 @@ export default function useEditorHTMLDaemon(
     
     // Flush all changes in the MutationQueue
     const rollbackAndSync = () => {
-        
         // OB's callback is asynchronous
         // make sure no records are left behind
         DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords());
@@ -103,7 +102,6 @@ export default function useEditorHTMLDaemon(
         let mutation: MutationRecord | void;
         let OperationLogs: TOperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
-            
             // Text Changed
             if (mutation.oldValue !== null && mutation.type === "characterData") {
                 
@@ -116,25 +114,20 @@ export default function useEditorHTMLDaemon(
                 const latestOperationLog = OperationLogs[OperationLogs.length - 1];
                 
                 if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
-                    OperationLogs.push(Operation)
+                    OperationLogs.push(Operation);
                 
                 // rollback
                 // mutation.target.textContent = mutation.oldValue;
             }
-            
             // Nodes removed
             for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
                 
                 let removedNode = mutation.removedNodes[i] as HTMLElement;
                 
-                // if (removedNode.hasAttribute('no-roll-back'))
-                //     continue;
-                
                 if (removedNode.style) {
                     removedNode.style.display = 'none';
                     DaemonState.RollbackHidden.push(removedNode);
                 }
-                
                 // rollback
                 mutation.target.insertBefore(
                     removedNode,
@@ -145,26 +138,30 @@ export default function useEditorHTMLDaemon(
                     type: TOperationType.REMOVE,
                     node: GetXPathFromNode(mutation.removedNodes[i]),
                     parentNode: GetXPathFromNode(mutation.target)
-                })
+                });
                 
                 // Redo
                 // To acquire the correct xpath, the node must be added to the original tree first.
-                if (removedNode.hasAttribute('no-roll-back')) {
+                if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('no-roll-back')) {
                     mutation.target.removeChild(mutation.removedNodes[i]);
-                    
                 }
             }
-            
             // Nodes added
             for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
-                
                 // rollback
                 const addedNode: Node = mutation.addedNodes[i];
-                if (addedNode.parentNode
-                    && !(addedNode as HTMLElement).hasAttribute('no-roll-back')
-                    && !(addedNode.parentNode as HTMLElement).hasAttribute('no-roll-back')) {
+                
+                if (addedNode.parentNode) {
                     
-                    mutation.target.removeChild(addedNode);
+                    try {
+                        if (!(addedNode as HTMLElement).hasAttribute('no-roll-back')
+                            && !(addedNode.parentNode as HTMLElement).hasAttribute('no-roll-back')) {
+                            mutation.target.removeChild(addedNode);
+                        }
+                    } catch (e) {
+                        // addedNode is likely a text node.
+                        mutation.target.removeChild(addedNode);
+                    }
                 }
                 
                 OperationLogs.push({
@@ -172,19 +169,17 @@ export default function useEditorHTMLDaemon(
                     node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
                     parentNode: GetXPathFromNode(mutation.target),
                     siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
-                })
-                
+                });
                 // redo
                 // mutation.target!.insertBefore(
                 //     mutation.addedNodes[i].cloneNode(true),
                 //     mutation.nextSibling
                 // );
-                
             }
+            
         }
         
         syncToMirror(OperationLogs);
-        
         // Notify parent
         FinalizeChanges();
     }
@@ -243,110 +238,6 @@ export default function useEditorHTMLDaemon(
         }
         
         return '';
-    }
-    
-    function GetSelectionStatus(targetElement: Element): TSelectionStatus | null {
-        const CurrentSelection = window.getSelection();
-        
-        if (!CurrentSelection || !CurrentSelection.anchorNode) {
-            return null;
-        }
-        
-        
-        const AnchorNodeXPath: string = GetXPathFromNode(CurrentSelection.anchorNode);
-        
-        const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
-        
-        const SelectedTextRange = CurrentSelection.getRangeAt(0);
-        
-        const FullRange = document.createRange();
-        FullRange.setStart(targetElement, 0);
-        FullRange.setEnd(SelectedTextRange.startContainer, SelectedTextRange.startOffset);
-        
-        const ContentUntilCaret = FullRange.toString();
-        
-        const CaretPosition = ContentUntilCaret.length;
-        
-        const AnchorNodeType = CurrentSelection.anchorNode.nodeType;
-        
-        return {CaretPosition, SelectionExtent, AnchorNodeType, AnchorNodeXPath,};
-    }
-    
-    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
-        
-        const CurrentSelection = window.getSelection();
-        if (!CurrentSelection) return;
-        
-        // FIXME:
-        // console.log(SavedState)
-        
-        // Type narrowing
-        if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
-            return;
-        
-        
-        // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
-        const Walker = document.createTreeWalker(
-            SelectedElement,
-            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
-            null
-        );
-        
-        let AnchorNode;
-        let CharsToCaretPosition = SavedState.CaretPosition;
-        let NodeOverflowCount = 0;
-        const NodeOverflowBreak = 2;
-        const NodeOverflowBreakCharBreak = -5;
-        // check all text nodes
-        while (AnchorNode = Walker.nextNode()) {
-            
-            if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
-                CharsToCaretPosition -= AnchorNode!.textContent.length;
-            }
-            // the anchor AnchorNode found.
-            if (CharsToCaretPosition <= 0) {
-                NodeOverflowCount += 1;
-                // after breaking a new line, the CharsToCaretPosition for the end of the last line
-                // and the beginning of the new line will still be the same,
-                // So needed to check XPath to make sure the caret moved to the correct text node
-                if (AnchorNode.nodeType === SavedState.AnchorNodeType && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath) {
-                    break;
-                }
-                
-                if (CharsToCaretPosition <= NodeOverflowBreakCharBreak || NodeOverflowCount >= NodeOverflowBreak) {
-                    break;
-                }
-            }
-            
-            
-        }
-        
-        // Type narrowing
-        if (!AnchorNode) return;
-        
-        // reconstruct the old CurrentSelection range
-        const RangeCached = document.createRange();
-        
-        try {
-            RangeCached.setStart(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition);
-            RangeCached.setEnd(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition + SavedState.SelectionExtent);
-            // Replace the current CurrentSelection.
-            CurrentSelection.removeAllRanges();
-            CurrentSelection.addRange(RangeCached);
-            
-            
-        } catch (e) {
-            console.error(e);
-            
-            RangeCached.setStart(AnchorNode, 0);
-            RangeCached.setEnd(AnchorNode, SavedState.SelectionExtent);
-            // Replace the current CurrentSelection.
-            CurrentSelection.removeAllRanges();
-            CurrentSelection.addRange(RangeCached);
-            
-            
-        }
-        
     }
     
     // Sync to the mirror document, middleman function
@@ -430,6 +321,107 @@ export default function useEditorHTMLDaemon(
             
             parentNode.insertBefore(targetNode, SiblingNode);
         }
+    }
+    
+    function GetSelectionStatus(targetElement: Element): TSelectionStatus | null {
+        const CurrentSelection = window.getSelection();
+        
+        if (!CurrentSelection || !CurrentSelection.anchorNode) {
+            return null;
+        }
+        
+        
+        const AnchorNodeXPath: string = GetXPathFromNode(CurrentSelection.anchorNode);
+        
+        const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
+        
+        const SelectedTextRange = CurrentSelection.getRangeAt(0);
+        
+        const FullRange = document.createRange();
+        FullRange.setStart(targetElement, 0);
+        FullRange.setEnd(SelectedTextRange.startContainer, SelectedTextRange.startOffset);
+        
+        const ContentUntilCaret = FullRange.toString();
+        
+        const CaretPosition = ContentUntilCaret.length;
+        
+        const AnchorNodeType = CurrentSelection.anchorNode.nodeType;
+        
+        return {CaretPosition, SelectionExtent, AnchorNodeType, AnchorNodeXPath,};
+    }
+    
+    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
+        
+        const CurrentSelection = window.getSelection();
+        if (!CurrentSelection) return;
+        
+        // FIXME:
+        // console.log(SavedState)
+        
+        // Type narrowing
+        if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
+            return;
+        
+        
+        // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
+        const Walker = document.createTreeWalker(
+            SelectedElement,
+            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+            null
+        );
+        
+        let AnchorNode;
+        let CharsToCaretPosition = SavedState.CaretPosition;
+        const NodeOverflowBreakCharBreak = -5;
+        // check all text nodes
+        while (AnchorNode = Walker.nextNode()) {
+            
+            if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
+                CharsToCaretPosition -= AnchorNode!.textContent.length;
+            }
+            // the anchor AnchorNode found.
+            if (CharsToCaretPosition <= 0) {
+                // after breaking a new line, the CharsToCaretPosition for the end of the last line
+                // and the beginning of the new line will still be the same,
+                // So needed to check XPath to make sure the caret moved to the correct text node
+                if (AnchorNode.nodeType === SavedState.AnchorNodeType && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath) {
+                    break;
+                }
+                
+                if (CharsToCaretPosition <= NodeOverflowBreakCharBreak) {
+                    break;
+                }
+            }
+            
+            
+        }
+        
+        // Type narrowing
+        if (!AnchorNode) return;
+        
+        // reconstruct the old CurrentSelection range
+        const RangeCached = document.createRange();
+        
+        try {
+            RangeCached.setStart(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition);
+            RangeCached.setEnd(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition + SavedState.SelectionExtent);
+            // Replace the current CurrentSelection.
+            CurrentSelection.removeAllRanges();
+            CurrentSelection.addRange(RangeCached);
+            
+            
+        } catch (e) {
+            console.error(e);
+            
+            RangeCached.setStart(AnchorNode, 0);
+            RangeCached.setEnd(AnchorNode, SavedState.SelectionExtent);
+            // Replace the current CurrentSelection.
+            CurrentSelection.removeAllRanges();
+            CurrentSelection.addRange(RangeCached);
+            
+            
+        }
+        
     }
     
     useLayoutEffect(() => {
