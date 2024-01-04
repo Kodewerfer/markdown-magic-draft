@@ -96,10 +96,39 @@ const SyntaxRenderer = (props: any) => {
         return <SpecialLinkComponent {...props}/>
     }
     
+    if (tagName === 'strong')
+        return <TestCompo {...props}/>
+    
     return React.createElement(tagName, otherProps, children);
 };
 
 function SpecialLinkComponent(props: any) {
     const {children, tagName, ...otherProps} = props;
     return React.createElement(tagName, otherProps, children);
+}
+
+function TestCompo(props: any) {
+    const {children, tagName, ...otherProps} = props;
+    const [EditSyntax, setEditSyntax] = useState(false);
+    const ElementRef = useRef<HTMLElement | null>(null);
+    
+    useEffect(() => {
+        if (ElementRef.current) {
+            
+            const onClick = (ev: MouseEvent) => {
+                console.log('click');
+                setEditSyntax(true);
+            }
+            
+            ElementRef.current.addEventListener('click', onClick);
+            
+            return () => {
+                ElementRef.current?.removeEventListener('click', onClick);
+            }
+        }
+    });
+    
+    return EditSyntax
+        ? <span no-roll-back={"true"}>{children}</span>
+        : React.createElement(tagName, {...otherProps, ref: ElementRef, 'no-roll-back': 'true'}, children)
 }

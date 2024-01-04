@@ -127,6 +127,9 @@ export default function useEditorHTMLDaemon(
                 
                 let removedNode = mutation.removedNodes[i] as HTMLElement;
                 
+                // if (removedNode.hasAttribute('no-roll-back'))
+                //     continue;
+                
                 if (removedNode.style) {
                     removedNode.style.display = 'none';
                     DaemonState.RollbackHidden.push(removedNode);
@@ -145,20 +148,28 @@ export default function useEditorHTMLDaemon(
                 })
                 
                 // Redo
-                // if (mutation.removedNodes[i].parentNode)
-                //     mutation.target.removeChild(mutation.removedNodes[i]);
+                // To acquire the correct xpath, the node must be added to the original tree first.
+                if (removedNode.hasAttribute('no-roll-back')) {
+                    mutation.target.removeChild(mutation.removedNodes[i]);
+                    
+                }
             }
             
             // Nodes added
             for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
                 
                 // rollback
-                if (mutation.addedNodes[i].parentNode)
-                    mutation.target.removeChild(mutation.addedNodes[i]);
+                const addedNode: Node = mutation.addedNodes[i];
+                if (addedNode.parentNode
+                    && !(addedNode as HTMLElement).hasAttribute('no-roll-back')
+                    && !(addedNode.parentNode as HTMLElement).hasAttribute('no-roll-back')) {
+                    
+                    mutation.target.removeChild(addedNode);
+                }
                 
                 OperationLogs.push({
                     type: TOperationType.ADD,
-                    node: mutation.addedNodes[i].cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
+                    node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
                     parentNode: GetXPathFromNode(mutation.target),
                     siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                 })
@@ -166,8 +177,9 @@ export default function useEditorHTMLDaemon(
                 // redo
                 // mutation.target!.insertBefore(
                 //     mutation.addedNodes[i].cloneNode(true),
-                //     mutation.addedNodes[i].nextSibling,
+                //     mutation.nextSibling
                 // );
+                
             }
         }
         
@@ -340,7 +352,7 @@ export default function useEditorHTMLDaemon(
             const {type, node, nodeText, parentNode, siblingNode} = operation;
             
             // FIXME:
-            // console.log(operation);
+            console.log(operation);
             
             if (type === TOperationType.TEXT) {
                 UpdateMirrorDocument.Text((node as string), nodeText!);
@@ -354,6 +366,8 @@ export default function useEditorHTMLDaemon(
             
         }
         
+        // FIXME
+        console.log("Sync Complete")
     }
     
     // TODO: performance
@@ -413,7 +427,7 @@ export default function useEditorHTMLDaemon(
     
     useLayoutEffect(() => {
         
-        if (!WatchElementRef.current){
+        if (!WatchElementRef.current) {
             console.log("Invalid Watched Element");
             return;
         }
