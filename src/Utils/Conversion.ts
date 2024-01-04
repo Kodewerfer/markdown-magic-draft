@@ -56,20 +56,12 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Rec
 
 export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Record<string, React.FunctionComponent<any>>) {
     
-    const components: Record<string, React.FunctionComponent<any>> = {
-        ...componentOptions
-    };
-    
-    Object.keys(components).forEach(
-        key => (components[key] = React.memo(components[key]))
-    );
-    
     return unified()
         .use(rehypeParse, {fragment: false})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
         .use(rehypeReact, {
             ...jsxElementConfig,
-            components: components
+            components: componentOptions
         })
         .processSync(HTMLContent);
 }
