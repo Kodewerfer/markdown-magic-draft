@@ -135,14 +135,11 @@ function TestCompo(props: any) {
     
     useEffect(() => {
         
-        // if (isEditSyntax)
-        //     ElementRef.current?.focus();
-        
-        const onRenderTagClick = (ev: any) => {
+        const onClick = (ev: any) => {
             ElementRef.current?.focus();
         }
         
-        const Focusin = () => {
+        const onFocusIn = () => {
             if (!isEditSyntax) {
                 daemonHandle.toggleObserve(false);
                 setIsEditSyntax(true);
@@ -157,29 +154,44 @@ function TestCompo(props: any) {
             isClickInside.current = false;
         };
         
+        const onKeyDown = (ev: KeyboardEvent) => {
+            // check if a left or right arrow key has been pressed
+            if (ev.key === 'Enter') {
+                ev.preventDefault();
+                ev.stopPropagation();
+            }
+        };
+        
         const onTextBlur = (ev: HTMLElementEventMap['focusout']) => {
-            if (isClickInside.current || isCaretMovedInside.current) {
+            if (isClickInside.current) {
                 return;
             }
+            
+            if (isEditSyntax) {
+                daemonHandle.toggleObserve(false);
+                setIsEditSyntax(false);
+            }
+            
             console.log("AAAAAAA");
         }
         
-        
-        ElementRef.current?.addEventListener('click', onRenderTagClick);
+        ElementRef.current?.addEventListener('click', onClick);
         
         ElementRef.current?.addEventListener('mousedown', onMouseDown);
         ElementRef.current?.addEventListener('mouseup', onMouseUp);
+        ElementRef.current?.addEventListener('keydown', onKeyDown, {capture: true});
         
-        ElementRef.current?.addEventListener('focusin', Focusin);
+        ElementRef.current?.addEventListener('focusin', onFocusIn);
         ElementRef.current?.addEventListener('focusout', onTextBlur);
         
         return () => {
-            ElementRef.current?.removeEventListener('click', onRenderTagClick);
+            ElementRef.current?.removeEventListener('click', onClick);
             
             ElementRef.current?.removeEventListener('mousedown', onMouseDown);
             ElementRef.current?.removeEventListener('mouseup', onMouseUp);
+            ElementRef.current?.removeEventListener('keydown', onKeyDown, {capture: true});
             
-            ElementRef.current?.removeEventListener('focusin', Focusin);
+            ElementRef.current?.removeEventListener('focusin', onFocusIn);
             ElementRef.current?.removeEventListener('focusout', onTextBlur);
             
         }
