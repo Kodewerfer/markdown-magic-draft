@@ -44,7 +44,7 @@ type TSelectionStatus = {
 }
 
 type THookOptions = {
-    TextNodeCallback?: () => Node[],
+    TextNodeCallback?: (textNode: Node) => Node[] | Node | null | undefined,
     EditableElement: boolean,
     ShouldFocus: boolean
 }
@@ -53,12 +53,15 @@ export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
     MirrorDocumentRef: { current: Document | undefined | null },
     FinalizeChanges: Function,
-    Options: THookOptions = {
+    Options: Partial<THookOptions>
+) {
+    
+    Options = {
         TextNodeCallback: undefined,
         EditableElement: true,
-        ShouldFocus: true
-    },
-) {
+        ShouldFocus: true,
+        ...Options
+    };
     
     // Persistent Variables
     // Easier to set up type and to init using state, but really acts as a ref.
@@ -80,11 +83,14 @@ export default function useEditorHTMLDaemon(
         return state;
     })[0];
     
+    
     const toggleObserve = (bObserver: boolean) => {
         
-        if (!bObserver)
-            return DaemonState.Observer.disconnect();
-        
+        if (!bObserver) {
+            DaemonState.Observer.disconnect();
+            DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords());
+            return;
+        }
         
         if (!WatchElementRef.current)
             return;
@@ -99,10 +105,9 @@ export default function useEditorHTMLDaemon(
     
     // Flush all changes in the MutationQueue
     const rollbackAndSync = () => {
+        DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords())
         // OB's callback is asynchronous
         // make sure no records are left behind
-        DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords());
-        
         if (!DaemonState.MutationQueue.length) return;
         
         toggleObserve(false);
@@ -122,7 +127,7 @@ export default function useEditorHTMLDaemon(
                 if (parentNode)
                     ParentXPath = GetXPathFromNode(parentNode)
                 
-                if (parentNode && typeof parentNode.hasAttribute === "function" && parentNode.hasAttribute('to-be-replaced')) {
+                if (parentNode && typeof parentNode.hasAttribute === "function" && parentNode.hasAttribute('data-to-be-replaced')) {
                     // TODO: run text node callback and get the output nodes
                     // TODO: replace the parent
                     // TODO: check and change if last log depends on the parent
@@ -164,7 +169,7 @@ export default function useEditorHTMLDaemon(
                 
                 // Redo
                 // To acquire the correct xpath, the node must be added to the original tree first.
-                if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('no-roll-back')) {
+                if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('data-no-roll-back')) {
                     mutation.target.removeChild(mutation.removedNodes[i]);
                 }
             }
@@ -176,8 +181,8 @@ export default function useEditorHTMLDaemon(
                 if (addedNode.parentNode) {
                     
                     try {
-                        if (!(addedNode as HTMLElement).hasAttribute('no-roll-back')
-                            && !(addedNode.parentNode as HTMLElement).hasAttribute('no-roll-back')) {
+                        if (!(addedNode as HTMLElement).hasAttribute('data-no-roll-back')
+                            && !(addedNode.parentNode as HTMLElement).hasAttribute('data-no-roll-back')) {
                             mutation.target.removeChild(addedNode);
                         }
                     } catch (e) {
@@ -488,11 +493,10 @@ export default function useEditorHTMLDaemon(
         }
         const WatchedElement = WatchElementRef.current;
         
-        if (WatchedElement.style.whiteSpace !== 'pre')
-            WatchedElement.style.whiteSpace = 'pre-wrap'
-        
         const whiteSpaceCached: string = WatchedElement.style.whiteSpace;
         
+        if (WatchedElement.style.whiteSpace !== 'pre')
+            WatchedElement.style.whiteSpace = 'pre-wrap'
         
         const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
         const updateSelectionStatusDebounced = _.debounce(() => {
@@ -550,6 +554,11 @@ export default function useEditorHTMLDaemon(
         }
         
     }, [WatchElementRef.current!])
+    
+    return {
+        toggleObserve,
+        'ManuelSync': rollbackAndSync
+    }
 }
 
 function GetNodeFromXPath(doc: Document, XPath: string) {
