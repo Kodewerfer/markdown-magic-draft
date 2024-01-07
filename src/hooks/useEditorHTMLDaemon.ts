@@ -43,11 +43,21 @@ type TSelectionStatus = {
     AnchorNodeXPath: string,
 }
 
+type THookOptions = {
+    TextNodeCallback?: () => Node[],
+    EditableElement: boolean,
+    ShouldFocus: boolean
+}
+
 export default function useEditorHTMLDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
     MirrorDocumentRef: { current: Document | undefined | null },
     FinalizeChanges: Function,
-    EditableElement = true
+    Options: THookOptions = {
+        TextNodeCallback: undefined,
+        EditableElement: true,
+        ShouldFocus: true
+    },
 ) {
     
     // Persistent Variables
@@ -105,13 +115,25 @@ export default function useEditorHTMLDaemon(
             // Text Changed
             if (mutation.oldValue !== null && mutation.type === "characterData") {
                 
+                const parentNode = mutation.target.parentNode as HTMLElement;
+                let ParentXPath = '';
+                const latestOperationLog = OperationLogs[OperationLogs.length - 1];
+                
+                if (parentNode)
+                    ParentXPath = GetXPathFromNode(parentNode)
+                
+                if (parentNode && typeof parentNode.hasAttribute === "function" && parentNode.hasAttribute('to-be-replaced')) {
+                    // TODO: run text node callback and get the output nodes
+                    // TODO: replace the parent
+                    // TODO: check and change if last log depends on the parent
+                    continue;
+                }
+                
                 const Operation: TOperationLog = {
                     type: TOperationType.TEXT,
                     node: GetXPathFromNode(mutation.target),
                     nodeText: mutation.target.textContent
                 }
-                
-                const latestOperationLog = OperationLogs[OperationLogs.length - 1];
                 
                 if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
                     OperationLogs.push(Operation);
@@ -263,9 +285,6 @@ export default function useEditorHTMLDaemon(
             }
             
         }
-        
-        // FIXME
-        console.log("Sync Complete")
     }
     
     // TODO: performance
@@ -434,8 +453,7 @@ export default function useEditorHTMLDaemon(
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
         
-        
-        if (EditableElement) {
+        if (Options?.EditableElement) {
             // !!plaintext-only actually introduces unwanted behavior
             WatchedElement.contentEditable = 'true';
         }
@@ -447,8 +465,8 @@ export default function useEditorHTMLDaemon(
             DaemonState.RollbackHidden = [];
         }
         
-        // FIXME
-        WatchElementRef.current.focus();
+        if (Options.ShouldFocus)
+            WatchElementRef.current.focus();
         
         if (DaemonState.SelectionStatusCache)
             RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
@@ -458,9 +476,9 @@ export default function useEditorHTMLDaemon(
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
+            
             toggleObserve(false);
         }
-        
     });
     
     useLayoutEffect(() => {
@@ -470,6 +488,11 @@ export default function useEditorHTMLDaemon(
         }
         const WatchedElement = WatchElementRef.current;
         
+        if (WatchedElement.style.whiteSpace !== 'pre')
+            WatchedElement.style.whiteSpace = 'pre-wrap'
+        
+        const whiteSpaceCached: string = WatchedElement.style.whiteSpace;
+        
         
         const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
         const updateSelectionStatusDebounced = _.debounce(() => {
@@ -478,13 +501,13 @@ export default function useEditorHTMLDaemon(
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            updateSelectionStatusDebounced();
-            rollbackAndSyncDebounced();
+            // placeholder
         }
         
         const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
-            // WatchedElement.focus();
-            
+            updateSelectionStatusDebounced();
+            rollbackAndSyncDebounced();
+            WatchedElement.focus();
         }
         
         const PastHandler = (ev: ClipboardEvent) => {
@@ -518,12 +541,12 @@ export default function useEditorHTMLDaemon(
         WatchedElement.addEventListener("dragstart", DragStartHandler);
         
         return () => {
+            WatchedElement.style.whiteSpace = whiteSpaceCached;
             WatchedElement.removeEventListener("keydown", KeyDownHandler);
             WatchedElement.removeEventListener("keyup", KeyUpHandler);
             WatchedElement.removeEventListener("paste", PastHandler);
             WatchedElement.removeEventListener("selectstart", SelectionHandler);
             WatchedElement.removeEventListener("dragstart", DragStartHandler);
-            
         }
         
     }, [WatchElementRef.current!])
