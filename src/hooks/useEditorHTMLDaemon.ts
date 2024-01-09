@@ -77,6 +77,8 @@ export default function useEditorHTMLDaemon(
         if (typeof MutationObserver) {
             state.Observer = new MutationObserver((mutationList: MutationRecord[]) => {
                 state.MutationQueue.push(...mutationList);
+                // FIXME
+                console.log(...mutationList)
             });
         }
         

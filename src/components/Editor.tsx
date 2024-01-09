@@ -3,6 +3,8 @@ import {MD2HTML, HTML2MD, HTML2ReactSnyc, MD2HTMLSync} from "../Utils/Conversion
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
+import {computed, effect, signal} from "@preact/signals-react";
+import {useSignals} from "@preact/signals-react/runtime";
 
 const MarkdownFakeDate = `
  # Welcome to @[aaa] Editor! @[bbb]
@@ -13,18 +15,15 @@ const MarkdownFakeDate = `
  
  Test with no sibling
 `
+
+const ActiveElementSignal = signal<HTMLElement | null>(null);
 export default function Editor() {
-    
+    // useSignals();
     const [sourceMD, setSourceMD] = useState(MarkdownFakeDate);
-    
     const EditorHTMLSourceRef = useRef<Document | null>(null);
-    
-    const EditorCurrentRef = useRef<HTMLElement | null>(null)
-    
+    const EditorCurrentRef = useRef<HTMLElement | null>(null);
     const EditorHTMLString = useRef('');
-    
-    const [EditorContentCompo, setEditorContentCompo] = useState<React.ReactNode>(null)
-    
+    const [EditorContentCompo, setEditorContentCompo] = useState<React.ReactNode>(null);
     const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorHTMLSourceRef, ReloadEditorContent, {TextNodeCallback: TextNodeHandler});
     
     let ExtractMD = async () => {
@@ -41,7 +40,7 @@ export default function Editor() {
         
         setEditorContentCompo((prev) => {
             return HTML2EditorCompos(EditorHTMLString.current)
-        })
+        });
     }
     
     function TextNodeHandler(textNode: Node) {
@@ -56,7 +55,7 @@ export default function Editor() {
     // Map all possible text-containing tags to TextContainer component and therefore manage them.
     const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
         .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
-            acc[tagName] = (props: any) => <SyntaxRenderer {...props} daemonHandle={DaemonHandle} tagName={tagName}/>;
+            acc[tagName] = (props: any) => <SyntaxRenderer {...props} DaemonHandle={DaemonHandle} tagName={tagName}/>;
             return acc;
         }, {});
     
@@ -84,6 +83,19 @@ export default function Editor() {
         
     }, [sourceMD])
     
+    useLayoutEffect(() => {
+        const EditableClick = (ev: HTMLElementEventMap['click']) => {
+            ActiveElementSignal.value = (ev.target as HTMLElement);
+        };
+        
+        EditorCurrentRef.current?.addEventListener('click', EditableClick);
+        
+        return () => {
+            EditorCurrentRef.current?.removeEventListener('click', EditableClick);
+        }
+        
+    }, [EditorCurrentRef.current!])
+    
     return (
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
@@ -101,11 +113,10 @@ const Paragraph = (props: any) => {
     return (
         <p {...otherProps}>{children}</p>
     )
-}
+};
 
 const SyntaxRenderer = (props: any) => {
-    
-    const {children, tagName, daemonHandle, ...otherProps} = props;
+    const {children, tagName, DaemonHandle, ...otherProps} = props;
     
     if (otherProps['data-link-to']) {
         return <SpecialLinkComponent {...props}/>
@@ -118,96 +129,31 @@ const SyntaxRenderer = (props: any) => {
 };
 
 function SpecialLinkComponent(props: any) {
-    const {children, tagName, daemonHandle, ...otherProps} = props;
+    const {children, tagName, DaemonHandle, ...otherProps} = props;
     return React.createElement(tagName, otherProps, children);
 }
 
 function TestCompo(props: any) {
-    const {children, tagName, daemonHandle, ...otherProps} = props;
-    const [isEditSyntax, setIsEditSyntax] = useState(false);
+    useSignals(); // turn the component to signal reactive
+    const {children, tagName, DaemonHandle, ...otherProps} = props;
     const ElementRef = useRef<HTMLElement | null>(null);
-    const isClickInside = useRef(false);
-    const isCaretMovedInside = useRef(false);
     
-    useEffect(() => {
-        daemonHandle.toggleObserve(true);
-    }, [isEditSyntax]);
+    const IsEditingSignal = computed(() => {
+        return (ElementRef.current !== null
+            && ActiveElementSignal.value !== null
+            && ActiveElementSignal.value === ElementRef.current);
+    })
     
-    useEffect(() => {
-        
-        const onClick = (ev: any) => {
-            ElementRef.current?.focus();
+    const RenderedContent = computed(() => {
+        if (IsEditingSignal.value && typeof children === 'string') {
+            return `***${children}***`;
         }
         
-        const onFocusIn = () => {
-            if (!isEditSyntax) {
-                daemonHandle.toggleObserve(false);
-                setIsEditSyntax(true);
-            }
-        }
-        
-        const onMouseDown = () => {
-            isClickInside.current = true;
-        };
-        
-        const onMouseUp = () => {
-            isClickInside.current = false;
-        };
-        
-        const onKeyDown = (ev: KeyboardEvent) => {
-            // check if a left or right arrow key has been pressed
-            if (ev.key === 'Enter') {
-                ev.preventDefault();
-                ev.stopPropagation();
-            }
-        };
-        
-        const onTextBlur = (ev: HTMLElementEventMap['focusout']) => {
-            if (isClickInside.current) {
-                return;
-            }
-            
-            if (isEditSyntax) {
-                daemonHandle.toggleObserve(false);
-                setIsEditSyntax(false);
-            }
-            
-            console.log("AAAAAAA");
-        }
-        
-        ElementRef.current?.addEventListener('click', onClick);
-        
-        ElementRef.current?.addEventListener('mousedown', onMouseDown);
-        ElementRef.current?.addEventListener('mouseup', onMouseUp);
-        ElementRef.current?.addEventListener('keydown', onKeyDown, {capture: true});
-        
-        ElementRef.current?.addEventListener('focusin', onFocusIn);
-        ElementRef.current?.addEventListener('focusout', onTextBlur);
-        
-        return () => {
-            ElementRef.current?.removeEventListener('click', onClick);
-            
-            ElementRef.current?.removeEventListener('mousedown', onMouseDown);
-            ElementRef.current?.removeEventListener('mouseup', onMouseUp);
-            ElementRef.current?.removeEventListener('keydown', onKeyDown, {capture: true});
-            
-            ElementRef.current?.removeEventListener('focusin', onFocusIn);
-            ElementRef.current?.removeEventListener('focusout', onTextBlur);
-            
-        }
-    });
-    
-    // TODO: proper syntax wrapping
-    let renderChildren = children;
-    if (typeof children === 'string' && (!children.startsWith('***') || !children.endsWith('***'))) {
-        // If children are text and not already wrapped with "***", wrap them.
-        renderChildren = `***${children}***`;
-    }
-    
+        return children;
+    })
     
     return React.createElement(tagName, {
         ...otherProps,
-        tabIndex: -1,
         ref: ElementRef
-    }, isEditSyntax ? renderChildren : children)
+    }, RenderedContent.value)
 }
