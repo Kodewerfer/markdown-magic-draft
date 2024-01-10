@@ -18,7 +18,6 @@ const MarkdownFakeDate = `
 
 const ActiveElementSignal = signal<HTMLElement | null>(null);
 export default function Editor() {
-    // useSignals();
     const [sourceMD, setSourceMD] = useState(MarkdownFakeDate);
     const EditorHTMLSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
@@ -47,9 +46,26 @@ export default function Editor() {
         if (textNode.textContent === null) return;
         const convertedHTML = String(MD2HTMLSync(textNode.textContent));
         
-        console.log(convertedHTML);
+        let HTMLStringNoWrapper = new DOMParser().parseFromString(convertedHTML, "text/html");
         
-        return null;
+        const treeWalker: TreeWalker = HTMLStringNoWrapper.createTreeWalker(HTMLStringNoWrapper, NodeFilter.SHOW_TEXT);
+        let newNodes: Node[] = [];
+        let newTextNode;
+        while (newTextNode = treeWalker.nextNode()) {
+            
+            if (!newTextNode.parentNode) continue;
+            
+            if (newTextNode.parentNode.nodeName.toLowerCase() === 'p'
+                || newTextNode.parentNode.nodeName.toLowerCase() === 'body') {
+                newNodes.push(newTextNode);
+            } else {
+                newNodes.push(newTextNode.parentNode);
+            }
+        }
+        
+        if (newNodes.length === 0) return null;
+        
+        return newNodes;
     }
     
     // Map all possible text-containing tags to TextContainer component and therefore manage them.
@@ -135,8 +151,10 @@ function SpecialLinkComponent(props: any) {
 
 function TestCompo(props: any) {
     useSignals(); // turn the component to signal reactive
-    const {children, tagName, DaemonHandle, ...otherProps} = props;
+    const {tagName, DaemonHandle, ...otherProps} = props;
+    let {children} = props;
     const ElementRef = useRef<HTMLElement | null>(null);
+    const LastEditingSignal = useRef<boolean | undefined>(undefined);
     
     const IsEditingSignal = computed(() => {
         return (ElementRef.current !== null
@@ -146,14 +164,18 @@ function TestCompo(props: any) {
     
     const RenderedContent = computed(() => {
         if (IsEditingSignal.value && typeof children === 'string') {
-            return `***${children}***`;
+            ElementRef.current?.setAttribute('data-to-be-replaced', '');
+            return `**${children}**`;
         }
         
+        ElementRef.current?.removeAttribute('data-to-be-replaced');
         return children;
     })
     
+    
     return React.createElement(tagName, {
         ...otherProps,
-        ref: ElementRef
-    }, RenderedContent.value)
+        ref: ElementRef,
+    }, RenderedContent)
+    
 }

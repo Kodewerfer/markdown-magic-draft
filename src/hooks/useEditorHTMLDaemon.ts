@@ -23,13 +23,15 @@ type TDaemonState = {
 enum TOperationType {
     TEXT = "TEXT",
     ADD = "ADD",
-    REMOVE = "REMOVE"
+    REMOVE = "REMOVE",
+    REPLACE = "REPLACE"
 }
 
 // Instructions for DOM manipulations on the mirror document
 type TOperationLog = {
     type: TOperationType,
     node: string | Node,
+    newNodes?: Node[] | HTMLElement[],
     nodeText?: string | null,
     parentNode?: string | null,
     siblingNode?: string | null
@@ -44,7 +46,7 @@ type TSelectionStatus = {
 }
 
 type THookOptions = {
-    TextNodeCallback?: (textNode: Node) => Node[] | Node | null | undefined,
+    TextNodeCallback?: (textNode: Node) => Node[] | null | undefined,
     EditableElement: boolean,
     ShouldFocus: boolean
 }
@@ -78,7 +80,7 @@ export default function useEditorHTMLDaemon(
             state.Observer = new MutationObserver((mutationList: MutationRecord[]) => {
                 state.MutationQueue.push(...mutationList);
                 // FIXME
-                console.log(...mutationList)
+                // console.log(...mutationList)
             });
         }
         
@@ -117,11 +119,18 @@ export default function useEditorHTMLDaemon(
         
         // Rollback Changes
         let mutation: MutationRecord | void;
+        let lastMutation: MutationRecord | null = null;
         let OperationLogs: TOperationLog[] = []
         while ((mutation = DaemonState.MutationQueue.pop())) {
+            
             // Text Changed
             if (mutation.oldValue !== null && mutation.type === "characterData") {
                 
+                if (lastMutation && mutation.target === lastMutation.target) {
+                    continue;
+                }
+                
+                const OldTextNode = mutation.target;
                 const parentNode = mutation.target.parentNode as HTMLElement;
                 let ParentXPath = '';
                 const latestOperationLog = OperationLogs[OperationLogs.length - 1];
@@ -129,11 +138,58 @@ export default function useEditorHTMLDaemon(
                 if (parentNode)
                     ParentXPath = GetXPathFromNode(parentNode)
                 
-                if (parentNode && typeof parentNode.hasAttribute === "function" && parentNode.hasAttribute('data-to-be-replaced')) {
-                    // TODO: run text node callback and get the output nodes
-                    // TODO: replace the parent
-                    // TODO: check and change if last log depends on the parent
-                    continue;
+                if (parentNode && typeof parentNode.hasAttribute === "function" && typeof Options.TextNodeCallback === 'function') {
+                    
+                    const textNodeCallback = Options.TextNodeCallback(OldTextNode);
+                    
+                    if (textNodeCallback) {
+                        console.log(textNodeCallback)
+                        if (parentNode.hasAttribute('data-to-be-replaced')) {
+                            
+                            const Operation: TOperationLog = {
+                                type: TOperationType.REPLACE,
+                                node: ParentXPath,
+                                newNodes: textNodeCallback
+                            }
+                            
+                            if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
+                                OperationLogs.push(Operation);
+                            
+                        } else if (textNodeCallback.length === 1 && textNodeCallback[0].textContent !== null) {
+                            
+                            let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
+                            let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
+                            
+                            const restoredText = whiteSpaceStart[0] + textNodeCallback[0].textContent.trim() + whiteSpaceEnd[0];
+                            
+                            const Operation: TOperationLog = {
+                                type: TOperationType.TEXT,
+                                node: GetXPathFromNode(mutation.target),
+                                nodeText: restoredText
+                            }
+                            
+                            if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
+                                OperationLogs.push(Operation);
+                        } else {
+                            
+                            textNodeCallback.forEach((node) => {
+                                OperationLogs.push({
+                                    type: TOperationType.ADD,
+                                    node: node,
+                                    parentNode: ParentXPath,
+                                    siblingNode: OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null
+                                });
+                            })
+                            
+                            OperationLogs.push({
+                                type: TOperationType.REMOVE,
+                                node: GetXPathFromNode(OldTextNode),
+                                parentNode: ParentXPath
+                            });
+                        }
+                        
+                        continue;
+                    }
                 }
                 
                 const Operation: TOperationLog = {
@@ -163,6 +219,9 @@ export default function useEditorHTMLDaemon(
                     mutation.nextSibling,
                 );
                 
+                // FIXME
+                console.log("Removed node rolled back");
+                
                 OperationLogs.push({
                     type: TOperationType.REMOVE,
                     node: GetXPathFromNode(mutation.removedNodes[i]),
@@ -171,9 +230,9 @@ export default function useEditorHTMLDaemon(
                 
                 // Redo
                 // To acquire the correct xpath, the node must be added to the original tree first.
-                if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('data-no-roll-back')) {
-                    mutation.target.removeChild(mutation.removedNodes[i]);
-                }
+                // if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('data-no-roll-back')) {
+                //     mutation.target.removeChild(mutation.removedNodes[i]);
+                // }
             }
             // Nodes added
             for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
@@ -181,17 +240,20 @@ export default function useEditorHTMLDaemon(
                 const addedNode: Node = mutation.addedNodes[i];
                 
                 if (addedNode.parentNode) {
-                    
-                    try {
-                        if (!(addedNode as HTMLElement).hasAttribute('data-no-roll-back')
-                            && !(addedNode.parentNode as HTMLElement).hasAttribute('data-no-roll-back')) {
-                            mutation.target.removeChild(addedNode);
-                        }
-                    } catch (e) {
-                        // addedNode is likely a text node.
-                        mutation.target.removeChild(addedNode);
-                    }
+                    mutation.target.removeChild(addedNode);
+                    // try {
+                    //     if (!(addedNode as HTMLElement).hasAttribute('data-no-roll-back')
+                    //         && !(addedNode.parentNode as HTMLElement).hasAttribute('data-no-roll-back')) {
+                    //         mutation.target.removeChild(addedNode);
+                    //     }
+                    // } catch (e) {
+                    //     // addedNode is likely a text node.
+                    //     mutation.target.removeChild(addedNode);
+                    // }
                 }
+                
+                // FIXME
+                console.log("Added node rolled back");
                 
                 OperationLogs.push({
                     type: TOperationType.ADD,
@@ -206,6 +268,8 @@ export default function useEditorHTMLDaemon(
                 // );
             }
             
+            // Cache the last
+            lastMutation = mutation;
         }
         
         syncToMirror(OperationLogs);
@@ -276,19 +340,29 @@ export default function useEditorHTMLDaemon(
         
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
-            const {type, node, nodeText, parentNode, siblingNode} = operation;
+            const {type, node, newNodes, nodeText, parentNode, siblingNode} = operation;
             
             // FIXME:
             console.log(operation);
             
-            if (type === TOperationType.TEXT) {
-                UpdateMirrorDocument.Text((node as string), nodeText!);
-            }
-            if (type === TOperationType.REMOVE) {
-                UpdateMirrorDocument.Remove(parentNode!, (node as string));
-            }
-            if (type === TOperationType.ADD) {
-                UpdateMirrorDocument.Add(parentNode!, (node as Node), siblingNode!)
+            try {
+                
+                
+                if (type === TOperationType.TEXT) {
+                    UpdateMirrorDocument.Text((node as string), nodeText!);
+                }
+                if (type === TOperationType.REMOVE) {
+                    UpdateMirrorDocument.Remove(parentNode!, (node as string));
+                }
+                if (type === TOperationType.ADD) {
+                    UpdateMirrorDocument.Add(parentNode!, (node as Node), siblingNode!)
+                }
+                if (type === TOperationType.REPLACE) {
+                    UpdateMirrorDocument.Replace((node as string), newNodes!);
+                }
+            } catch (e) {
+                // FIXME
+                console.log(e);
             }
             
         }
@@ -346,6 +420,18 @@ export default function useEditorHTMLDaemon(
             }
             
             parentNode.insertBefore(targetNode, SiblingNode);
+        },
+        'Replace': (Node: string, newNodes: Node[] | HTMLElement[]) => {
+            if (!Node || !newNodes.length) {
+                console.error("UpdateMirrorDocument.Replace: Invalid Parameter");
+                return;
+            }
+            
+            const selectedNode = GetNodeFromXPath(MirrorDocumentRef.current!, Node)
+            if (!selectedNode || !(selectedNode as HTMLElement)) return;
+            
+            (selectedNode as HTMLElement).replaceWith(...newNodes);
+            
         }
     }
     
@@ -475,8 +561,9 @@ export default function useEditorHTMLDaemon(
         if (Options.ShouldFocus)
             WatchElementRef.current.focus();
         
-        if (DaemonState.SelectionStatusCache)
+        if (DaemonState.SelectionStatusCache) {
             RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
+        }
         
         toggleObserve(true);
         
