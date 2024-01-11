@@ -87,7 +87,6 @@ export default function useEditorHTMLDaemon(
         return state;
     })[0];
     
-    
     const toggleObserve = (bObserver: boolean) => {
         
         if (!bObserver) {
@@ -143,7 +142,9 @@ export default function useEditorHTMLDaemon(
                     const textNodeCallback = Options.TextNodeCallback(OldTextNode);
                     
                     if (textNodeCallback) {
+                        // FIXME
                         console.log(textNodeCallback)
+                        
                         if (parentNode.hasAttribute('data-to-be-replaced')) {
                             
                             const Operation: TOperationLog = {
@@ -164,7 +165,7 @@ export default function useEditorHTMLDaemon(
                             
                             const Operation: TOperationLog = {
                                 type: TOperationType.TEXT,
-                                node: GetXPathFromNode(mutation.target),
+                                node: GetXPathFromNode(OldTextNode),
                                 nodeText: restoredText
                             }
                             
@@ -220,7 +221,7 @@ export default function useEditorHTMLDaemon(
                 );
                 
                 // FIXME
-                console.log("Removed node rolled back");
+                // console.log("Removed node rolled back");
                 
                 OperationLogs.push({
                     type: TOperationType.REMOVE,
@@ -253,7 +254,7 @@ export default function useEditorHTMLDaemon(
                 }
                 
                 // FIXME
-                console.log("Added node rolled back");
+                // console.log("Added node rolled back");
                 
                 OperationLogs.push({
                     type: TOperationType.ADD,
@@ -347,7 +348,6 @@ export default function useEditorHTMLDaemon(
             
             try {
                 
-                
                 if (type === TOperationType.TEXT) {
                     UpdateMirrorDocument.Text((node as string), nodeText!);
                 }
@@ -355,7 +355,7 @@ export default function useEditorHTMLDaemon(
                     UpdateMirrorDocument.Remove(parentNode!, (node as string));
                 }
                 if (type === TOperationType.ADD) {
-                    UpdateMirrorDocument.Add(parentNode!, (node as Node), siblingNode!)
+                    UpdateMirrorDocument.Add(parentNode!, (node as Node), siblingNode!);
                 }
                 if (type === TOperationType.REPLACE) {
                     UpdateMirrorDocument.Replace((node as string), newNodes!);
@@ -378,11 +378,11 @@ export default function useEditorHTMLDaemon(
             }
             
             const NodeResult = GetNodeFromXPath(MirrorDocumentRef.current!, XPath);
-            if (!NodeResult) return;
+            if (!NodeResult || NodeResult.nodeType !== Node.TEXT_NODE) return;
             
             if (!Text) Text = "";
             
-            NodeResult.textContent = Text;
+            NodeResult.nodeValue = Text;
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
             
@@ -398,6 +398,7 @@ export default function useEditorHTMLDaemon(
             if (!targetNode) return;
             
             parentNode.removeChild(targetNode);
+            findNearestParagraph(parentNode)?.normalize()
         },
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
             
@@ -420,6 +421,7 @@ export default function useEditorHTMLDaemon(
             }
             
             parentNode.insertBefore(targetNode, SiblingNode);
+            findNearestParagraph(parentNode)?.normalize()
         },
         'Replace': (Node: string, newNodes: Node[] | HTMLElement[]) => {
             if (!Node || !newNodes.length) {
@@ -430,8 +432,12 @@ export default function useEditorHTMLDaemon(
             const selectedNode = GetNodeFromXPath(MirrorDocumentRef.current!, Node)
             if (!selectedNode || !(selectedNode as HTMLElement)) return;
             
-            (selectedNode as HTMLElement).replaceWith(...newNodes);
+            const parentContainer = selectedNode.parentNode;
             
+            (selectedNode as HTMLElement).replaceWith(...newNodes);
+            // This combines the (possible) multiple text nodes into one, otherwise there will be strange bugs when editing again.
+            parentContainer?.normalize();
+            findNearestParagraph(selectedNode)?.normalize()
         }
     }
     
@@ -514,9 +520,14 @@ export default function useEditorHTMLDaemon(
         // reconstruct the old CurrentSelection range
         const RangeCached = document.createRange();
         
+        let StartingOffset = 0;
+        if (AnchorNode.textContent) {
+            StartingOffset = AnchorNode.textContent.length + CharsToCaretPosition
+        }
+        
         try {
-            RangeCached.setStart(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition);
-            RangeCached.setEnd(AnchorNode, AnchorNode.textContent!.length + CharsToCaretPosition + SavedState.SelectionExtent);
+            RangeCached.setStart(AnchorNode, StartingOffset);
+            RangeCached.setEnd(AnchorNode, StartingOffset + SavedState.SelectionExtent);
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
             CurrentSelection.addRange(RangeCached);
@@ -524,13 +535,9 @@ export default function useEditorHTMLDaemon(
             
         } catch (e) {
             console.error(e);
-            
-            RangeCached.setStart(AnchorNode, 0);
-            RangeCached.setEnd(AnchorNode, SavedState.SelectionExtent);
-            // Replace the current CurrentSelection.
-            CurrentSelection.removeAllRanges();
-            CurrentSelection.addRange(RangeCached);
-            
+            // FIXME
+            console.error(AnchorNode)
+            console.error(SavedState);
             
         }
         
@@ -587,20 +594,37 @@ export default function useEditorHTMLDaemon(
         if (WatchedElement.style.whiteSpace !== 'pre')
             WatchedElement.style.whiteSpace = 'pre-wrap'
         
-        const rollbackAndSyncDebounced = _.debounce(rollbackAndSync, 500);
-        const updateSelectionStatusDebounced = _.debounce(() => {
+        const debounceSelectionStatus = _.debounce(() => {
             DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
         }, 450);
+        const debounceRollbackAndSync = _.debounce(rollbackAndSync, 500);
+        
+        
+        const throttledSelectionStatus = _.debounce(() => {
+            DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
+        }, 80);
+        const throttledRollbackAndSync = _.debounce(rollbackAndSync, 100);
+        
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
             // placeholder
+            
+            if (ev.key === 'Enter') {
+                if (DaemonState.MutationQueue.length >= 1) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
+                    rollbackAndSync();
+                }
+            }
         }
         
         const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
-            updateSelectionStatusDebounced();
-            rollbackAndSyncDebounced();
-            WatchedElement.focus();
+            debounceSelectionStatus();
+            if (DaemonState.MutationQueue.length >= 1) {
+                debounceRollbackAndSync();
+            }
         }
         
         const PastHandler = (ev: ClipboardEvent) => {
@@ -611,8 +635,8 @@ export default function useEditorHTMLDaemon(
             // TODO: best to find a replacement for execCommand
             document.execCommand('insertText', false, text);
             
-            updateSelectionStatusDebounced();
-            rollbackAndSyncDebounced();
+            debounceSelectionStatus();
+            debounceRollbackAndSync();
         }
         
         const SelectionHandler = (ev: Event) => {
@@ -648,6 +672,17 @@ export default function useEditorHTMLDaemon(
         toggleObserve,
         'ManuelSync': rollbackAndSync
     }
+}
+
+function findNearestParagraph(node: Node, targetTagName = 'p'): HTMLElement | null {
+    const TagName = targetTagName
+    while (node && node.nodeName !== TagName) {
+        if (!node.parentNode) {
+            return null;
+        }
+        node = node.parentNode;
+    }
+    return node as HTMLElement;
 }
 
 function GetNodeFromXPath(doc: Document, XPath: string) {

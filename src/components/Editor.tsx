@@ -37,6 +37,9 @@ export default function Editor() {
         if (bodyElement)
             EditorHTMLString.current = String(bodyElement!.innerHTML);
         
+        // FIXME
+        // console.log(EditorHTMLString.current);
+        
         setEditorContentCompo((prev) => {
             return HTML2EditorCompos(EditorHTMLString.current)
         });
