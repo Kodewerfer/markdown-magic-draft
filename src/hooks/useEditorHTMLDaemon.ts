@@ -15,8 +15,8 @@ import _ from 'lodash';
 type TDaemonState = {
     Observer: MutationObserver, //Mutation Observer instance
     MutationQueue: MutationRecord[], // All records will be pushed to here
-    SelectionStatusCache: TSelectionStatus | null
-    RollbackHidden: HTMLElement[]
+    SelectionStatusCache: TSelectionStatus | null,
+    SelectionStatusCachePreBlur: TSelectionStatus | null
 }
 
 //Type of actions to perform on the mirror document
@@ -47,7 +47,8 @@ type TSelectionStatus = {
 
 type THookOptions = {
     TextNodeCallback?: (textNode: Node) => Node[] | null | undefined,
-    EditableElement: boolean,
+    ShouldObserve: boolean,
+    IsEditable: boolean,
     ShouldFocus: boolean
 }
 
@@ -58,10 +59,10 @@ export default function useEditorHTMLDaemon(
     Options: Partial<THookOptions>
 ) {
     
-    Options = {
+    const HookOptions = {
         TextNodeCallback: undefined,
-        EditableElement: true,
-        ShouldFocus: true,
+        ShouldObserve: true,
+        IsEditable: true,
         ...Options
     };
     
@@ -73,14 +74,12 @@ export default function useEditorHTMLDaemon(
             Observer: null as any,
             MutationQueue: [],
             SelectionStatusCache: null,
-            RollbackHidden: []
+            SelectionStatusCachePreBlur: null
         }
         
         if (typeof MutationObserver) {
             state.Observer = new MutationObserver((mutationList: MutationRecord[]) => {
                 state.MutationQueue.push(...mutationList);
-                // FIXME
-                // console.log(...mutationList)
             });
         }
         
@@ -137,13 +136,11 @@ export default function useEditorHTMLDaemon(
                 if (parentNode)
                     ParentXPath = GetXPathFromNode(parentNode)
                 
-                if (parentNode && typeof parentNode.hasAttribute === "function" && typeof Options.TextNodeCallback === 'function') {
+                if (parentNode && typeof parentNode.hasAttribute === "function" && typeof HookOptions.TextNodeCallback === 'function') {
                     
-                    const textNodeCallback = Options.TextNodeCallback(OldTextNode);
+                    const textNodeCallback = HookOptions.TextNodeCallback(OldTextNode);
                     
                     if (textNodeCallback) {
-                        // FIXME
-                        console.log(textNodeCallback)
                         
                         if (parentNode.hasAttribute('data-to-be-replaced')) {
                             
@@ -210,18 +207,11 @@ export default function useEditorHTMLDaemon(
                 
                 let removedNode = mutation.removedNodes[i] as HTMLElement;
                 
-                if (removedNode.style) {
-                    removedNode.style.display = 'none';
-                    DaemonState.RollbackHidden.push(removedNode);
-                }
                 // rollback
                 mutation.target.insertBefore(
                     removedNode,
                     mutation.nextSibling,
                 );
-                
-                // FIXME
-                // console.log("Removed node rolled back");
                 
                 OperationLogs.push({
                     type: TOperationType.REMOVE,
@@ -252,9 +242,6 @@ export default function useEditorHTMLDaemon(
                     //     mutation.target.removeChild(addedNode);
                     // }
                 }
-                
-                // FIXME
-                // console.log("Added node rolled back");
                 
                 OperationLogs.push({
                     type: TOperationType.ADD,
@@ -343,9 +330,6 @@ export default function useEditorHTMLDaemon(
         while ((operation = Operations.pop())) {
             const {type, node, newNodes, nodeText, parentNode, siblingNode} = operation;
             
-            // FIXME:
-            console.log(operation);
-            
             try {
                 
                 if (type === TOperationType.TEXT) {
@@ -361,14 +345,14 @@ export default function useEditorHTMLDaemon(
                     UpdateMirrorDocument.Replace((node as string), newNodes!);
                 }
             } catch (e) {
-                // FIXME
-                console.log(e);
+                
+                console.error("Error When Syncing:", e);
             }
             
         }
     }
     
-    // TODO: performance
+    // TODO: performance could be improved.
     const UpdateMirrorDocument = {
         'Text': (XPath: string, Text: string | null) => {
             
@@ -398,7 +382,7 @@ export default function useEditorHTMLDaemon(
             if (!targetNode) return;
             
             parentNode.removeChild(targetNode);
-            findNearestParagraph(parentNode)?.normalize()
+            FindNearestParagraph(parentNode)?.normalize()
         },
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
             
@@ -421,7 +405,7 @@ export default function useEditorHTMLDaemon(
             }
             
             parentNode.insertBefore(targetNode, SiblingNode);
-            findNearestParagraph(parentNode)?.normalize()
+            FindNearestParagraph(parentNode)?.normalize()
         },
         'Replace': (Node: string, newNodes: Node[] | HTMLElement[]) => {
             if (!Node || !newNodes.length) {
@@ -437,7 +421,7 @@ export default function useEditorHTMLDaemon(
             (selectedNode as HTMLElement).replaceWith(...newNodes);
             // This combines the (possible) multiple text nodes into one, otherwise there will be strange bugs when editing again.
             parentContainer?.normalize();
-            findNearestParagraph(selectedNode)?.normalize()
+            FindNearestParagraph(selectedNode)?.normalize()
         }
     }
     
@@ -473,13 +457,9 @@ export default function useEditorHTMLDaemon(
         const CurrentSelection = window.getSelection();
         if (!CurrentSelection) return;
         
-        // FIXME:
-        // console.log(SavedState)
-        
         // Type narrowing
         if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
             return;
-        
         
         // use treeWalker to traverse all nodes, only check text nodes because only text nodes can take up "position"/"offset"
         const Walker = document.createTreeWalker(
@@ -491,6 +471,7 @@ export default function useEditorHTMLDaemon(
         let AnchorNode;
         let CharsToCaretPosition = SavedState.CaretPosition;
         const NodeOverflowBreakCharBreak = -5;
+        
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
             
@@ -535,9 +516,8 @@ export default function useEditorHTMLDaemon(
             
         } catch (e) {
             console.error(e);
-            // FIXME
-            console.error(AnchorNode)
-            console.error(SavedState);
+            console.warn("AnchorNode:", AnchorNode)
+            console.warn("Saved State:", SavedState);
             
         }
         
@@ -550,35 +530,41 @@ export default function useEditorHTMLDaemon(
             return;
         }
         
+        
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
         
-        if (Options?.EditableElement) {
+        if (HookOptions?.IsEditable) {
             // !!plaintext-only actually introduces unwanted behavior
             WatchedElement.contentEditable = 'true';
-        }
-        
-        if (DaemonState.RollbackHidden.length) {
-            DaemonState.RollbackHidden.forEach(node => {
-                node.style.display = '';
-            })
-            DaemonState.RollbackHidden = [];
-        }
-        
-        if (Options.ShouldFocus)
             WatchElementRef.current.focus();
+        }
+        
+        if (DaemonState.SelectionStatusCachePreBlur && HookOptions.IsEditable) {
+            // consume the saved status
+            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCachePreBlur);
+            DaemonState.SelectionStatusCachePreBlur = null;
+        }
         
         if (DaemonState.SelectionStatusCache) {
+            // consume the saved status
             RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
+            DaemonState.SelectionStatusCache = null;
         }
         
-        toggleObserve(true);
+        if (HookOptions.ShouldObserve) {
+            toggleObserve(true);
+        }
+        
         
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
-            
             toggleObserve(false);
+            
+            if (DaemonState.SelectionStatusCache === null) {
+                DaemonState.SelectionStatusCache = GetSelectionStatus(WatchedElement);
+            }
         }
     });
     
@@ -600,24 +586,17 @@ export default function useEditorHTMLDaemon(
         const debounceRollbackAndSync = _.debounce(rollbackAndSync, 500);
         
         
-        const throttledSelectionStatus = _.debounce(() => {
-            DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
-        }, 80);
-        const throttledRollbackAndSync = _.debounce(rollbackAndSync, 100);
-        
-        
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            // placeholder
             
-            if (ev.key === 'Enter') {
-                if (DaemonState.MutationQueue.length >= 1) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
-                    rollbackAndSync();
-                }
-            }
+            // if (ev.key === 'Enter') {
+            //     if (DaemonState.MutationQueue.length >= 1) {
+            //         ev.preventDefault();
+            //         ev.stopPropagation();
+            //         DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
+            //         rollbackAndSync();
+            //     }
+            // }
         }
         
         const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
@@ -632,7 +611,7 @@ export default function useEditorHTMLDaemon(
             
             const text = ev.clipboardData!.getData('text/plain');
             
-            // TODO: best to find a replacement for execCommand
+            // FIXME: Deprecated API, no alternative
             document.execCommand('insertText', false, text);
             
             debounceSelectionStatus();
@@ -646,35 +625,79 @@ export default function useEditorHTMLDaemon(
                     : null;
         }
         
-        const DragStartHandler = (ev: HTMLElementEventMap['dragstart']) => {
-            // drag and drop text introduces too many potential problems
+        const BlurHandler = (ev: Event) => {
+            DaemonState.SelectionStatusCachePreBlur = GetSelectionStatus((WatchElementRef.current as Element));
+        }
+        
+        const DoNothing = (ev: Event) => {
             ev.preventDefault();
+            ev.stopPropagation();
+        }
+        
+        const MoveCaretToMouse = (event: MouseEvent) => {
+            // FIXME: Deprecated API, but no real alternative
+            
+            let range: Range | null = null;
+            if (typeof document.caretRangeFromPoint !== "undefined") {
+                // Chromium
+                range = document.caretRangeFromPoint(event.clientX, event.clientY);
+            } else if (
+                // @ts-expect-error: Firefox spec API
+                typeof document.caretPositionFromPoint === "function"
+            ) {
+                // Firefox
+                // @ts-expect-error: Firefox spec API
+                const caretPos = document.caretPositionFromPoint(event.clientX, event.clientY);
+                if (caretPos !== null) {
+                    range = document.createRange();
+                    range.setStart(caretPos.offsetNode, caretPos.offset);
+                    range.collapse(true);
+                }
+            }
+            
+            const currentSelection = window.getSelection();
+            if (currentSelection && range) {
+                currentSelection.removeAllRanges();
+                currentSelection.addRange(range);
+                
+                DaemonState.SelectionStatusCache = GetSelectionStatus(WatchedElement);
+            }
+            
         }
         
         WatchedElement.addEventListener("keydown", KeyDownHandler);
         WatchedElement.addEventListener("keyup", KeyUpHandler);
         WatchedElement.addEventListener("paste", PastHandler);
+        
         WatchedElement.addEventListener("selectstart", SelectionHandler);
-        WatchedElement.addEventListener("dragstart", DragStartHandler);
+        WatchedElement.addEventListener("dragstart", DoNothing);
+        WatchedElement.addEventListener("focusout", BlurHandler);
+        
+        WatchedElement.addEventListener("mouseup", MoveCaretToMouse);
         
         return () => {
             WatchedElement.style.whiteSpace = whiteSpaceCached;
             WatchedElement.removeEventListener("keydown", KeyDownHandler);
             WatchedElement.removeEventListener("keyup", KeyUpHandler);
             WatchedElement.removeEventListener("paste", PastHandler);
+            
             WatchedElement.removeEventListener("selectstart", SelectionHandler);
-            WatchedElement.removeEventListener("dragstart", DragStartHandler);
+            WatchedElement.removeEventListener("dragstart", DoNothing);
+            WatchedElement.removeEventListener("focusout", BlurHandler);
+            
+            WatchedElement.removeEventListener("mouseup", MoveCaretToMouse);
         }
         
     }, [WatchElementRef.current!])
     
     return {
-        toggleObserve,
-        'ManuelSync': rollbackAndSync
+        AddToIgnore: () => {
+            //TODO
+        }
     }
 }
 
-function findNearestParagraph(node: Node, targetTagName = 'p'): HTMLElement | null {
+function FindNearestParagraph(node: Node, targetTagName = 'p'): HTMLElement | null {
     const TagName = targetTagName
     while (node && node.nodeName !== TagName) {
         if (!node.parentNode) {
