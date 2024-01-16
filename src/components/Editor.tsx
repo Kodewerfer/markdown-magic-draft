@@ -3,7 +3,6 @@ import {MD2HTML, HTML2MD, HTML2ReactSnyc, MD2HTMLSync} from "../Utils/Conversion
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
-import {computed, effect, signal} from "@preact/signals-react";
 import {useSignals} from "@preact/signals-react/runtime";
 
 const MarkdownFakeDate = `
@@ -16,14 +15,25 @@ const MarkdownFakeDate = `
  Test with no sibling
 `
 
-const ActiveElementSignal = signal<HTMLElement | null>(null);
+type TSubElementsQueue = {
+    [key: string]: any[] | null;
+};
 export default function Editor() {
     const [sourceMD, setSourceMD] = useState(MarkdownFakeDate);
     const EditorHTMLSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
     const EditorHTMLString = useRef('');
     const [EditorContentCompo, setEditorContentCompo] = useState<React.ReactNode>(null);
-    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorHTMLSourceRef, ReloadEditorContent, {TextNodeCallback: TextNodeHandler});
+    
+    const [isEditingSubElement, setIsEditingSubElement] = useState(false);
+    const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
+    
+    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorHTMLSourceRef, ReloadEditorContent,
+        {
+            TextNodeCallback: TextNodeHandler,
+            IsEditable: !isEditingSubElement,
+            ShouldObserve: !isEditingSubElement
+        });
     
     let ExtractMD = async () => {
         const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
@@ -43,6 +53,15 @@ export default function Editor() {
         setEditorContentCompo((prev) => {
             return HTML2EditorCompos(EditorHTMLString.current)
         });
+    }
+    
+    const toggleEditingSubElement = (isEditing: boolean, Timestamp: number | undefined, ElementRef: HTMLElement) => {
+        setIsEditingSubElement(isEditing);
+        if (!isEditing) {
+            
+            // console.log(Timestamp);
+            // console.log(ElementRef.textContent);
+        }
     }
     
     function TextNodeHandler(textNode: Node) {
@@ -74,7 +93,9 @@ export default function Editor() {
     // Map all possible text-containing tags to TextContainer component and therefore manage them.
     const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
         .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
-            acc[tagName] = (props: any) => <SyntaxRenderer {...props} DaemonHandle={DaemonHandle} tagName={tagName}/>;
+            acc[tagName] = (props: any) => <SyntaxRenderer {...props}
+                                                           NotifyParent={toggleEditingSubElement}
+                                                           tagName={tagName}/>;
             return acc;
         }, {});
     
@@ -102,19 +123,6 @@ export default function Editor() {
         
     }, [sourceMD])
     
-    useLayoutEffect(() => {
-        const EditableClick = (ev: HTMLElementEventMap['click']) => {
-            ActiveElementSignal.value = (ev.target as HTMLElement);
-        };
-        
-        EditorCurrentRef.current?.addEventListener('click', EditableClick);
-        
-        return () => {
-            EditorCurrentRef.current?.removeEventListener('click', EditableClick);
-        }
-        
-    }, [EditorCurrentRef.current!])
-    
     return (
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
@@ -135,7 +143,7 @@ const Paragraph = (props: any) => {
 };
 
 const SyntaxRenderer = (props: any) => {
-    const {children, tagName, DaemonHandle, ...otherProps} = props;
+    const {children, tagName, NotifyParent, ...otherProps} = props;
     
     if (otherProps['data-link-to']) {
         return <SpecialLinkComponent {...props}/>
@@ -148,37 +156,58 @@ const SyntaxRenderer = (props: any) => {
 };
 
 function SpecialLinkComponent(props: any) {
-    const {children, tagName, DaemonHandle, ...otherProps} = props;
+    const {children, tagName, NotifyParent, ...otherProps} = props;
     return React.createElement(tagName, otherProps, children);
 }
 
 function TestCompo(props: any) {
-    useSignals(); // turn the component to signal reactive
-    const {tagName, DaemonHandle, ...otherProps} = props;
-    let {children} = props;
+    const {tagName, NotifyParent, children, ...otherProps} = props;
+    
     const ElementRef = useRef<HTMLElement | null>(null);
-    const LastEditingSignal = useRef<boolean | undefined>(undefined);
+    const [isEditing, setIsEditing] = useState(false);
+    const TimestampRef = useRef<number | undefined>(undefined);
     
-    const IsEditingSignal = computed(() => {
-        return (ElementRef.current !== null
-            && ActiveElementSignal.value !== null
-            && ActiveElementSignal.value === ElementRef.current);
-    })
-    
-    const RenderedContent = computed(() => {
-        if (IsEditingSignal.value && typeof children === 'string') {
-            ElementRef.current?.setAttribute('data-to-be-replaced', '');
-            return `**${children}**`;
+    useLayoutEffect(() => {
+        const OnClick = (ev: Event) => {
+            ev.stopPropagation();
+            ElementRef.current?.focus();
+            
+            if (!isEditing)
+                setIsEditing(true);
+        };
+        
+        const OnFocus = (ev: HTMLElementEventMap['focusin']) => {
+            
+            ev.stopPropagation();
+            let timestamp = new Date().valueOf();
+            TimestampRef.current = timestamp;
+            
+            NotifyParent(true, timestamp, ElementRef.current);
+        };
+        
+        const OnFocusOut = (ev: Event) => {
+            ev.stopPropagation();
+            NotifyParent(false, TimestampRef.current, ElementRef.current);
+            setIsEditing(false);
         }
         
-        ElementRef.current?.removeAttribute('data-to-be-replaced');
-        return children;
+        ElementRef.current?.addEventListener("mouseup", OnClick);
+        ElementRef.current?.addEventListener("focusin", OnFocus);
+        ElementRef.current?.addEventListener("focusout", OnFocusOut);
+        
+        return () => {
+            ElementRef.current?.removeEventListener("mouseup", OnClick);
+            ElementRef.current?.removeEventListener("focusin", OnFocus);
+            ElementRef.current?.removeEventListener("focusout", OnFocusOut);
+        }
     })
     
-    
     return React.createElement(tagName, {
+        tabIndex: -1,
+        contentEditable: isEditing,
+        suppressContentEditableWarning: true,
         ...otherProps,
         ref: ElementRef,
-    }, RenderedContent)
+    }, children)
     
 }
