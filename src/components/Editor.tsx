@@ -1,9 +1,9 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
-import {MD2HTML, HTML2MD, HTML2ReactSnyc, MD2HTMLSync} from "../Utils/Conversion";
+import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
-import {useSignals} from "@preact/signals-react/runtime";
+import _ from 'lodash';
 
 const MarkdownFakeDate = `
  # Welcome to @[aaa] Editor! @[bbb]
@@ -16,13 +16,14 @@ const MarkdownFakeDate = `
 `
 
 type TSubElementsQueue = {
-    [key: string]: any[] | null;
+    [key: string]: HTMLElement | null;
 };
 export default function Editor() {
     const [sourceMD, setSourceMD] = useState(MarkdownFakeDate);
     const EditorHTMLSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
     const EditorHTMLString = useRef('');
+    
     const [EditorContentCompo, setEditorContentCompo] = useState<React.ReactNode>(null);
     
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
@@ -55,13 +56,33 @@ export default function Editor() {
         });
     }
     
-    const toggleEditingSubElement = (isEditing: boolean, Timestamp: number | undefined, ElementRef: HTMLElement) => {
-        setIsEditingSubElement(isEditing);
-        if (!isEditing) {
-            
-            // console.log(Timestamp);
-            // console.log(ElementRef.textContent);
+    const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement) => {
+        if (!Identifier) {
+            console.warn('Editing Sub Element with invalid Identifier', ElementRef);
+            return;
         }
+        
+        if (EditingQueue.current === null || EditingQueue.current === undefined) {
+            EditingQueue.current = {};
+        }
+        
+        if (!bSubEditing) {
+            if (typeof EditingQueue.current[Identifier] !== 'undefined') {
+                console.log(EditingQueue.current);
+                let {[Identifier]: value, ...remaining} = EditingQueue.current;
+                EditingQueue.current = remaining;
+                console.log(EditingQueue.current);
+            }
+            
+            if (EditingQueue.current && Object.keys(EditingQueue.current).length === 0) {
+                setIsEditingSubElement(false);
+            }
+            
+            return;
+        }
+        
+        EditingQueue.current[Identifier] = ElementRef
+        setIsEditingSubElement(true);
     }
     
     function TextNodeHandler(textNode: Node) {
@@ -165,7 +186,7 @@ function TestCompo(props: any) {
     
     const ElementRef = useRef<HTMLElement | null>(null);
     const [isEditing, setIsEditing] = useState(false);
-    const TimestampRef = useRef<number | undefined>(undefined);
+    const IdentifierRef = useRef<string | undefined>(undefined);
     
     useLayoutEffect(() => {
         const OnClick = (ev: Event) => {
@@ -177,17 +198,19 @@ function TestCompo(props: any) {
         };
         
         const OnFocus = (ev: HTMLElementEventMap['focusin']) => {
-            
             ev.stopPropagation();
-            let timestamp = new Date().valueOf();
-            TimestampRef.current = timestamp;
             
-            NotifyParent(true, timestamp, ElementRef.current);
+            const timestamp = new Date().valueOf();
+            const generatedId: string = _.uniqueId("_" + ElementRef.current?.tagName.toLowerCase());
+            IdentifierRef.current = timestamp + generatedId;
+            
+            NotifyParent(true, IdentifierRef.current, ElementRef.current);
         };
         
         const OnFocusOut = (ev: Event) => {
             ev.stopPropagation();
-            NotifyParent(false, TimestampRef.current, ElementRef.current);
+            
+            NotifyParent(false, IdentifierRef.current, ElementRef.current);
             setIsEditing(false);
         }
         
