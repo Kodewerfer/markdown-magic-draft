@@ -203,57 +203,61 @@ export default function useEditorHTMLDaemon(
                 // mutation.target.textContent = mutation.oldValue;
             }
             // Nodes removed
-            for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
-                
-                let removedNode = mutation.removedNodes[i] as HTMLElement;
-                
-                // rollback
-                mutation.target.insertBefore(
-                    removedNode,
-                    mutation.nextSibling,
-                );
-                
-                OperationLogs.push({
-                    type: TOperationType.REMOVE,
-                    node: GetXPathFromNode(mutation.removedNodes[i]),
-                    parentNode: GetXPathFromNode(mutation.target)
-                });
-                
-                // Redo
-                // To acquire the correct xpath, the node must be added to the original tree first.
-                // if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('data-no-roll-back')) {
-                //     mutation.target.removeChild(mutation.removedNodes[i]);
-                // }
-            }
-            // Nodes added
-            for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
-                // rollback
-                const addedNode: Node = mutation.addedNodes[i];
-                
-                if (addedNode.parentNode) {
-                    mutation.target.removeChild(addedNode);
-                    // try {
-                    //     if (!(addedNode as HTMLElement).hasAttribute('data-no-roll-back')
-                    //         && !(addedNode.parentNode as HTMLElement).hasAttribute('data-no-roll-back')) {
-                    //         mutation.target.removeChild(addedNode);
-                    //     }
-                    // } catch (e) {
-                    //     // addedNode is likely a text node.
-                    //     mutation.target.removeChild(addedNode);
+            if (mutation.removedNodes && mutation.removedNodes.length) {
+                for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
+                    
+                    let removedNode = mutation.removedNodes[i] as HTMLElement;
+                    
+                    // rollback
+                    mutation.target.insertBefore(
+                        removedNode,
+                        mutation.nextSibling,
+                    );
+                    
+                    OperationLogs.push({
+                        type: TOperationType.REMOVE,
+                        node: GetXPathFromNode(mutation.removedNodes[i]),
+                        parentNode: GetXPathFromNode(mutation.target)
+                    });
+                    
+                    // Redo
+                    // To acquire the correct xpath, the node must be added to the original tree first.
+                    // if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('data-no-roll-back')) {
+                    //     mutation.target.removeChild(mutation.removedNodes[i]);
                     // }
                 }
-                
-                OperationLogs.push({
-                    type: TOperationType.ADD,
-                    node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
-                    parentNode: GetXPathFromNode(mutation.target),
-                    siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
-                });
-                // redo
-                // mutation.target!.insertBefore(
-                //     mutation.addedNodes[i].cloneNode(true),
-                //     mutation.nextSibling
-                // );
+            }
+            // Nodes added
+            if (mutation.addedNodes && mutation.addedNodes.length) {
+                for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
+                    // rollback
+                    const addedNode: Node = mutation.addedNodes[i];
+                    
+                    if (addedNode.parentNode) {
+                        mutation.target.removeChild(addedNode);
+                        // try {
+                        //     if (!(addedNode as HTMLElement).hasAttribute('data-no-roll-back')
+                        //         && !(addedNode.parentNode as HTMLElement).hasAttribute('data-no-roll-back')) {
+                        //         mutation.target.removeChild(addedNode);
+                        //     }
+                        // } catch (e) {
+                        //     // addedNode is likely a text node.
+                        //     mutation.target.removeChild(addedNode);
+                        // }
+                    }
+                    
+                    OperationLogs.push({
+                        type: TOperationType.ADD,
+                        node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
+                        parentNode: GetXPathFromNode(mutation.target),
+                        siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
+                    });
+                    // redo
+                    // mutation.target!.insertBefore(
+                    //     mutation.addedNodes[i].cloneNode(true),
+                    //     mutation.nextSibling
+                    // );
+                }
             }
             
             // Cache the last
@@ -330,8 +334,9 @@ export default function useEditorHTMLDaemon(
         while ((operation = Operations.pop())) {
             const {type, node, newNodes, nodeText, parentNode, siblingNode} = operation;
             
+            console.log(operation);
+            
             try {
-                
                 if (type === TOperationType.TEXT) {
                     UpdateMirrorDocument.Text((node as string), nodeText!);
                 }
@@ -382,7 +387,11 @@ export default function useEditorHTMLDaemon(
             if (!targetNode) return;
             
             parentNode.removeChild(targetNode);
-            FindNearestParagraph(parentNode)?.normalize()
+            
+            if (targetNode.nodeType === Node.TEXT_NODE) {
+                parentNode.normalize();
+                FindNearestParagraph(parentNode)?.normalize()
+            }
         },
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
             
@@ -405,7 +414,10 @@ export default function useEditorHTMLDaemon(
             }
             
             parentNode.insertBefore(targetNode, SiblingNode);
-            FindNearestParagraph(parentNode)?.normalize()
+            
+            if (targetNode.nodeType === Node.TEXT_NODE) {
+                FindNearestParagraph(parentNode)?.normalize()
+            }
         },
         'Replace': (Node: string, newNodes: Node[] | HTMLElement[]) => {
             if (!Node || !newNodes.length) {
@@ -480,19 +492,31 @@ export default function useEditorHTMLDaemon(
             }
             // the anchor AnchorNode found.
             if (CharsToCaretPosition <= 0) {
+                // Make sure that the caret lands on a node that is actually editable
+                // otherwise the caret disappear
+                let bValidLandingNode = undefined;
+                if (AnchorNode.nodeType === Node.ELEMENT_NODE &&
+                    (AnchorNode as HTMLElement).contentEditable !== 'false') {
+                    bValidLandingNode = true;
+                }
+                if (AnchorNode.nodeType === Node.TEXT_NODE
+                    && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false') {
+                    bValidLandingNode = true;
+                }
                 // after breaking a new line, the CharsToCaretPosition for the end of the last line
                 // and the beginning of the new line will still be the same,
                 // So needed to check XPath to make sure the caret moved to the correct text node
-                if (AnchorNode.nodeType === SavedState.AnchorNodeType && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath) {
+                if (AnchorNode.nodeType === SavedState.AnchorNodeType
+                    && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath
+                    && bValidLandingNode
+                ) {
                     break;
                 }
                 
-                if (CharsToCaretPosition <= NodeOverflowBreakCharBreak) {
+                if (CharsToCaretPosition <= NodeOverflowBreakCharBreak && bValidLandingNode) {
                     break;
                 }
             }
-            
-            
         }
         
         // Type narrowing
@@ -504,6 +528,7 @@ export default function useEditorHTMLDaemon(
         let StartingOffset = 0;
         if (AnchorNode.textContent) {
             StartingOffset = AnchorNode.textContent.length + CharsToCaretPosition
+            if (StartingOffset < 0) StartingOffset = 0;
         }
         
         try {
@@ -512,16 +537,30 @@ export default function useEditorHTMLDaemon(
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
             CurrentSelection.addRange(RangeCached);
-            
-            
         } catch (e) {
-            console.error(e);
-            console.warn("AnchorNode:", AnchorNode)
+            // console.error(e);
+            console.warn("AnchorNode:", AnchorNode, "Starting offset:", StartingOffset);
             console.warn("Saved State:", SavedState);
             
         }
         
     }
+    
+    function AddToRecord(Record: MutationRecord) {
+        DaemonState.MutationQueue.push(Record);
+        throttledSelectionStatus();
+        throttledRollbackAndSync();
+    }
+    
+    const debounceSelectionStatus = _.debounce(() => {
+        DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
+    }, 450);
+    const debounceRollbackAndSync = _.debounce(rollbackAndSync, 500);
+    
+    const throttledSelectionStatus = _.throttle(() => {
+        DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
+    }, 200);
+    const throttledRollbackAndSync = _.throttle(rollbackAndSync, 200);
     
     useLayoutEffect(() => {
         
@@ -529,7 +568,6 @@ export default function useEditorHTMLDaemon(
             console.log("Invalid Watched Element");
             return;
         }
-        
         
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
@@ -556,7 +594,6 @@ export default function useEditorHTMLDaemon(
             toggleObserve(true);
         }
         
-        
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
@@ -579,11 +616,6 @@ export default function useEditorHTMLDaemon(
         
         if (WatchedElement.style.whiteSpace !== 'pre')
             WatchedElement.style.whiteSpace = 'pre-wrap'
-        
-        const debounceSelectionStatus = _.debounce(() => {
-            DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
-        }, 450);
-        const debounceRollbackAndSync = _.debounce(rollbackAndSync, 500);
         
         
         // bind Events
@@ -635,8 +667,8 @@ export default function useEditorHTMLDaemon(
         }
         
         const MoveCaretToMouse = (event: MouseEvent) => {
-            // FIXME: Deprecated API, but no real alternative
             
+            // FIXME: Deprecated API, but no real alternative
             let range: Range | null = null;
             if (typeof document.caretRangeFromPoint !== "undefined") {
                 // Chromium
@@ -656,7 +688,7 @@ export default function useEditorHTMLDaemon(
             }
             
             const currentSelection = window.getSelection();
-            if (currentSelection && range) {
+            if (currentSelection && currentSelection.isCollapsed && range) {
                 currentSelection.removeAllRanges();
                 currentSelection.addRange(range);
                 
@@ -691,9 +723,7 @@ export default function useEditorHTMLDaemon(
     }, [WatchElementRef.current!])
     
     return {
-        AddToIgnore: () => {
-            //TODO
-        }
+        AddToRecord: AddToRecord
     }
 }
 
