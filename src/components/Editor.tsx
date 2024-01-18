@@ -56,7 +56,7 @@ export default function Editor() {
         });
     }
     
-    const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement) => {
+    const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
         if (!Identifier) {
             console.warn('Editing Sub Element with invalid Identifier', ElementRef);
             return;
@@ -68,20 +68,23 @@ export default function Editor() {
         
         if (!bSubEditing) {
             if (typeof EditingQueue.current[Identifier] !== 'undefined') {
-                console.log(EditingQueue.current);
                 let {[Identifier]: value, ...remaining} = EditingQueue.current;
                 EditingQueue.current = remaining;
-                console.log(EditingQueue.current);
             }
             
             if (EditingQueue.current && Object.keys(EditingQueue.current).length === 0) {
                 setIsEditingSubElement(false);
             }
             
+            if (ChangeRecord) {
+                DaemonHandle.AddToRecord(ChangeRecord);
+            }
+            
             return;
         }
         
         EditingQueue.current[Identifier] = ElementRef
+        console.log(EditingQueue.current);
         setIsEditingSubElement(true);
     }
     
@@ -210,18 +213,37 @@ function TestCompo(props: any) {
         const OnFocusOut = (ev: Event) => {
             ev.stopPropagation();
             
-            NotifyParent(false, IdentifierRef.current, ElementRef.current);
+            let mutation = {
+                type: "characterData",
+                oldValue: ' ',
+                target: ElementRef.current?.firstChild!,
+                newValue: ElementRef.current?.firstChild!.nodeValue
+            };
+            
+            NotifyParent(false, IdentifierRef.current, ElementRef.current, mutation);
             setIsEditing(false);
+        }
+        
+        const OnKeydown = (ev: HTMLElementEventMap['keydown']) => {
+            if (ev.key === 'Enter') {
+                ev.stopPropagation();
+                ev.preventDefault();
+                ElementRef.current?.blur();
+            }
         }
         
         ElementRef.current?.addEventListener("mouseup", OnClick);
         ElementRef.current?.addEventListener("focusin", OnFocus);
         ElementRef.current?.addEventListener("focusout", OnFocusOut);
+        // prevent enter breaking new line
+        ElementRef.current?.addEventListener("keydown", OnKeydown);
         
         return () => {
             ElementRef.current?.removeEventListener("mouseup", OnClick);
             ElementRef.current?.removeEventListener("focusin", OnFocus);
             ElementRef.current?.removeEventListener("focusout", OnFocusOut);
+            
+            ElementRef.current?.removeEventListener("keydown", OnKeydown);
         }
     })
     
