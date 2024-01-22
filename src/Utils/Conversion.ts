@@ -13,7 +13,6 @@ import rehypeReact from "rehype-react";
 import rehypeSanitize, {defaultSchema} from "rehype-sanitize";
 import rehypeRemark from "rehype-remark";
 import rehypeStringify from "rehype-stringify";
-import {HTMLSpecialLinks, MDSpecialLinks} from "../UnifiedPlugins/HandleSpecialLinksSyntax";
 import remarkDirective from "remark-directive";
 
 import HandleCustomDirectives from "../UnifiedPlugins/HandleCustomDirectives";
@@ -30,7 +29,6 @@ export async function MD2HTML(MarkdownContent: Compatible) {
         .use(HandleCustomDirectives)
         .use(remarkRehype)
         .use(rehypeSanitize, SanitizSchema)
-        .use(MDSpecialLinks)
         .use(rehypeStringify)
         .process(MarkdownContent);
 }
@@ -40,9 +38,9 @@ export function MD2HTMLSync(MarkdownContent: Compatible) {
         .use(remarkParse)
         .use(remarkGfm)
         .use(remarkDirective)
+        .use(HandleCustomDirectives)
         .use(remarkRehype)
         .use(rehypeSanitize, SanitizSchema)
-        .use(MDSpecialLinks)
         .use(rehypeStringify)
         .processSync(MarkdownContent);
 }
@@ -79,7 +77,6 @@ export async function HTML2MD(CurrentContent: Compatible) {
     return await unified()
         .use(rehypeParse)
         .use(remarkGfm)
-        .use(HTMLSpecialLinks) //FIXME Don't work, syntax are escaped
         .use(rehypeRemark, {
             handlers: {
                 'br': (State, Node) => {

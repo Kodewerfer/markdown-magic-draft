@@ -6,7 +6,7 @@ import "./Editor.css";
 import _ from 'lodash';
 
 const MarkdownFakeDate = `
-# Welcome to @\\[aaa] Editor! @\\[bbb]
+# Welcome to :LinkTo[AAA, A1A]{aaa} Editor! :LinkTo[BBB]
 
 Hi! I'm ~~your~~ Markdown file in **Editor**.
 

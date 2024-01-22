@@ -1,6 +1,12 @@
 import {visit} from "unist-util-visit";
 import {h} from 'hastscript'
 
+/**
+ *  Old implementation that directly dealt wit text node handling,
+ *  No longer in use
+ *  Kept for future reference
+ */
+
 //Regex for the custom MD syntax
 const SyntaxRegex = /@\[(.*?)]/g;
 const TagName: string = "span";

@@ -22,6 +22,31 @@ function MDTransformer(ast: object) {
                 
                 return node;
             }
+            // Special Links
+            if (node.name.toLowerCase() === 'linkto' && node.type === 'textDirective') {
+                const childNodes = node.children;
+                const firstChildValue: string = childNodes[0].value;
+                
+                // Chars that are not allowed in filenames
+                const forbiddenChars = /[\\/:*?"<>|]/;
+                
+                let LinkToTarget = Object.keys(node.attributes)[0];
+                if (!LinkToTarget) {
+                    if (firstChildValue && !forbiddenChars.test(firstChildValue))
+                        LinkToTarget = firstChildValue;
+                    else
+                        LinkToTarget = ' ';
+                }
+                
+                const hast = h(`span`,
+                    {'dataLinkTo': LinkToTarget},
+                    [...childNodes]);
+                
+                data.hName = hast.tagName
+                data.hProperties = hast.properties
+                data.hChildren = hast.children
+                return node;
+            }
         }
     }
 }
