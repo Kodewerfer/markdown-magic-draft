@@ -612,10 +612,10 @@ export default function useEditorHTMLDaemon(
         }
         const WatchedElement = WatchElementRef.current;
         
-        const whiteSpaceCached: string = WatchedElement.style.whiteSpace;
+        // const whiteSpaceCached: string = WatchedElement.style.whiteSpace;
         
-        if (WatchedElement.style.whiteSpace !== 'pre')
-            WatchedElement.style.whiteSpace = 'pre-wrap'
+        // if (WatchedElement.style.whiteSpace !== 'pre')
+        //     WatchedElement.style.whiteSpace = 'pre-wrap'
         
         
         // bind Events
@@ -631,7 +631,7 @@ export default function useEditorHTMLDaemon(
             // }
         }
         
-        const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
+        const KeyUpHandler = () => {
             debounceSelectionStatus();
             if (DaemonState.MutationQueue.length >= 1) {
                 debounceRollbackAndSync();
@@ -657,7 +657,7 @@ export default function useEditorHTMLDaemon(
                     : null;
         }
         
-        const BlurHandler = (ev: Event) => {
+        const BlurHandler = () => {
             DaemonState.SelectionStatusCachePreBlur = GetSelectionStatus((WatchElementRef.current as Element));
         }
         
@@ -668,8 +668,8 @@ export default function useEditorHTMLDaemon(
         
         const MoveCaretToMouse = (event: MouseEvent) => {
             
-            // FIXME: Deprecated API, but no real alternative
             let range: Range | null = null;
+            // FIXME: Deprecated API, but no real alternative
             if (typeof document.caretRangeFromPoint !== "undefined") {
                 // Chromium
                 range = document.caretRangeFromPoint(event.clientX, event.clientY);
@@ -708,7 +708,7 @@ export default function useEditorHTMLDaemon(
         WatchedElement.addEventListener("mouseup", MoveCaretToMouse);
         
         return () => {
-            WatchedElement.style.whiteSpace = whiteSpaceCached;
+            // WatchedElement.style.whiteSpace = whiteSpaceCached;
             WatchedElement.removeEventListener("keydown", KeyDownHandler);
             WatchedElement.removeEventListener("keyup", KeyUpHandler);
             WatchedElement.removeEventListener("paste", PastHandler);
@@ -728,8 +728,7 @@ export default function useEditorHTMLDaemon(
 }
 
 function FindNearestParagraph(node: Node, targetTagName = 'p'): HTMLElement | null {
-    const TagName = targetTagName
-    while (node && node.nodeName !== TagName) {
+    while (node && node.nodeName !== targetTagName) {
         if (!node.parentNode) {
             return null;
         }

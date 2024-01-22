@@ -7,78 +7,70 @@ const TagName: string = "span";
 const MDTransformer = (ast: object) => {
     // At this stage, the custom MD syntax will be in a normal text syntax node due to it not being processed by previous plugins that only handled the general use cases.
     visit<any, any>(ast, 'text', visitor)
-
+    
     function visitor(node: any, nodeIndex: any, parentNode: any) {
-
-
+        
+        
         let regExpCopy = SyntaxRegex;
-
+        
         let textNodeValue: string = node.value;
-
+        
         // No use for the positional information yet.
         const nodePosition = node.position;
-
+        
         let match: RegExpExecArray | null;
-
+        
         let NewChildNodesForParent = [];
-
+        
         while (null !== (match = regExpCopy.exec(textNodeValue))) {
             const [matchedTextWhole, matchedTextBare] = match;
-
+            
             const textPreValue = textNodeValue.slice(0, match.index);
             if (textPreValue !== "" && textPreValue !== " ") {
                 const textNodePre = {
                     type: 'text',
                     value: textPreValue
                 }
-                // console.log("Pre:");
-                // console.log(textNodePre);
                 NewChildNodesForParent.push(textNodePre);
             }
-
+            
             // Add the Special link in the middle
             const ConvertChildNode = h(`${TagName}`,
                 {'dataLinkTo': `${matchedTextBare}`},
                 [`${matchedTextBare}`]);
-
+            
             NewChildNodesForParent.push(ConvertChildNode);
-
+            
             let bPostValuePlain = true;
             const textPostValue = textNodeValue.slice(match.index + matchedTextWhole.length, textNodeValue.length);
             if (textPostValue.search(regExpCopy) !== -1) {
                 bPostValuePlain = false;
                 textNodeValue = textPostValue;
-
+                
                 // Since the original text has been changed,
                 // resetting the RegExp's index to 0 so that it can start again
                 // If we remove the `g` from the RegExp, this reset would not have been needed.
                 // but that way the RegExp won't know what has been searched already, and therefore go into a loop for the `normal` cases where the Post Text is plain
                 // in that case,
                 regExpCopy.lastIndex = 0;
-
             }
-
+            
             if (textPostValue !== "" && bPostValuePlain) {
-
+                
                 const textNodePost = {
                     type: 'text',
                     value: textPostValue
                 }
-
-                // console.log("Post:");
-                // console.log(textNodePost);
-
+                
                 NewChildNodesForParent.push(textNodePost);
             }
-
         }
-
+        
         // No custom tags found
         if (!NewChildNodesForParent.length) {
             return node;
         }
-
-
+        
         let parentNodeModified = {
             children: [
                 ...parentNode.children.slice(0, nodeIndex),
@@ -86,32 +78,30 @@ const MDTransformer = (ast: object) => {
                 ...parentNode.children.slice(nodeIndex + 1)
             ]
         };
-
+        
         Object.assign(parentNode, parentNodeModified);
-
+        
         return node;
     }
 };
 
 const HTMLTransformer = (ast: object) => {
     visit<any, any>(ast, 'element', visitor)
-
-    // console.log(ast);
-
+    
     function visitor(node: any, nodeIndex: any, parentNode: any) {
         if (node.tagName !== TagName) return;
-
+        
         if (!node.properties['dataLinkTo']) {
             return;
         }
-
+        
         const LinkToValue = node.properties['dataLinkTo'];
-
+        
         const ConvertedTextNode = {
             type: 'text',
             value: `@[${LinkToValue}]`
         }
-
+        
         let parentNodeModified = {
             children: [
                 ...parentNode.children.slice(0, nodeIndex),

@@ -1,0 +1,3 @@
+.Editor-Inner {
+    @apply p-3 focus:outline-none focus:ring-0
+}

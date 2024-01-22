@@ -6,13 +6,14 @@ import "./Editor.css";
 import _ from 'lodash';
 
 const MarkdownFakeDate = `
- # Welcome to @[aaa] Editor! @[bbb]
+# Welcome to @\\[aaa] Editor! @\\[bbb]
 
- Hi! I'm ~~your~~ Markdown file in **Editor**.
+Hi! I'm ~~your~~ Markdown file in **Editor**.
 
- **custom** link **syntax**: @[ccc] AHHHHHHHHH [123](google.com)
- 
- Test with no sibling
+**custom** link **syntax**: @\\[ccc] AHHHHHHHHH [123](google.com)
+:br
+:br
+Test with no sibling
 `
 
 type TSubElementsQueue = {
@@ -118,7 +119,7 @@ export default function Editor() {
     const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
         .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
             acc[tagName] = (props: any) => <SyntaxRenderer {...props}
-                                                           NotifyParent={toggleEditingSubElement}
+                                                           ParentAction={toggleEditingSubElement}
                                                            tagName={tagName}/>;
             return acc;
         }, {});
@@ -167,7 +168,7 @@ const Paragraph = (props: any) => {
 };
 
 const SyntaxRenderer = (props: any) => {
-    const {children, tagName, NotifyParent, ...otherProps} = props;
+    const {children, tagName, ParentAction, ...otherProps} = props;
     
     if (otherProps['data-link-to']) {
         return <SpecialLinkComponent {...props}/>
@@ -180,12 +181,13 @@ const SyntaxRenderer = (props: any) => {
 };
 
 function SpecialLinkComponent(props: any) {
-    const {children, tagName, NotifyParent, ...otherProps} = props;
+    const {children, tagName, ParentAction, ...otherProps} = props;
     return React.createElement(tagName, otherProps, children);
 }
 
 function TestCompo(props: any) {
-    const {tagName, NotifyParent, children, ...otherProps} = props;
+    const {tagName, ParentAction, ...otherProps} = props;
+    let {children} = props;
     
     const ElementRef = useRef<HTMLElement | null>(null);
     const [isEditing, setIsEditing] = useState(false);
@@ -207,7 +209,7 @@ function TestCompo(props: any) {
             const generatedId: string = _.uniqueId("_" + ElementRef.current?.tagName.toLowerCase());
             IdentifierRef.current = timestamp + generatedId;
             
-            NotifyParent(true, IdentifierRef.current, ElementRef.current);
+            ParentAction(true, IdentifierRef.current, ElementRef.current);
         };
         
         const OnFocusOut = (ev: Event) => {
@@ -220,7 +222,7 @@ function TestCompo(props: any) {
                 newValue: ElementRef.current?.firstChild!.nodeValue
             };
             
-            NotifyParent(false, IdentifierRef.current, ElementRef.current, mutation);
+            ParentAction(false, IdentifierRef.current, ElementRef.current, mutation);
             setIsEditing(false);
         }
         
