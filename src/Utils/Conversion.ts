@@ -83,10 +83,39 @@ export async function HTML2MD(CurrentContent: Compatible) {
                     const result = u('text', ':br');
                     State.patch(Node, result);
                     return result;
+                },
+                'span': (State, Node) => {
+                    const LinkedTarget = Node.properties['dataLinkTo'];
+                    if (!LinkedTarget || LinkedTarget === '') {
+                        return;
+                    }
+                    
+                    const FirstTextNode = Node.children[0];
+                    if (!(typeof FirstTextNode === 'object') || !('value' in FirstTextNode))
+                        return;
+                    
+                    let TextDirectiveContent: string;
+                    
+                    if (LinkedTarget === FirstTextNode.value)
+                        TextDirectiveContent = `:LinkTo[${LinkedTarget}]`
+                    else
+                        TextDirectiveContent = `:LinkTo[${FirstTextNode.value}]{${LinkedTarget}}`
+                    
+                    const result = u('text', TextDirectiveContent);
+                    
+                    State.patch(Node, result);
+                    return result;
                 }
             }
         })
-        .use(remarkStringify)
+        .use(remarkStringify, {
+            handlers: {
+                'text': (node, parent, state) => {
+                    // This is to "unescape" the MD syntax such as [ or *,
+                    return node.value;
+                }
+            }
+        })
         .process(CurrentContent);
     
 }

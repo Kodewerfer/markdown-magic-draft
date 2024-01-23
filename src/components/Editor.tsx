@@ -10,7 +10,7 @@ const MarkdownFakeDate = `
 
 Hi! I'm ~~your~~ Markdown file in **Editor**.
 
-**custom** link **syntax**: @\\[ccc] AHHHHHHHHH [123](google.com)
+**custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
 :br
 :br
 Test with no sibling
@@ -39,7 +39,6 @@ export default function Editor() {
     
     let ExtractMD = async () => {
         const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
-        
         console.log(String(ConvertedMarkdown));
     }
     
