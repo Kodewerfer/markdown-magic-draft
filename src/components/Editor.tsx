@@ -11,9 +11,24 @@ const MarkdownFakeDate = `
 Hi! I'm ~~your~~ Markdown file in **Editor**.
 
 **custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
+
 :br
+
 :br
+
 Test with no sibling
+
+\`\`\`javascript
+var s = "JavaScript syntax highlighting";
+alert(s);
+\`\`\`
+
+:br
+
+- list1
++ list2
++ list3
+
 `
 
 type TSubElementsQueue = {
@@ -37,7 +52,7 @@ export default function Editor() {
             ShouldObserve: !isEditingSubElement
         });
     
-    let ExtractMD = async () => {
+    const ExtractMD = async () => {
         const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
         console.log(String(ConvertedMarkdown));
     }
@@ -114,16 +129,27 @@ export default function Editor() {
         return newNodes;
     }
     
-    // Map all possible text-containing tags to TextContainer component and therefore manage them.
-    const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
-        .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
-            acc[tagName] = (props: any) => <SyntaxRenderer {...props}
-                                                           ParentAction={toggleEditingSubElement}
-                                                           tagName={tagName}/>;
-            return acc;
-        }, {});
     
     const HTML2EditorCompos = (md2HTML: Compatible) => {
+        
+        // Map all possible text-containing tags to TextContainer component and therefore manage them.
+        const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
+            .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
+                acc[tagName] = (props: any) => {
+                    if (props['data-md-syntax'])
+                        // console.log(props)
+                    if (props['data-link-to']) {
+                        return <SpecialLinkComponent {...props}
+                                                     ParentAction={toggleEditingSubElement}
+                                                     tagName={tagName}/>;
+                    }
+                    return <SyntaxRenderer {...props}
+                                           ParentAction={toggleEditingSubElement}
+                                           tagName={tagName}/>;
+                }
+                return acc;
+            }, {});
+        
         const componentOptions = {
             ...TextNodesMappingConfig,
             'p': Paragraph
@@ -169,9 +195,9 @@ const Paragraph = (props: any) => {
 const SyntaxRenderer = (props: any) => {
     const {children, tagName, ParentAction, ...otherProps} = props;
     
-    if (otherProps['data-link-to']) {
-        return <SpecialLinkComponent {...props}/>
-    }
+    // if (otherProps['data-link-to']) {
+    //     return <SpecialLinkComponent {...props}/>
+    // }
     
     if (tagName === 'strong')
         return <TestCompo {...props}/>

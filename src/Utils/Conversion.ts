@@ -16,6 +16,7 @@ import rehypeStringify from "rehype-stringify";
 import remarkDirective from "remark-directive";
 
 import HandleCustomDirectives from "../UnifiedPlugins/HandleCustomDirectives";
+import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
 
 let SanitizSchema = Object.assign({}, defaultSchema);
 SanitizSchema!.attributes!['*'] = SanitizSchema!.attributes!['*'].concat(['data*'])
@@ -29,6 +30,7 @@ export async function MD2HTML(MarkdownContent: Compatible) {
         .use(HandleCustomDirectives)
         .use(remarkRehype)
         .use(rehypeSanitize, SanitizSchema)
+        .use(AddSyntaxInAttribute)
         .use(rehypeStringify)
         .process(MarkdownContent);
 }
@@ -41,6 +43,7 @@ export function MD2HTMLSync(MarkdownContent: Compatible) {
         .use(HandleCustomDirectives)
         .use(remarkRehype)
         .use(rehypeSanitize, SanitizSchema)
+        .use(AddSyntaxInAttribute)
         .use(rehypeStringify)
         .processSync(MarkdownContent);
 }
@@ -74,39 +77,13 @@ export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Recor
 
 export async function HTML2MD(CurrentContent: Compatible) {
     
+    const rehyperRemarkHandlers = GetRehyperRemarkHandlers();
+    
     return await unified()
         .use(rehypeParse)
         .use(remarkGfm)
         .use(rehypeRemark, {
-            handlers: {
-                'br': (State, Node) => {
-                    const result = u('text', ':br');
-                    State.patch(Node, result);
-                    return result;
-                },
-                'span': (State, Node) => {
-                    const LinkedTarget = Node.properties['dataLinkTo'];
-                    if (!LinkedTarget || LinkedTarget === '') {
-                        return;
-                    }
-                    
-                    const FirstTextNode = Node.children[0];
-                    if (!(typeof FirstTextNode === 'object') || !('value' in FirstTextNode))
-                        return;
-                    
-                    let TextDirectiveContent: string;
-                    
-                    if (LinkedTarget === FirstTextNode.value)
-                        TextDirectiveContent = `:LinkTo[${LinkedTarget}]`
-                    else
-                        TextDirectiveContent = `:LinkTo[${FirstTextNode.value}]{${LinkedTarget}}`
-                    
-                    const result = u('text', TextDirectiveContent);
-                    
-                    State.patch(Node, result);
-                    return result;
-                }
-            }
+            handlers: rehyperRemarkHandlers
         })
         .use(remarkStringify, {
             handlers: {
@@ -118,4 +95,36 @@ export async function HTML2MD(CurrentContent: Compatible) {
         })
         .process(CurrentContent);
     
+}
+
+function GetRehyperRemarkHandlers() {
+    return {
+        'br': (State: any, Node: any) => {
+            const result = u('text', ':br');
+            State.patch(Node, result);
+            return result;
+        },
+        'span': (State: any, Node: any) => {
+            const LinkedTarget = Node.properties['dataLinkTo'];
+            if (!LinkedTarget || LinkedTarget === '') {
+                return;
+            }
+            
+            const FirstTextNode = Node.children[0];
+            if (!(typeof FirstTextNode === 'object') || !('value' in FirstTextNode))
+                return;
+            
+            let TextDirectiveContent: string;
+            
+            if (LinkedTarget === FirstTextNode.value)
+                TextDirectiveContent = `:LinkTo[${LinkedTarget}]`
+            else
+                TextDirectiveContent = `:LinkTo[${FirstTextNode.value}]{${LinkedTarget}}`
+            
+            const result = u('text', TextDirectiveContent);
+            
+            State.patch(Node, result);
+            return result;
+        }
+    };
 }
