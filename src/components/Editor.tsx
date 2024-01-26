@@ -5,38 +5,22 @@ import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
 
-const MarkdownFakeDate = `
-# Welcome to :LinkTo[AAA, A1A]{aaa} Editor! :LinkTo[BBB]
-
-Hi! I'm ~~your~~ Markdown file in Editor**.
-
-**custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
-
-:br
-
-:br
-
-Test with no sibling
-
-\`\`\`javascript
-var s = "JavaScript syntax highlighting";
-alert(s);
-\`\`\`
-
-:br
-
-+ list1
-+ list2
-+ list3
-
-`
-
 type TSubElementsQueue = {
     [key: string]: HTMLElement | null;
 };
-export default function Editor() {
-    const [sourceMD, setSourceMD] = useState(MarkdownFakeDate);
-    const EditorHTMLSourceRef = useRef<Document | null>(null);
+
+type TEditorProps = {
+    SourceData?: string | undefined
+};
+
+export default function Editor(
+    {SourceData}: TEditorProps
+) {
+    const [sourceMD, setSourceMD] = useState<string>(() => {
+        SourceData = SourceData || "";
+        return SourceData;
+    });
+    const EditorSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
     const EditorHTMLString = useRef('');
     
@@ -45,31 +29,12 @@ export default function Editor() {
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
     
-    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorHTMLSourceRef, ReloadEditorContent,
+    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorSourceRef, ReloadEditorContent,
         {
             TextNodeCallback: TextNodeHandler,
             IsEditable: !isEditingSubElement,
             ShouldObserve: !isEditingSubElement
         });
-    
-    const ExtractMD = async () => {
-        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
-        console.log(String(ConvertedMarkdown));
-    }
-    
-    async function ReloadEditorContent() {
-        if (!EditorHTMLSourceRef.current) return;
-        const bodyElement: HTMLBodyElement | null = EditorHTMLSourceRef.current.documentElement.querySelector('body');
-        if (bodyElement)
-            EditorHTMLString.current = String(bodyElement!.innerHTML);
-        
-        // FIXME
-        // console.log(EditorHTMLString.current);
-        
-        setEditorContentCompo((prev) => {
-            return HTML2EditorCompos(EditorHTMLString.current)
-        });
-    }
     
     const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
         if (!Identifier) {
@@ -102,6 +67,21 @@ export default function Editor() {
         setIsEditingSubElement(true);
     }
     
+    async function ExtractMD() {
+        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
+        console.log(String(ConvertedMarkdown));
+    }
+    
+    async function ReloadEditorContent() {
+        if (!EditorSourceRef.current) return;
+        const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
+        if (bodyElement)
+            EditorHTMLString.current = String(bodyElement!.innerHTML);
+        setEditorContentCompo((prev) => {
+            return HTML2EditorCompos(EditorHTMLString.current)
+        });
+    }
+    
     function TextNodeHandler(textNode: Node) {
         if (textNode.textContent === null) return;
         const convertedHTML = String(MD2HTMLSync(textNode.textContent));
@@ -128,7 +108,7 @@ export default function Editor() {
         return newNodes;
     }
     
-    const HTML2EditorCompos = (md2HTML: Compatible) => {
+    function HTML2EditorCompos(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
         const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
@@ -153,7 +133,7 @@ export default function Editor() {
             'p': Paragraph
         }
         return HTML2ReactSnyc(md2HTML, componentOptions).result;
-    };
+    }
     
     useEffect(() => {
         ;(async () => {
@@ -162,7 +142,7 @@ export default function Editor() {
             
             // Save a copy of HTML
             const HTMLParser = new DOMParser()
-            EditorHTMLSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
+            EditorSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
             EditorHTMLString.current = String(md2HTML);
             setEditorContentCompo((prev) => {
                 return HTML2EditorCompos(EditorHTMLString.current)
