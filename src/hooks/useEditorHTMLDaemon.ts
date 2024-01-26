@@ -122,43 +122,40 @@ export default function useEditorHTMLDaemon(
         while ((mutation = DaemonState.MutationQueue.pop())) {
             
             // Text Changed
-            if (mutation.oldValue !== null && mutation.type === "characterData") {
+            if (mutation.type === "characterData" && mutation.oldValue !== null) {
                 
-                if (lastMutation && mutation.target === lastMutation.target) {
-                    continue;
-                }
+                // only use the latest character data mutation.
+                if (lastMutation && mutation.target === lastMutation.target) continue;
                 
+                const latestOperationLog = OperationLogs[OperationLogs.length - 1];
                 const OldTextNode = mutation.target;
                 const parentNode = mutation.target.parentNode as HTMLElement;
-                let ParentXPath = '';
-                const latestOperationLog = OperationLogs[OperationLogs.length - 1];
+                const ParentXPath = parentNode ? GetXPathFromNode(parentNode) : '';
                 
-                if (parentNode)
-                    ParentXPath = GetXPathFromNode(parentNode)
-                
-                if (parentNode && typeof parentNode.hasAttribute === "function" && typeof HookOptions.TextNodeCallback === 'function') {
+                // TextNodeCallback present, use TextNodeCallback result.
+                if (typeof HookOptions.TextNodeCallback === 'function' && parentNode) {
                     
-                    const textNodeCallback = HookOptions.TextNodeCallback(OldTextNode);
+                    const callbackResult = HookOptions.TextNodeCallback(OldTextNode);
                     
-                    if (textNodeCallback) {
-                        
-                        if (parentNode.hasAttribute('data-to-be-replaced')) {
-                            
-                            const Operation: TOperationLog = {
-                                type: TOperationType.REPLACE,
-                                node: ParentXPath,
-                                newNodes: textNodeCallback
-                            }
-                            
-                            if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
-                                OperationLogs.push(Operation);
-                            
-                        } else if (textNodeCallback.length === 1 && textNodeCallback[0].textContent !== null) {
+                    if (!callbackResult) {
+                        console.error("Invalid text node handler return", ParentXPath, OldTextNode);
+                        continue;
+                    }
+                    
+                    // result array has only one node
+                    if (callbackResult.length === 1 && callbackResult[0].textContent !== null) {
+                        // resulting node is the same as the old nde.
+                        // Change text content only
+                        if (parentNode.tagName.toLowerCase() === (callbackResult[0] as HTMLElement).tagName?.toLowerCase()
+                            || callbackResult[0].nodeType === Node.TEXT_NODE) {
                             
                             let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
                             let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
                             
-                            const restoredText = whiteSpaceStart[0] + textNodeCallback[0].textContent.trim() + whiteSpaceEnd[0];
+                            let restoredText = callbackResult[0].textContent;
+                            if (restoredText.trim() !== '') {
+                                restoredText = whiteSpaceStart[0] + callbackResult[0].textContent.trim() + whiteSpaceEnd[0];
+                            }
                             
                             const Operation: TOperationLog = {
                                 type: TOperationType.TEXT,
@@ -169,38 +166,79 @@ export default function useEditorHTMLDaemon(
                             if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
                                 OperationLogs.push(Operation);
                         } else {
+                            // resulting node changed in type
+                            // replace the old node
+                            const Operation: TOperationLog = {
+                                type: TOperationType.REPLACE,
+                                node: ParentXPath,
+                                newNodes: callbackResult
+                            }
                             
-                            textNodeCallback.forEach((node) => {
-                                OperationLogs.push({
-                                    type: TOperationType.ADD,
-                                    node: node,
-                                    parentNode: ParentXPath,
-                                    siblingNode: OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null
-                                });
-                            })
-                            
-                            OperationLogs.push({
-                                type: TOperationType.REMOVE,
-                                node: GetXPathFromNode(OldTextNode),
-                                parentNode: ParentXPath
-                            });
+                            if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
+                                OperationLogs.push(Operation);
                         }
                         
-                        continue;
+                    } else {
+                        // result array has multiple valid nodes
+                        // add the new node, remove the old one
+                        
+                        let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
+                        let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
+                        
+                        OperationLogs.push({
+                            type: TOperationType.REMOVE,
+                            node: GetXPathFromNode(OldTextNode),
+                            parentNode: ParentXPath
+                        });
+                        
+                        // toReversed(), because the later operation uses pop()
+                        callbackResult.toReversed().forEach((node, index, array) => {
+                            
+                            if (index === 0) {
+                                // the last element,because it is flipped,
+                                if (node.textContent) {
+                                    node.textContent = node.textContent.trim() + whiteSpaceEnd[0];
+                                }
+                            }
+                            
+                            if (index === array.length - 1) {
+                                // the first element,because it is flipped,
+                                if (node.textContent) {
+                                    node.textContent = whiteSpaceStart[0] + node.textContent.trim()
+                                }
+                            }
+                            
+                            // if there is a non text node in between, add whitespace to surrounding textnodes.
+                            if (node.textContent && node.textContent !== ' ') {
+                                if (!node.textContent.endsWith(' ') && array[index - 1] && array[index - 1].nodeType !== Node.TEXT_NODE) {
+                                    node.textContent = node.textContent.trimEnd() + ' ';
+                                }
+                                if (!node.textContent.startsWith(' ') && array[index + 1] && array[index + 1].nodeType !== Node.TEXT_NODE) {
+                                    node.textContent = ' ' + node.textContent.trimStart();
+                                }
+                            }
+                            
+                            OperationLogs.push({
+                                type: TOperationType.ADD,
+                                node: node,
+                                parentNode: ParentXPath,
+                                siblingNode: OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null
+                            });
+                        })
+                        
                     }
+                    
+                } else {
+                    // Default handling, change text content only
+                    const Operation: TOperationLog = {
+                        type: TOperationType.TEXT,
+                        node: GetXPathFromNode(mutation.target),
+                        nodeText: mutation.target.textContent
+                    }
+                    
+                    if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
+                        OperationLogs.push(Operation);
                 }
-                
-                const Operation: TOperationLog = {
-                    type: TOperationType.TEXT,
-                    node: GetXPathFromNode(mutation.target),
-                    nodeText: mutation.target.textContent
-                }
-                
-                if (JSON.stringify(latestOperationLog) !== JSON.stringify(Operation))
-                    OperationLogs.push(Operation);
-                
-                // rollback
-                // mutation.target.textContent = mutation.oldValue;
             }
             // Nodes removed
             if (mutation.removedNodes && mutation.removedNodes.length) {
@@ -219,7 +257,6 @@ export default function useEditorHTMLDaemon(
                         node: GetXPathFromNode(mutation.removedNodes[i]),
                         parentNode: GetXPathFromNode(mutation.target)
                     });
-                    
                     // Redo
                     // To acquire the correct xpath, the node must be added to the original tree first.
                     // if (typeof removedNode.hasAttribute === "function" && removedNode.hasAttribute('data-no-roll-back')) {
@@ -235,15 +272,6 @@ export default function useEditorHTMLDaemon(
                     
                     if (addedNode.parentNode) {
                         mutation.target.removeChild(addedNode);
-                        // try {
-                        //     if (!(addedNode as HTMLElement).hasAttribute('data-no-roll-back')
-                        //         && !(addedNode.parentNode as HTMLElement).hasAttribute('data-no-roll-back')) {
-                        //         mutation.target.removeChild(addedNode);
-                        //     }
-                        // } catch (e) {
-                        //     // addedNode is likely a text node.
-                        //     mutation.target.removeChild(addedNode);
-                        // }
                     }
                     
                     OperationLogs.push({
@@ -444,7 +472,6 @@ export default function useEditorHTMLDaemon(
             return null;
         }
         
-        
         const AnchorNodeXPath: string = GetXPathFromNode(CurrentSelection.anchorNode);
         
         const SelectionExtent = CurrentSelection.isCollapsed ? CurrentSelection.toString().length : 0;
@@ -546,7 +573,7 @@ export default function useEditorHTMLDaemon(
         
     }
     
-    function AddToRecord(Record: MutationRecord) {
+    function AddToRecordAndSync(Record: MutationRecord) {
         DaemonState.MutationQueue.push(Record);
         throttledSelectionStatus();
         throttledRollbackAndSync();
@@ -723,7 +750,7 @@ export default function useEditorHTMLDaemon(
     }, [WatchElementRef.current!])
     
     return {
-        AddToRecord: AddToRecord
+        AddToRecord: AddToRecordAndSync
     }
 }
 

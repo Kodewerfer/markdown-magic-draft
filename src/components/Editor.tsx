@@ -8,7 +8,7 @@ import _ from 'lodash';
 const MarkdownFakeDate = `
 # Welcome to :LinkTo[AAA, A1A]{aaa} Editor! :LinkTo[BBB]
 
-Hi! I'm ~~your~~ Markdown file in **Editor**.
+Hi! I'm ~~your~~ Markdown file in Editor**.
 
 **custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
 
@@ -25,7 +25,7 @@ alert(s);
 
 :br
 
-- list1
++ list1
 + list2
 + list3
 
@@ -99,7 +99,6 @@ export default function Editor() {
         }
         
         EditingQueue.current[Identifier] = ElementRef
-        console.log(EditingQueue.current);
         setIsEditingSubElement(true);
     }
     
@@ -129,7 +128,6 @@ export default function Editor() {
         return newNodes;
     }
     
-    
     const HTML2EditorCompos = (md2HTML: Compatible) => {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
@@ -138,11 +136,11 @@ export default function Editor() {
                 acc[tagName] = (props: any) => {
                     if (props['data-md-syntax'])
                         // console.log(props)
-                    if (props['data-link-to']) {
-                        return <SpecialLinkComponent {...props}
-                                                     ParentAction={toggleEditingSubElement}
-                                                     tagName={tagName}/>;
-                    }
+                        if (props['data-link-to']) {
+                            return <SpecialLinkComponent {...props}
+                                                         ParentAction={toggleEditingSubElement}
+                                                         tagName={tagName}/>;
+                        }
                     return <SyntaxRenderer {...props}
                                            ParentAction={toggleEditingSubElement}
                                            tagName={tagName}/>;
@@ -211,30 +209,48 @@ function SpecialLinkComponent(props: any) {
 }
 
 function TestCompo(props: any) {
-    const {tagName, ParentAction, ...otherProps} = props;
-    let {children} = props;
+    const {tagName, ParentAction, children, ...otherProps} = props;
+    
+    const propSyntaxData: any = otherProps['data-md-syntax'];
+    const propShouldWrap: any = otherProps['data-md-wrapped'];
+    const [childrenWithSyntax] = useState<String>(() => {
+        let result;
+        if (propSyntaxData) {
+            result = propSyntaxData + children;
+            if (propShouldWrap === 'true')
+                result += propSyntaxData;
+        }
+        
+        return result;
+    });
     
     const ElementRef = useRef<HTMLElement | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const IdentifierRef = useRef<string | undefined>(undefined);
     
+    useEffect(() => {
+    
+    });
+    
     useLayoutEffect(() => {
         const OnClick = (ev: Event) => {
             ev.stopPropagation();
             ElementRef.current?.focus();
-            
-            if (!isEditing)
-                setIsEditing(true);
         };
         
         const OnFocus = (ev: HTMLElementEventMap['focusin']) => {
             ev.stopPropagation();
             
+            if (!isEditing)
+                setIsEditing(true);
+            
             const timestamp = new Date().valueOf();
             const generatedId: string = _.uniqueId("_" + ElementRef.current?.tagName.toLowerCase());
             IdentifierRef.current = timestamp + generatedId;
             
+            
             ParentAction(true, IdentifierRef.current, ElementRef.current);
+            
         };
         
         const OnFocusOut = (ev: Event) => {
@@ -242,7 +258,7 @@ function TestCompo(props: any) {
             
             let mutation = {
                 type: "characterData",
-                oldValue: ' ',
+                oldValue: String(children),
                 target: ElementRef.current?.firstChild!,
                 newValue: ElementRef.current?.firstChild!.nodeValue
             };
@@ -280,6 +296,6 @@ function TestCompo(props: any) {
         suppressContentEditableWarning: true,
         ...otherProps,
         ref: ElementRef,
-    }, children)
+    }, isEditing ? childrenWithSyntax : children)
     
 }
