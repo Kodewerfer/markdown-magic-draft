@@ -22,6 +22,7 @@ enum TOperationType {
 // Instructions for DOM manipulations on the mirror document
 type TOperationLog = {
     type: TOperationType,
+    wasText?: boolean,
     node?: Node,
     nodeXP: string,
     newNodes?: Node[] | HTMLElement[],
@@ -164,84 +165,70 @@ export default function useEditorHTMLDaemon(
                     }
                     
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
-                    const OldTextNodeXPath = GetXPathFromNode(OldTextNode);
-                    /**
-                     * ---Only one resulting node
-                     *  replace the old node, this is so that undo can replace it back later
-                     */
-                    if (callbackResult.length === 1) {
-                        
-                        let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
-                        let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
-                        
-                        let restoredText = callbackResult[0].textContent;
-                        if (restoredText !== null && restoredText.trim() !== '') {
-                            restoredText = whiteSpaceStart[0] + callbackResult[0].textContent!.trim() + whiteSpaceEnd[0];
-                            callbackResult[0].textContent = restoredText;
-                        }
-                        
-                        const ReplaceTarget = ParentNode.tagName.toLowerCase() === 'p' || ParentNode.tagName.toLowerCase() === 'div' ? OldTextNodeXPath : ParentXPath;
-                        const ReplaceNode = ParentNode.tagName.toLowerCase() === 'p' || ParentNode.tagName.toLowerCase() === 'div' ? OldTextNode : ParentNode;
-                        
-                        const Operation: TOperationLog = {
-                            type: TOperationType.REPLACE,
-                            nodeXP: ReplaceTarget,
-                            newNodes: [callbackResult[0].cloneNode(true)],
-                            oldNode: ReplaceNode.cloneNode(true),
-                            // oldNodeXP:
-                        }
-                        OperationLogs.push(Operation);
-                        
+                    const ParentParentXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
+                    
+                    const LogParentXP = ParentNode.tagName.toLowerCase() === 'p' || ParentNode.tagName.toLowerCase() === 'div' ? ParentXPath : ParentParentXPath;
+                    
+                    let oldNodeRemovalTarget: Node = OldTextNode;
+                    let logNodeXP = '';
+                    let logSiblingXP: string | null = null;
+                    
+                    if (LogParentXP === ParentXPath) {
+                        logNodeXP = GetXPathNthChild(OldTextNode);
+                        logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
                     }
-                    /**
-                     * ---Multiple valid nodes
-                     * add the new node, remove the old one, undo can just flip the actions
-                     */
-                    if (callbackResult.length > 1) {
-                        
-                        let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
-                        let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
-                        
-                        // toReversed(), because the later operation uses pop()
-                        callbackResult.toReversed().forEach((node, index, array) => {
-                            if (index === 0) {
-                                // the last element,because it is flipped,
-                                if (node.textContent) {
-                                    node.textContent = node.textContent.trim() + whiteSpaceEnd[0];
-                                }
+                    
+                    if (LogParentXP === ParentParentXPath) {
+                        oldNodeRemovalTarget = ParentNode;
+                        logNodeXP = GetXPathNthChild(ParentNode);
+                        logSiblingXP = ParentNode.nextSibling ? GetXPathFromNode(ParentNode.nextSibling) : null;
+                    }
+                    
+                    let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
+                    let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
+                    
+                    // toReversed(), because the later operation uses pop()
+                    callbackResult.toReversed().forEach((node, index, array) => {
+                        if (index === 0) {
+                            // the last element,because it is flipped,
+                            if (node.textContent) {
+                                node.textContent = node.textContent.trim() + whiteSpaceEnd[0];
                             }
-                            if (index === array.length - 1) {
-                                // the first element,because it is flipped,
-                                if (node.textContent) {
-                                    node.textContent = whiteSpaceStart[0] + node.textContent.trim()
-                                }
+                        }
+                        if (index === array.length - 1) {
+                            // the first element,because it is flipped,
+                            if (node.textContent) {
+                                node.textContent = whiteSpaceStart[0] + node.textContent.trim()
                             }
-                            // if there is a non text node in between, add whitespace to surrounding textnodes.
-                            if (node.textContent && node.textContent !== ' ') {
-                                if (!node.textContent.endsWith(' ') && array[index - 1] && array[index - 1].nodeType !== Node.TEXT_NODE) {
-                                    node.textContent = node.textContent.trimEnd() + ' ';
-                                }
-                                if (!node.textContent.startsWith(' ') && array[index + 1] && array[index + 1].nodeType !== Node.TEXT_NODE) {
-                                    node.textContent = ' ' + node.textContent.trimStart();
-                                }
+                        }
+                        // if there is a non text node in between, add whitespace to surrounding textnodes.
+                        if (node.textContent && node.textContent !== ' ') {
+                            if (!node.textContent.endsWith(' ') && array[index - 1] && array[index - 1].nodeType !== Node.TEXT_NODE) {
+                                node.textContent = node.textContent.trimEnd() + ' ';
                             }
-                            OperationLogs.push({
-                                type: TOperationType.ADD,
-                                node: node.cloneNode(true),
-                                nodeXP: GetXPathNthChild(OldTextNode), //redo will remove at the position of the "replaced" text node
-                                parentNode: ParentXPath,
-                                siblingNode: OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null
-                            });
-                        })
+                            if (!node.textContent.startsWith(' ') && array[index + 1] && array[index + 1].nodeType !== Node.TEXT_NODE) {
+                                node.textContent = ' ' + node.textContent.trimStart();
+                            }
+                        }
                         
                         OperationLogs.push({
-                            type: TOperationType.REMOVE,
-                            node: OldTextNode.cloneNode(true),
-                            nodeXP: OldTextNodeXPath,
-                            parentNode: ParentXPath,
-                            siblingNode: OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null
+                            type: TOperationType.ADD,
+                            wasText: true,
+                            node: node.cloneNode(true),
+                            nodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
+                            parentNode: LogParentXP,
+                            siblingNode: logSiblingXP
                         });
-                    }
+                    })
+                    
+                    OperationLogs.push({
+                        type: TOperationType.REMOVE,
+                        wasText: true,
+                        node: oldNodeRemovalTarget.cloneNode(true),
+                        nodeXP: logNodeXP,
+                        parentNode: LogParentXP,
+                        siblingNode: logSiblingXP
+                    });
                     
                 } else {
                     // Default handling, change text content only
@@ -495,13 +482,12 @@ export default function useEditorHTMLDaemon(
     const syncToMirror = (Operations: TOperationLog[]) => {
         
         if (!Operations.length) return;
-        
+        MirrorDocumentRef.current?.normalize();
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeXP, newNodes, nodeText, parentNode, siblingNode} = operation;
             
             console.log(operation);
-            
             try {
                 if (type === TOperationType.TEXT) {
                     UpdateMirrorDocument.Text(nodeXP, nodeText!);
@@ -516,11 +502,11 @@ export default function useEditorHTMLDaemon(
                     UpdateMirrorDocument.Replace(nodeXP, newNodes!);
                 }
             } catch (e) {
-                
                 console.error("Error When Syncing:", e);
             }
             
         }
+        MirrorDocumentRef.current?.normalize();
     }
     
     // TODO: performance could be improved.
@@ -553,11 +539,6 @@ export default function useEditorHTMLDaemon(
             if (!targetNode) return;
             
             parentNode.removeChild(targetNode);
-            
-            if (targetNode.nodeType === Node.TEXT_NODE) {
-                parentNode.normalize();
-                FindNearestParagraph(parentNode)?.normalize()
-            }
         },
         'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
             
@@ -580,10 +561,6 @@ export default function useEditorHTMLDaemon(
             }
             
             parentNode.insertBefore(targetNode, SiblingNode);
-            
-            if (targetNode.nodeType === Node.TEXT_NODE) {
-                FindNearestParagraph(parentNode)?.normalize()
-            }
         },
         'Replace': (NodeXpath: string, newNodes: Node[] | HTMLElement[]) => {
             if (!NodeXpath || !newNodes.length) {
