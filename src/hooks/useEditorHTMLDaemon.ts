@@ -15,8 +15,7 @@ import _ from 'lodash';
 enum TOperationType {
     TEXT = "TEXT",
     ADD = "ADD",
-    REMOVE = "REMOVE",
-    REPLACE = "REPLACE"
+    REMOVE = "REMOVE"
 }
 
 // Instructions for DOM manipulations on the mirror document
@@ -25,12 +24,10 @@ type TOperationLog = {
     wasText?: boolean,
     node?: Node,
     nodeXP: string,
-    newNodes?: Node[] | HTMLElement[],
-    oldNode?: Node | HTMLElement, //used in redo
     nodeText?: string | null,
     nodeTextOld?: string | null, //used in redo
-    parentNode?: string | null,
-    siblingNode?: string | null
+    parentXP?: string | null,
+    siblingXP?: string | null
 }
 
 // For storing selection before parent re-rendering
@@ -151,16 +148,16 @@ export default function useEditorHTMLDaemon(
                     })
                 }
                 
-                
-                const ParentNode = mutation.target.parentNode as HTMLElement;
                 // TextNodeCallback present, use TextNodeCallback result.
-                if (typeof HookOptions.TextNodeCallback === 'function' && ParentNode) {
+                if (typeof HookOptions.TextNodeCallback === 'function') {
                     
+                    const ParentNode = mutation.target.parentNode as HTMLElement;
                     const OldTextNode = mutation.target;
                     
                     const callbackResult = HookOptions.TextNodeCallback(OldTextNode);
                     if (!callbackResult) {
-                        console.error("Invalid text node handler return", callbackResult, " From ", OldTextNode);
+                        if (OldTextNode.textContent !== '')
+                            console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode);
                         continue;
                     }
                     
@@ -169,23 +166,44 @@ export default function useEditorHTMLDaemon(
                     
                     const LogParentXP = ParentNode.tagName.toLowerCase() === 'p' || ParentNode.tagName.toLowerCase() === 'div' ? ParentXPath : ParentParentXPath;
                     
-                    let oldNodeRemovalTarget: Node = OldTextNode;
-                    let logNodeXP = '';
-                    let logSiblingXP: string | null = null;
+                    let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
+                    let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
                     
-                    if (LogParentXP === ParentXPath) {
-                        logNodeXP = GetXPathNthChild(OldTextNode);
-                        logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
+                    /**
+                     *  Result in only one text node
+                     */
+                    if (LogParentXP === ParentXPath && callbackResult.length === 1 && callbackResult[0].textContent !== null) {
+                        
+                        const RestoredText = whiteSpaceStart[0] + callbackResult[0].textContent.trim() + whiteSpaceEnd[0];
+                        
+                        const Operation: TOperationLog = {
+                            type: TOperationType.TEXT,
+                            nodeXP: GetXPathFromNode(mutation.target),
+                            nodeText: RestoredText,
+                            nodeTextOld: TextNodeOriginalValue
+                        }
+                        OperationLogs.push(Operation);
+                        
+                        // Cache the last
+                        lastMutation = mutation;
+                        continue;
                     }
+                    
+                    /**
+                     *  Result in multiple nodes
+                     *  or only one node but no longer a text node.
+                     */
+                    
+                    let oldNodeRemovalTarget = OldTextNode;
+                    let logNodeXP = GetXPathNthChild(OldTextNode);
+                    let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
+                    
                     
                     if (LogParentXP === ParentParentXPath) {
                         oldNodeRemovalTarget = ParentNode;
                         logNodeXP = GetXPathNthChild(ParentNode);
                         logSiblingXP = ParentNode.nextSibling ? GetXPathFromNode(ParentNode.nextSibling) : null;
                     }
-                    
-                    let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
-                    let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
                     
                     // toReversed(), because the later operation uses pop()
                     callbackResult.toReversed().forEach((node, index, array) => {
@@ -216,8 +234,8 @@ export default function useEditorHTMLDaemon(
                             wasText: true,
                             node: node.cloneNode(true),
                             nodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
-                            parentNode: LogParentXP,
-                            siblingNode: logSiblingXP
+                            parentXP: LogParentXP,
+                            siblingXP: logSiblingXP
                         });
                     })
                     
@@ -226,20 +244,23 @@ export default function useEditorHTMLDaemon(
                         wasText: true,
                         node: oldNodeRemovalTarget.cloneNode(true),
                         nodeXP: logNodeXP,
-                        parentNode: LogParentXP,
-                        siblingNode: logSiblingXP
+                        parentXP: LogParentXP,
+                        siblingXP: logSiblingXP
                     });
                     
-                } else {
-                    // Default handling, change text content only
-                    const Operation: TOperationLog = {
-                        type: TOperationType.TEXT,
-                        nodeXP: GetXPathFromNode(mutation.target),
-                        nodeText: mutation.target.textContent,
-                        nodeTextOld: TextNodeOriginalValue
-                    }
-                    OperationLogs.push(Operation);
+                    // Cache the last
+                    lastMutation = mutation;
+                    continue
                 }
+                
+                // Default handling, change text content only
+                const Operation: TOperationLog = {
+                    type: TOperationType.TEXT,
+                    nodeXP: GetXPathFromNode(mutation.target),
+                    nodeText: mutation.target.textContent,
+                    nodeTextOld: TextNodeOriginalValue
+                }
+                OperationLogs.push(Operation);
             }
             /**
              * Removed
@@ -259,8 +280,8 @@ export default function useEditorHTMLDaemon(
                         type: TOperationType.REMOVE,
                         node: mutation.removedNodes[i].cloneNode(true),
                         nodeXP: GetXPathFromNode(mutation.removedNodes[i]),
-                        parentNode: GetXPathFromNode(mutation.target),
-                        siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
+                        parentXP: GetXPathFromNode(mutation.target),
+                        siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     });
                     // Redo
                     // To acquire the correct xpath, the node must be added to the original tree first.
@@ -288,8 +309,8 @@ export default function useEditorHTMLDaemon(
                         type: TOperationType.ADD,
                         node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
                         nodeXP: addedNodeXP,
-                        parentNode: GetXPathFromNode(mutation.target),
-                        siblingNode: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
+                        parentXP: GetXPathFromNode(mutation.target),
+                        siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     });
                     // redo
                     // mutation.target!.insertBefore(
@@ -345,13 +366,6 @@ export default function useEditorHTMLDaemon(
                 }
                 case 'REMOVE': {
                     Log.type = TOperationType.ADD;
-                    break
-                }
-                case 'REPLACE': {
-                    if (!Log.oldNode) break;
-                    const temp = Log.newNodes;
-                    Log.newNodes = [Log.oldNode];
-                    Log.oldNode = temp ? temp[0] : undefined
                     break
                 }
             }
@@ -485,7 +499,7 @@ export default function useEditorHTMLDaemon(
         MirrorDocumentRef.current?.normalize();
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
-            const {type, node, nodeXP, newNodes, nodeText, parentNode, siblingNode} = operation;
+            const {type, node, nodeXP, nodeText, parentXP, siblingXP} = operation;
             
             console.log(operation);
             try {
@@ -493,13 +507,10 @@ export default function useEditorHTMLDaemon(
                     UpdateMirrorDocument.Text(nodeXP, nodeText!);
                 }
                 if (type === TOperationType.REMOVE) {
-                    UpdateMirrorDocument.Remove(parentNode!, nodeXP);
+                    UpdateMirrorDocument.Remove(parentXP!, nodeXP);
                 }
                 if (type === TOperationType.ADD) {
-                    UpdateMirrorDocument.Add(parentNode!, node!, siblingNode!);
-                }
-                if (type === TOperationType.REPLACE) {
-                    UpdateMirrorDocument.Replace(nodeXP, newNodes!);
+                    UpdateMirrorDocument.Add(parentXP!, node!, siblingXP!);
                 }
             } catch (e) {
                 console.error("Error When Syncing:", e);
@@ -561,22 +572,6 @@ export default function useEditorHTMLDaemon(
             }
             
             parentNode.insertBefore(targetNode, SiblingNode);
-        },
-        'Replace': (NodeXpath: string, newNodes: Node[] | HTMLElement[]) => {
-            if (!NodeXpath || !newNodes.length) {
-                console.error("UpdateMirrorDocument.Replace: Invalid Parameter");
-                return;
-            }
-            
-            const selectedNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath)
-            if (!selectedNode || !(selectedNode as HTMLElement)) return;
-            
-            const parentContainer = selectedNode.parentNode;
-            
-            (selectedNode as HTMLElement).replaceWith(...newNodes);
-            // This combines the (possible) multiple text nodes into one, otherwise there will be strange bugs when editing again.
-            parentContainer?.normalize();
-            FindNearestParagraph(selectedNode)?.normalize()
         }
     }
     
