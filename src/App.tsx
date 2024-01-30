@@ -9,6 +9,13 @@ const MarkdownFakeDate = `
 Hi! I'm ~~your~~ Markdown file in Editor**.
 
 **custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
+:br
+
+TEXTTEXT**testOneWithPre**
+
+:br
+
+~~DelTag~~**testOneWithAFT**TEXTTEXT
 
 :br
 
