@@ -22,14 +22,17 @@ enum TOperationType {
 type TOperationLog = {
     type: TOperationType,
     wasText?: boolean,  //indicate if it was a replacement node resulting from text node callback
+    noRedo?: boolean, // undo operation may end up creating additional logs, these logs are not suitable for redo
     node?: Node,
     nodeXP: string,
     nodeText?: string | null,
     nodeTextOld?: string | null, //used in redo
     parentXP?: string | null,
     siblingXP?: string | null,
-    preTextNode?: Node, //For redo when dealing with text nodes.
+    preTextNode?: Node, //For redo when dealing with text nodes, note may merge to prev or nxt text nodes
+    preTextNodeXP?: string | null,
     nxtTextNode?: Node,
+    nxtTextNodeXP?: string | null,
     textNodeAnchor?: string | null,
 }
 
@@ -52,8 +55,8 @@ type THookOptions = {
 type TDaemonState = {
     Observer: MutationObserver, //Mutation Observer instance
     MutationQueue: MutationRecord[], // All records will be pushed to here
-    OperationHistory: [TOperationLog[]] | null
     UndoStack: [TOperationLog[]] | null
+    RedoStack: [TOperationLog[]] | null
     SelectionStatusCache: TSelectionStatus | null,
     SelectionStatusCachePreBlur: TSelectionStatus | null
 }
@@ -79,8 +82,8 @@ export default function useEditorHTMLDaemon(
         const state: TDaemonState = {
             Observer: null as any,
             MutationQueue: [],
-            OperationHistory: null,
             UndoStack: null,
+            RedoStack: null,
             SelectionStatusCache: null,
             SelectionStatusCachePreBlur: null
         }
@@ -124,7 +127,6 @@ export default function useEditorHTMLDaemon(
         
         toggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
-        
         // Rollback Changes
         let mutation: MutationRecord | void;
         let lastMutation: MutationRecord | null = null;
@@ -208,7 +210,6 @@ export default function useEditorHTMLDaemon(
                     let bParentNxtSiblingTextNode: boolean | null = false;
                     let logTextNodeAnchor: string | null = null;
                     
-                    
                     if (LogParentXP === ParentParentXPath) {
                         oldNodeRemovalTarget = ParentNode;
                         logNodeXP = GetXPathNthChild(ParentNode);
@@ -257,20 +258,21 @@ export default function useEditorHTMLDaemon(
                         };
                         
                         //Patch up the log for later redo
-                        // if leading text node, previous sibling is text node.
+                        // if result in text nodes, the result may end up merging with the previous or next text node siblings
+                        // leading text node, previous sibling is text node.
                         if (index === array.length - 1 && node.nodeType === Node.TEXT_NODE && bParentPreSiblingTextNode) {
-                            console.log("prev sib text");
                             Object.assign(operationLog, {
                                 nodeXP: GetXPathNthChild(ParentNode.previousSibling!), //text node will be merged, XP should be the prev node
                                 preTextNode: ParentNode.previousSibling!.cloneNode(true),
+                                preTextNodeXP: GetXPathFromNode(ParentNode.previousSibling!),
                                 textNodeAnchor: logTextNodeAnchor
                             })
                         }
-                        // if trailing text node, next sibling is text node.
+                        // trailing text node, next sibling is text node.
                         if (index === 0 && node.nodeType === Node.TEXT_NODE && bParentNxtSiblingTextNode) {
-                            console.log("next sib text");
                             Object.assign(operationLog, {
                                 nxtTextNode: ParentNode.nextSibling!.cloneNode(true),
+                                nxtTextNodeXP: GetXPathFromNode(ParentNode.nextSibling!),
                                 textNodeAnchor: logTextNodeAnchor
                             })
                         }
@@ -354,27 +356,31 @@ export default function useEditorHTMLDaemon(
         }
         
         saveToHistory(OperationLogs);
-        syncToMirror(OperationLogs);
+        
+        if (!(syncToMirror(OperationLogs))) {
+            DaemonState.UndoStack?.pop();
+        }
+        
         // Notify parent
         FinalizeChanges();
     }
     
     const saveToHistory = (Log: TOperationLog[]) => {
-        if (DaemonState.OperationHistory === null)
-            DaemonState.OperationHistory = [Log.slice()];
+        if (DaemonState.UndoStack === null)
+            DaemonState.UndoStack = [Log.slice()];
         else
-            DaemonState.OperationHistory.push(Log.slice());
-        
-        if (DaemonState.OperationHistory.length > 5)
-            DaemonState.OperationHistory.shift();
+            DaemonState.UndoStack.push(Log.slice());
+        // Save up to ten history logs
+        if (DaemonState.UndoStack.length > 10)
+            DaemonState.UndoStack.shift();
         
     }
     
     const undoAndSync = () => {
         console.log("UNDO!")
-        if (!DaemonState.OperationHistory) return;
+        if (!DaemonState.UndoStack) return;
         
-        const operationLogs = DaemonState.OperationHistory.pop();
+        const operationLogs = DaemonState.UndoStack.pop();
         if (operationLogs === undefined) return;
         
         WatchElementRef.current!.contentEditable = 'false';
@@ -391,30 +397,33 @@ export default function useEditorHTMLDaemon(
                     break
                 }
                 case 'ADD': {
-                    
                     // Dealing with merged text nodes
-                    
                     // The OperationLogs array is latter poped, so things need to be added backward.
                     if (Log.wasText && Log.nxtTextNode) {
+                        
                         const newLog: TOperationLog = {
                             type: TOperationType.ADD,
-                            node: Log.nxtTextNode,
-                            nodeXP: Log.nodeXP,
+                            noRedo: true,
+                            node: Log.nxtTextNode.cloneNode(true),
+                            nodeXP: Log.nxtTextNodeXP!,
                             parentXP: Log.parentXP,
                             siblingXP: Log.textNodeAnchor,
                         }
                         OperationLogs.push(newLog);
+                        // Log.nxtTextNode = undefined;
                     }
                     
                     if (Log.wasText && Log.preTextNode) {
                         const newLog: TOperationLog = {
                             type: TOperationType.ADD,
-                            node: Log.preTextNode,
-                            nodeXP: Log.nodeXP,
+                            noRedo: true,
+                            node: Log.preTextNode.cloneNode(true),
+                            nodeXP: Log.preTextNodeXP!,
                             parentXP: Log.parentXP,
                             siblingXP: Log.textNodeAnchor,
                         }
                         OperationLogs.push(newLog);
+                        // Log.preTextNode = undefined;
                     }
                     
                     Log.type = TOperationType.REMOVE;
@@ -430,32 +439,70 @@ export default function useEditorHTMLDaemon(
             
         }
         
-        syncToMirror(OperationLogs);
-        
         // Save to the stack for redo
-        if (!DaemonState.UndoStack)
-            DaemonState.UndoStack = [OperationLogs.slice()];
+        if (!DaemonState.RedoStack)
+            DaemonState.RedoStack = [OperationLogs.slice()];
         else
-            DaemonState.UndoStack.push(OperationLogs.slice());
+            DaemonState.RedoStack.push(OperationLogs.slice());
+        
+        if (!(syncToMirror(OperationLogs))) {
+            DaemonState.RedoStack.pop();
+        }
         
         // Notify parent
         FinalizeChanges();
     }
     
     const redoAndSync = () => {
-        console.log("REDO!")
-        if (!DaemonState.UndoStack) return;
+        console.log("REDO!");
         
-        // const lastUndo = DaemonState.UndoStack.pop();
-        // if (!lastUndo) return;
-        //
-        // WatchElementRef.current!.contentEditable = 'false';
-        //
-        // syncToMirror(lastUndo);
-        //
-        // // Notify parent
-        // FinalizeChanges();
-        //
+        DaemonState.MutationQueue = [];
+        
+        if (!DaemonState.RedoStack) return;
+        
+        const lastUndo = DaemonState.RedoStack.pop();
+        console.log(lastUndo);
+        if (!lastUndo) return;
+        
+        WatchElementRef.current!.contentEditable = 'false';
+        
+        let OperationLogs: TOperationLog[] = []
+        let Log;
+        while ((Log = lastUndo.pop())) {
+            
+            if (Log.noRedo) {
+                continue;
+            }
+            
+            switch (Log.type) {
+                case 'TEXT': {
+                    const temp = Log.nodeText;
+                    Log.nodeText = Log.nodeTextOld;
+                    Log.nodeTextOld = temp;
+                    OperationLogs.push(Log);
+                    break
+                }
+                case 'ADD': {
+                    Log.type = TOperationType.REMOVE;
+                    OperationLogs.push(Log);
+                    break;
+                }
+                case 'REMOVE': {
+                    Log.type = TOperationType.ADD;
+                    OperationLogs.push(Log);
+                    break
+                }
+            }
+        }
+        // Save back to undo
+        saveToHistory(OperationLogs);
+        
+        if (!(syncToMirror(OperationLogs))) {
+            DaemonState.UndoStack?.pop();
+        }
+        
+        // Notify parent
+        FinalizeChanges();
     }
     
     // Helper to get the precise location in the original DOM tree
@@ -553,7 +600,7 @@ export default function useEditorHTMLDaemon(
     // Sync to the mirror document, middleman function
     const syncToMirror = (Operations: TOperationLog[]) => {
         
-        if (!Operations.length) return;
+        if (!Operations.length) return false;
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeXP, nodeText, parentXP, siblingXP} = operation;
@@ -571,9 +618,11 @@ export default function useEditorHTMLDaemon(
                 }
             } catch (e) {
                 console.error("Error When Syncing:", e);
+                return false;
             }
         }
         MirrorDocumentRef.current?.normalize();
+        return true;
     }
     
     // TODO: performance could be improved.
@@ -767,8 +816,8 @@ export default function useEditorHTMLDaemon(
     }, 200);
     const throttledRollbackAndSync = _.throttle(rollbackAndSync, 200);
     
+    // Primary entry point to supporting functionalities such as restoring selection.
     useLayoutEffect(() => {
-        
         if (!WatchElementRef.current) {
             console.log("Invalid Watched Element");
             return;
@@ -810,6 +859,7 @@ export default function useEditorHTMLDaemon(
         }
     });
     
+    // Event handler entry point
     useLayoutEffect(() => {
         
         if (!WatchElementRef.current || !MirrorDocumentRef.current) {
@@ -832,18 +882,14 @@ export default function useEditorHTMLDaemon(
             if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.code === 'KeyZ') {
                 ev.preventDefault();
                 ev.stopPropagation();
-                
-                throttledSelectionStatus();
                 throttledRollbackAndSync();
-                
-                undoAndSync();
+                setTimeout(() => undoAndSync(), 0);
                 return;
                 
             }
             if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.code === 'KeyY') {
                 ev.preventDefault();
                 ev.stopPropagation();
-                
                 redoAndSync();
                 return;
             }
@@ -947,16 +993,6 @@ export default function useEditorHTMLDaemon(
             throttledRollbackAndSync();
         }
     }
-}
-
-function FindNearestParagraph(node: Node, targetTagName = 'p'): HTMLElement | null {
-    while (node && node.nodeName !== targetTagName) {
-        if (!node.parentNode) {
-            return null;
-        }
-        node = node.parentNode;
-    }
-    return node as HTMLElement;
 }
 
 function GetNodeFromXPath(doc: Document, XPath: string) {
