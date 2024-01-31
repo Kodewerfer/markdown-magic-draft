@@ -10,27 +10,27 @@ function AddSyntaxAttrTransformer(ast: object) {
         
         // ['a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'del']
         switch (tagName) {
+            case 'h1':
+                NodeProps['data-md-header'] = "# ";
+                break;
+            case 'h2':
+                NodeProps['data-md-header'] = "## ";
+                break;
+            case 'h3':
+                NodeProps['data-md-header'] = "### ";
+                break;
+            case 'h4':
+                NodeProps['data-md-header'] = "#### ";
+                break;
+            case 'h5':
+                NodeProps['data-md-header'] = "##### ";
+                break;
+            case 'h6':
+                NodeProps['data-md-header'] = "###### ";
+                break;
             case 'strong':
                 NodeProps['data-md-syntax'] = "**";
                 NodeProps['data-md-wrapped'] = 'true';
-                break;
-            case 'h1':
-                NodeProps['data-md-syntax'] = "#";
-                break;
-            case 'h2':
-                NodeProps['data-md-syntax'] = "##";
-                break;
-            case 'h3':
-                NodeProps['data-md-syntax'] = "###";
-                break;
-            case 'h4':
-                NodeProps['data-md-syntax'] = "####";
-                break;
-            case 'h5':
-                NodeProps['data-md-syntax'] = "#####";
-                break;
-            case 'h6':
-                NodeProps['data-md-syntax'] = "######";
                 break;
             case 'blockquote':
                 NodeProps['data-md-syntax'] = ">";
@@ -47,14 +47,17 @@ function AddSyntaxAttrTransformer(ast: object) {
             case 'ol':
             case 'li':
                 NodeProps['data-md-syntax'] = "-";
-                break;
-            case 'code':
-                NodeProps['data-md-syntax'] = "`";
-                NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-container'] = 'true';
                 break;
             case 'pre':
                 NodeProps['data-md-syntax'] = "```";
                 NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-container'] = 'true';
+                break;
+            case 'code':
+                NodeProps['data-md-syntax'] = "`";
+                NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-container'] = 'true';
                 break;
             // case 'thead':
             //     NodeProps['data-md-syntax'] = "| --- | --- |";

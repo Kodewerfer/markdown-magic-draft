@@ -86,9 +86,9 @@ export default function Editor(
         if (textNode.textContent === null) return;
         const convertedHTML = String(MD2HTMLSync(textNode.textContent));
         
-        let HTMLStringNoWrapper = new DOMParser().parseFromString(convertedHTML, "text/html");
+        let DOC = new DOMParser().parseFromString(convertedHTML, "text/html");
         
-        const treeWalker: TreeWalker = HTMLStringNoWrapper.createTreeWalker(HTMLStringNoWrapper, NodeFilter.SHOW_TEXT);
+        const treeWalker: TreeWalker = DOC.createTreeWalker(DOC, NodeFilter.SHOW_TEXT);
         let newNodes: Node[] = [];
         let newTextNode;
         while (newTextNode = treeWalker.nextNode()) {
@@ -114,14 +114,21 @@ export default function Editor(
         const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
             .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
                 acc[tagName] = (props: any) => {
-                    if (props['data-md-syntax'])
+                    if (props['data-md-syntax'] && props['data-md-container'] !== 'true') {
                         // console.log(props)
                         if (props['data-link-to']) {
                             return <SpecialLinkComponent {...props}
                                                          ParentAction={toggleEditingSubElement}
                                                          tagName={tagName}/>;
                         }
-                    return <SyntaxRenderer {...props}
+                        
+                        return <PlainSyntax {...props}
+                                            ParentAction={toggleEditingSubElement}
+                                            tagName={tagName}/>;
+                    }
+                    
+                    // Placeholder
+                    return <CommonRenderer {...props}
                                            ParentAction={toggleEditingSubElement}
                                            tagName={tagName}/>;
                 }
@@ -170,15 +177,8 @@ const Paragraph = (props: any) => {
     )
 };
 
-const SyntaxRenderer = (props: any) => {
+const CommonRenderer = (props: any) => {
     const {children, tagName, ParentAction, ...otherProps} = props;
-    
-    // if (otherProps['data-link-to']) {
-    //     return <SpecialLinkComponent {...props}/>
-    // }
-    
-    if (tagName === 'strong')
-        return <TestCompo {...props}/>
     
     return React.createElement(tagName, otherProps, children);
 };
@@ -188,7 +188,7 @@ function SpecialLinkComponent(props: any) {
     return React.createElement(tagName, otherProps, children);
 }
 
-function TestCompo(props: any) {
+function PlainSyntax(props: any) {
     const {tagName, ParentAction, children, ...otherProps} = props;
     
     const propSyntaxData: any = otherProps['data-md-syntax'];
@@ -207,10 +207,6 @@ function TestCompo(props: any) {
     const ElementRef = useRef<HTMLElement | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const IdentifierRef = useRef<string | undefined>(undefined);
-    
-    useEffect(() => {
-    
-    });
     
     useLayoutEffect(() => {
         const OnClick = (ev: Event) => {
@@ -235,13 +231,24 @@ function TestCompo(props: any) {
         
         const OnFocusOut = (ev: Event) => {
             ev.stopPropagation();
+            if (!ElementRef.current) return;
             
-            let mutation = {
-                type: "characterData",
-                oldValue: String(children),
-                target: ElementRef.current?.firstChild!,
-                newValue: ElementRef.current?.firstChild!.nodeValue
-            };
+            let mutation;
+            
+            if (!ElementRef.current.firstChild || ElementRef.current.firstChild.textContent === '' || ElementRef.current.firstChild.textContent === null) {
+                mutation = {
+                    type: "childList",
+                    target: ElementRef.current?.parentNode,
+                    removedNodes: [ElementRef.current],
+                }
+            } else {
+                mutation = {
+                    type: "characterData",
+                    oldValue: String(children),
+                    target: ElementRef.current?.firstChild!,
+                    newValue: ElementRef.current?.firstChild!.nodeValue
+                }
+            }
             
             ParentAction(false, IdentifierRef.current, ElementRef.current, mutation);
             setIsEditing(false);
@@ -276,6 +283,6 @@ function TestCompo(props: any) {
         suppressContentEditableWarning: true,
         ...otherProps,
         ref: ElementRef,
-    }, isEditing ? childrenWithSyntax : children)
+    }, isEditing ? childrenWithSyntax : children);
     
 }

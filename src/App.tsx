@@ -4,18 +4,14 @@ import "./App.css";
 import Editor from "./components/Editor";
 
 const MarkdownFakeDate = `
-# Welcome to :LinkTo[AAA, A1A]{aaa} Editor! :LinkTo[BBB]
+# Title!
 
 Hi! I'm ~~your~~ Markdown file in Editor**.
 
 **custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
 :br
 
-TEXTTEXT**testOneWithPre**
-
-:br
-
-~~DelTag~~**testOneWithAFT**TEXTTEXT
+## Test with composite :LinkTo[AAA, A1A]{aaa}
 
 :br
 
@@ -28,12 +24,12 @@ GFM syntax:
 
 :br
 
-* [ ] to do
 * [x] done
 
 :br
 
 A note[^1]
+
 [^1]: Big note.
 
 :br
