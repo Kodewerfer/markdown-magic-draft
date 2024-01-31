@@ -45,10 +45,11 @@ type TSelectionStatus = {
 }
 
 type THookOptions = {
-    TextNodeCallback?: (textNode: Node) => Node[] | null | undefined,
-    ShouldObserve: boolean,
-    IsEditable: boolean,
+    TextNodeCallback?: (textNode: Node) => Node[] | null | undefined
+    ShouldObserve: boolean
+    IsEditable: boolean
     ShouldFocus: boolean
+    ParagraphTags: RegExp //
 }
 
 // Hook's persistent variables
@@ -68,10 +69,12 @@ export default function useEditorHTMLDaemon(
     Options: Partial<THookOptions>
 ) {
     
+    // Default options
     const HookOptions = {
         TextNodeCallback: undefined,
         ShouldObserve: true,
         IsEditable: true,
+        ParagraphTags: /^(p|div|main|body|'h1'|'h2'|'h3'|'h4'|'h5'|'h6')$/i,   // Determined whether to use "replacement" logic or just change the text node.
         ...Options
     };
     
@@ -145,7 +148,7 @@ export default function useEditorHTMLDaemon(
                 let TextNodeOriginalValue = mutation.oldValue;
                 if (DaemonState.MutationQueue.length >= 1) {
                     DaemonState.MutationQueue.slice().reverse().some((mutationData, index) => {
-                        if (mutationData.type === 'characterData' && mutationData.target === mutation?.target && mutationData.oldValue !== null) {
+                        if (mutationData.target === mutation?.target && mutationData.oldValue !== null) {
                             TextNodeOriginalValue = mutationData.oldValue;
                         } else {
                             return TextNodeOriginalValue;
@@ -160,6 +163,8 @@ export default function useEditorHTMLDaemon(
                     const OldTextNode = mutation.target;
                     
                     const callbackResult = HookOptions.TextNodeCallback(OldTextNode);
+                    // FIXME
+                    console.log(callbackResult);
                     if (!callbackResult) {
                         if (OldTextNode.textContent !== '')
                             console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode);
@@ -169,7 +174,8 @@ export default function useEditorHTMLDaemon(
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
                     const ParentParentXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
                     
-                    const LogParentXP = ParentNode.tagName.toLowerCase() === 'p' || ParentNode.tagName.toLowerCase() === 'div' ? ParentXPath : ParentParentXPath;
+                    const ParentTagsTest = HookOptions.ParagraphTags
+                    const LogParentXP = ParentTagsTest.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
                     
                     let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
                     let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
@@ -316,14 +322,33 @@ export default function useEditorHTMLDaemon(
                         removedNode,
                         mutation.nextSibling,
                     );
-                    
-                    OperationLogs.push({
+                    const operationLog = {
                         type: TOperationType.REMOVE,
                         node: mutation.removedNodes[i].cloneNode(true),
                         nodeXP: GetXPathFromNode(mutation.removedNodes[i]),
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
-                    });
+                    }
+                    
+                    // For undo, dealing with merged text nodes.
+                    if (mutation.previousSibling && mutation.previousSibling.nodeType === Node.TEXT_NODE) {
+                        Object.assign(operationLog, {
+                            preTextNode: mutation.previousSibling!.cloneNode(true),
+                            preTextNodeXP: GetXPathFromNode(mutation.previousSibling!),
+                            textNodeAnchor: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
+                        })
+                    }
+                    
+                    // For undo, dealing with merged text nodes.
+                    if (mutation.nextSibling && mutation.nextSibling.nodeType === Node.TEXT_NODE) {
+                        Object.assign(operationLog, {
+                            nxtTextNode: mutation.nextSibling!.cloneNode(true),
+                            nxtTextNodeXP: GetXPathFromNode(mutation.nextSibling!),
+                            textNodeAnchor: mutation.nextSibling && mutation.nextSibling.nextSibling ? GetXPathFromNode(mutation.nextSibling.nextSibling) : null
+                        })
+                    }
+                    
+                    OperationLogs.push(operationLog);
                 }
             }
             /**
@@ -340,14 +365,14 @@ export default function useEditorHTMLDaemon(
                         mutation.target.removeChild(addedNode);
                     }
                     
-                    // FIXME
-                    OperationLogs.push({
+                    const operationLog = {
                         type: TOperationType.ADD,
                         node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
                         nodeXP: addedNodeXP,
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
-                    });
+                    }
+                    OperationLogs.push(operationLog);
                 }
             }
             
@@ -431,8 +456,44 @@ export default function useEditorHTMLDaemon(
                     break;
                 }
                 case 'REMOVE': {
+                    
                     Log.type = TOperationType.ADD;
                     OperationLogs.push(Log);
+                    
+                    if (Log.nxtTextNode) {
+                        
+                        const newLog: TOperationLog = {
+                            type: TOperationType.ADD,
+                            noRedo: true,
+                            node: Log.nxtTextNode.cloneNode(true),
+                            nodeXP: Log.nxtTextNodeXP!,
+                            parentXP: Log.parentXP,
+                            siblingXP: Log.textNodeAnchor,
+                        }
+                        OperationLogs.push(newLog);
+                    }
+                    
+                    if (Log.preTextNode) {
+                        
+                        const newLog: TOperationLog = {
+                            type: TOperationType.ADD,
+                            noRedo: true,
+                            node: Log.preTextNode.cloneNode(true),
+                            nodeXP: Log.preTextNodeXP!,
+                            parentXP: Log.parentXP,
+                            siblingXP: Log.textNodeAnchor,
+                        }
+                        OperationLogs.push(newLog);
+                        
+                        const deleteLog: TOperationLog = {
+                            type: TOperationType.REMOVE,
+                            noRedo: true,
+                            nodeXP: Log.preTextNodeXP!,
+                            parentXP: Log.parentXP,
+                        }
+                        OperationLogs.push(deleteLog);
+                    }
+                    
                     break
                 }
             }
@@ -757,9 +818,8 @@ export default function useEditorHTMLDaemon(
                 // Make sure that the caret lands on a node that is actually editable
                 // otherwise the caret disappear
                 let bValidLandingNode = undefined;
-                if (AnchorNode.nodeType === Node.ELEMENT_NODE &&
-                    (AnchorNode as HTMLElement).contentEditable !== 'false') {
-                    bValidLandingNode = true;
+                if (AnchorNode.nodeType === Node.ELEMENT_NODE) {
+                    bValidLandingNode = (AnchorNode as HTMLElement).contentEditable !== 'false';
                 }
                 if (AnchorNode.nodeType === Node.TEXT_NODE
                     && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false') {
@@ -770,8 +830,7 @@ export default function useEditorHTMLDaemon(
                 // So needed to check XPath to make sure the caret moved to the correct text node
                 if (AnchorNode.nodeType === SavedState.AnchorNodeType
                     && GetXPathFromNode(AnchorNode) === SavedState.AnchorNodeXPath
-                    && bValidLandingNode
-                ) {
+                    && bValidLandingNode) {
                     break;
                 }
                 
