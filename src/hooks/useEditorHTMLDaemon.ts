@@ -163,8 +163,10 @@ export default function useEditorHTMLDaemon(
                     const OldTextNode = mutation.target;
                     
                     const callbackResult = HookOptions.TextNodeCallback(OldTextNode);
+                    
                     // FIXME
-                    console.log(callbackResult);
+                    // console.log(callbackResult);
+                    
                     if (!callbackResult) {
                         if (OldTextNode.textContent !== '')
                             console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode);
@@ -329,21 +331,23 @@ export default function useEditorHTMLDaemon(
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     }
-                    
+                    // && mutation.previousSibling.textContent !== '\n'
                     // For undo, dealing with merged text nodes.
                     if (mutation.previousSibling && mutation.previousSibling.nodeType === Node.TEXT_NODE) {
+                        const flag = mutation.previousSibling.textContent !== '\n';
                         Object.assign(operationLog, {
-                            preTextNode: mutation.previousSibling!.cloneNode(true),
-                            preTextNodeXP: GetXPathFromNode(mutation.previousSibling!),
+                            preTextNode: flag ? mutation.previousSibling!.cloneNode(true) : null,
+                            preTextNodeXP: flag ? GetXPathFromNode(mutation.previousSibling!) : null,
                             textNodeAnchor: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                         })
                     }
                     
                     // For undo, dealing with merged text nodes.
                     if (mutation.nextSibling && mutation.nextSibling.nodeType === Node.TEXT_NODE) {
+                        const flag = mutation.nextSibling.textContent !== '\n';
                         Object.assign(operationLog, {
-                            nxtTextNode: mutation.nextSibling!.cloneNode(true),
-                            nxtTextNodeXP: GetXPathFromNode(mutation.nextSibling!),
+                            nxtTextNode: flag ? mutation.nextSibling!.cloneNode(true) : null,
+                            nxtTextNodeXP: flag ? GetXPathFromNode(mutation.nextSibling!) : null,
                             textNodeAnchor: mutation.nextSibling && mutation.nextSibling.nextSibling ? GetXPathFromNode(mutation.nextSibling.nextSibling) : null
                         })
                     }
@@ -424,6 +428,7 @@ export default function useEditorHTMLDaemon(
                 case 'ADD': {
                     // Dealing with merged text nodes
                     // The OperationLogs array is latter poped, so things need to be added backward.
+                    
                     if (Log.wasText && Log.nxtTextNode) {
                         
                         const newLog: TOperationLog = {
@@ -435,7 +440,6 @@ export default function useEditorHTMLDaemon(
                             siblingXP: Log.textNodeAnchor,
                         }
                         OperationLogs.push(newLog);
-                        // Log.nxtTextNode = undefined;
                     }
                     
                     if (Log.wasText && Log.preTextNode) {
@@ -448,7 +452,6 @@ export default function useEditorHTMLDaemon(
                             siblingXP: Log.textNodeAnchor,
                         }
                         OperationLogs.push(newLog);
-                        // Log.preTextNode = undefined;
                     }
                     
                     Log.type = TOperationType.REMOVE;
