@@ -21,21 +21,7 @@ import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
 let SanitizSchema = Object.assign({}, defaultSchema);
 SanitizSchema!.attributes!['*'] = SanitizSchema!.attributes!['*'].concat(['data*'])
 
-export async function MD2HTML(MarkdownContent: Compatible) {
-    
-    return await unified()
-        .use(remarkParse)
-        .use(remarkGfm)
-        .use(remarkDirective)
-        .use(HandleCustomDirectives)
-        .use(remarkRehype)
-        .use(rehypeSanitize, SanitizSchema)
-        .use(AddSyntaxInAttribute)
-        .use(rehypeStringify)
-        .process(MarkdownContent);
-}
-
-export function MD2HTMLSync(MarkdownContent: Compatible) {
+function MDProcess() {
     return unified()
         .use(remarkParse)
         .use(remarkGfm)
@@ -44,7 +30,17 @@ export function MD2HTMLSync(MarkdownContent: Compatible) {
         .use(remarkRehype)
         .use(rehypeSanitize, SanitizSchema)
         .use(AddSyntaxInAttribute)
-        .use(rehypeStringify)
+        .use(rehypeStringify);
+}
+
+export async function MD2HTML(MarkdownContent: Compatible) {
+    
+    return MDProcess()
+        .process(MarkdownContent);
+}
+
+export function MD2HTMLSync(MarkdownContent: Compatible) {
+    return MDProcess()
         .processSync(MarkdownContent);
 }
 
