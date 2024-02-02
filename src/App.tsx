@@ -9,15 +9,15 @@ const MarkdownFakeDate = `
 Hi! I'm ~~your~~ Markdown file in Editor**.
 
 **custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
+
 :br
 
 ## Test with composite :LinkTo[AAA, A1A]{aaa}
 
 :br
 
-:br
-
 Test with no sibling
+
 :br
 
 GFM syntax:
@@ -28,12 +28,6 @@ GFM syntax:
 
 :br
 
-A note[^1]
-
-[^1]: Big note.
-
-:br
-
 \`\`\`javascript
 var s = "JavaScript syntax highlighting";
 alert(s);
@@ -41,10 +35,15 @@ alert(s);
 
 :br
 
-+ list1
-+ list2
-+ list3
+* list1
+* list2
+* list3
 
+A note[1](#user-content-fn-1)
+
+## Footnotes
+
+1. Big note. [↩](#user-content-fnref-1)
 `
 
 export default function App() {
