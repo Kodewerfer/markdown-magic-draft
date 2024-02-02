@@ -22,18 +22,13 @@ enum TOperationType {
 type TOperationLog = {
     type: TOperationType,
     wasText?: boolean,  //indicate if it was a replacement node resulting from text node callback
-    noRedo?: boolean, // undo operation may end up creating additional logs, these logs are not suitable for redo
+    // noRedo?: boolean, // undo operation may end up creating additional logs, these logs are not suitable for redo
     node?: Node,
     nodeXP: string,
     nodeText?: string | null,
     nodeTextOld?: string | null, //used in redo
     parentXP?: string | null,
-    siblingXP?: string | null,
-    preTextNode?: Node, //For redo when dealing with text nodes, note may merge to prev or nxt text nodes
-    preTextNodeXP?: string | null,
-    nxtTextNode?: Node,
-    nxtTextNodeXP?: string | null,
-    textNodeAnchor?: string | null,
+    siblingXP?: string | null
 }
 
 // For storing selection before parent re-rendering
@@ -56,8 +51,8 @@ type THookOptions = {
 type TDaemonState = {
     Observer: MutationObserver, //Mutation Observer instance
     MutationQueue: MutationRecord[], // All records will be pushed to here
-    UndoStack: [TOperationLog[]] | null
-    RedoStack: [TOperationLog[]] | null
+    UndoStack: [Document] | null
+    RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null,
     SelectionStatusCachePreBlur: TSelectionStatus | null
 }
@@ -264,26 +259,6 @@ export default function useEditorHTMLDaemon(
                             siblingXP: logSiblingXP,
                         };
                         
-                        //Patch up the log for later redo
-                        // if result in text nodes, the result may end up merging with the previous or next text node siblings
-                        // leading text node, previous sibling is text node.
-                        if (index === array.length - 1 && node.nodeType === Node.TEXT_NODE && bParentPreSiblingTextNode) {
-                            Object.assign(operationLog, {
-                                nodeXP: GetXPathNthChild(ParentNode.previousSibling!), //text node will be merged, XP should be the prev node
-                                preTextNode: ParentNode.previousSibling!.cloneNode(true),
-                                preTextNodeXP: GetXPathFromNode(ParentNode.previousSibling!),
-                                textNodeAnchor: logTextNodeAnchor
-                            })
-                        }
-                        // trailing text node, next sibling is text node.
-                        if (index === 0 && node.nodeType === Node.TEXT_NODE && bParentNxtSiblingTextNode) {
-                            Object.assign(operationLog, {
-                                nxtTextNode: ParentNode.nextSibling!.cloneNode(true),
-                                nxtTextNodeXP: GetXPathFromNode(ParentNode.nextSibling!),
-                                textNodeAnchor: logTextNodeAnchor
-                            })
-                        }
-                        
                         OperationLogs.push(operationLog);
                     })
                     // remove the old node
@@ -330,27 +305,6 @@ export default function useEditorHTMLDaemon(
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     }
-                    // && mutation.previousSibling.textContent !== '\n'
-                    // For undo, dealing with merged text nodes.
-                    if (removedNode.nodeType !== Node.TEXT_NODE && mutation.previousSibling && mutation.previousSibling.nodeType === Node.TEXT_NODE) {
-                        const flag = mutation.previousSibling.textContent !== '\n';
-                        console.log(mutation.previousSibling.textContent);
-                        Object.assign(operationLog, {
-                            preTextNode: flag ? mutation.previousSibling!.cloneNode(true) : null,
-                            preTextNodeXP: flag ? GetXPathFromNode(mutation.previousSibling!) : null,
-                            textNodeAnchor: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
-                        })
-                    }
-                    
-                    // For undo, dealing with merged text nodes.
-                    if (removedNode.nodeType !== Node.TEXT_NODE && mutation.nextSibling && mutation.nextSibling.nodeType === Node.TEXT_NODE) {
-                        const flag = mutation.nextSibling.textContent !== '\n';
-                        Object.assign(operationLog, {
-                            nxtTextNode: flag ? mutation.nextSibling!.cloneNode(true) : null,
-                            nxtTextNodeXP: flag ? GetXPathFromNode(mutation.nextSibling!) : null,
-                            textNodeAnchor: mutation.nextSibling && mutation.nextSibling.nextSibling ? GetXPathFromNode(mutation.nextSibling.nextSibling) : null
-                        })
-                    }
                     
                     OperationLogs.push(operationLog);
                 }
@@ -384,9 +338,9 @@ export default function useEditorHTMLDaemon(
             lastMutation = mutation;
         }
         
-        saveToHistory(OperationLogs);
+        SaveMirrorToHistory();
         
-        if (!(syncToMirror(OperationLogs))) {
+        if (!syncToMirror(OperationLogs)) {
             DaemonState.UndoStack?.pop();
         }
         
@@ -394,11 +348,17 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
-    const saveToHistory = (Log: TOperationLog[]) => {
+    const SaveMirrorToHistory = () => {
+        if (!MirrorDocumentRef || !MirrorDocumentRef.current) {
+            return;
+        }
+        
+        const CurrentDoc = (MirrorDocumentRef.current.cloneNode(true)) as Document;
+        
         if (DaemonState.UndoStack === null)
-            DaemonState.UndoStack = [Log.slice()];
+            DaemonState.UndoStack = [CurrentDoc];
         else
-            DaemonState.UndoStack.push(Log.slice());
+            DaemonState.UndoStack.push(CurrentDoc);
         // Save up to ten history logs
         if (DaemonState.UndoStack.length > 10)
             DaemonState.UndoStack.shift();
@@ -406,166 +366,44 @@ export default function useEditorHTMLDaemon(
     }
     
     const undoAndSync = () => {
-        console.log("UNDO!")
-        if (!DaemonState.UndoStack) return;
+        // TODO: This clone doc method can be very expensive, but the reverse 'OperationLog' method brings too much problems.
+        console.log("Undo, stack length:", DaemonState.UndoStack?.length);
+        if (!DaemonState.UndoStack || !DaemonState.UndoStack.length || !MirrorDocumentRef.current) return;
         
-        const operationLogs = DaemonState.UndoStack.pop();
-        if (operationLogs === undefined) return;
-        
-        WatchElementRef.current!.contentEditable = 'false';
-        
-        let OperationLogs: TOperationLog[] = []
-        let Log;
-        while ((Log = operationLogs.pop())) {
-            switch (Log.type) {
-                case 'TEXT': {
-                    const temp = Log.nodeText;
-                    Log.nodeText = Log.nodeTextOld;
-                    Log.nodeTextOld = temp;
-                    OperationLogs.push(Log);
-                    break
-                }
-                case 'ADD': {
-                    // Dealing with merged text nodes
-                    // The OperationLogs array is latter poped, so things need to be added backward.
-                    
-                    if (Log.wasText && Log.nxtTextNode) {
-                        
-                        const newLog: TOperationLog = {
-                            type: TOperationType.ADD,
-                            noRedo: true,
-                            node: Log.nxtTextNode.cloneNode(true),
-                            nodeXP: Log.nxtTextNodeXP!,
-                            parentXP: Log.parentXP,
-                            siblingXP: Log.textNodeAnchor,
-                        }
-                        OperationLogs.push(newLog);
-                    }
-                    
-                    if (Log.wasText && Log.preTextNode) {
-                        const newLog: TOperationLog = {
-                            type: TOperationType.ADD,
-                            noRedo: true,
-                            node: Log.preTextNode.cloneNode(true),
-                            nodeXP: Log.preTextNodeXP!,
-                            parentXP: Log.parentXP,
-                            siblingXP: Log.textNodeAnchor,
-                        }
-                        OperationLogs.push(newLog);
-                    }
-                    
-                    Log.type = TOperationType.REMOVE;
-                    OperationLogs.push(Log);
-                    break;
-                }
-                case 'REMOVE': {
-                    
-                    Log.type = TOperationType.ADD;
-                    OperationLogs.push(Log);
-                    
-                    if (Log.nxtTextNode) {
-                        
-                        const newLog: TOperationLog = {
-                            type: TOperationType.ADD,
-                            noRedo: true,
-                            node: Log.nxtTextNode.cloneNode(true),
-                            nodeXP: Log.nxtTextNodeXP!,
-                            parentXP: Log.parentXP,
-                            siblingXP: Log.textNodeAnchor,
-                        }
-                        OperationLogs.push(newLog);
-                    }
-                    
-                    if (Log.preTextNode) {
-                        
-                        const newLog: TOperationLog = {
-                            type: TOperationType.ADD,
-                            noRedo: true,
-                            node: Log.preTextNode.cloneNode(true),
-                            nodeXP: Log.preTextNodeXP!,
-                            parentXP: Log.parentXP,
-                            siblingXP: Log.textNodeAnchor,
-                        }
-                        OperationLogs.push(newLog);
-                        
-                        const deleteLog: TOperationLog = {
-                            type: TOperationType.REMOVE,
-                            noRedo: true,
-                            nodeXP: Log.preTextNodeXP!,
-                            parentXP: Log.parentXP,
-                        }
-                        OperationLogs.push(deleteLog);
-                    }
-                    
-                    break
-                }
-            }
-            
+        const previousDocument = DaemonState.UndoStack.pop();
+        if (!previousDocument || !previousDocument.documentElement) {
+            console.warn("History object is invalid: ", previousDocument);
+            return;
         }
         
-        // Save to the stack for redo
-        if (!DaemonState.RedoStack)
-            DaemonState.RedoStack = [OperationLogs.slice()];
+        const CurrentDoc = (MirrorDocumentRef.current.cloneNode(true)) as Document;
+        
+        // Save to redo
+        if (DaemonState.RedoStack === null)
+            DaemonState.RedoStack = [CurrentDoc];
         else
-            DaemonState.RedoStack.push(OperationLogs.slice());
+            DaemonState.RedoStack.push(CurrentDoc);
         
-        if (!(syncToMirror(OperationLogs))) {
-            DaemonState.RedoStack.pop();
-        }
+        if (DaemonState.RedoStack.length > 10)
+            DaemonState.RedoStack.shift();
         
-        // Notify parent
+        MirrorDocumentRef.current = previousDocument;
+        
         FinalizeChanges();
     }
     
     const redoAndSync = () => {
-        console.log("REDO!");
+        console.log("Redo, stack length:", DaemonState.RedoStack?.length);
         
         DaemonState.MutationQueue = [];
         
-        if (!DaemonState.RedoStack) return;
+        if (!DaemonState.RedoStack || !DaemonState.RedoStack.length || !MirrorDocumentRef.current) return;
         
-        const lastUndo = DaemonState.RedoStack.pop();
-        console.log(lastUndo);
-        if (!lastUndo) return;
+        // save to history again
+        SaveMirrorToHistory();
         
-        WatchElementRef.current!.contentEditable = 'false';
+        MirrorDocumentRef.current = DaemonState.RedoStack.pop();
         
-        let OperationLogs: TOperationLog[] = []
-        let Log;
-        while ((Log = lastUndo.pop())) {
-            
-            if (Log.noRedo) {
-                continue;
-            }
-            
-            switch (Log.type) {
-                case 'TEXT': {
-                    const temp = Log.nodeText;
-                    Log.nodeText = Log.nodeTextOld;
-                    Log.nodeTextOld = temp;
-                    OperationLogs.push(Log);
-                    break
-                }
-                case 'ADD': {
-                    Log.type = TOperationType.REMOVE;
-                    OperationLogs.push(Log);
-                    break;
-                }
-                case 'REMOVE': {
-                    Log.type = TOperationType.ADD;
-                    OperationLogs.push(Log);
-                    break
-                }
-            }
-        }
-        // Save back to undo
-        saveToHistory(OperationLogs);
-        
-        if (!(syncToMirror(OperationLogs))) {
-            DaemonState.UndoStack?.pop();
-        }
-        
-        // Notify parent
         FinalizeChanges();
     }
     
