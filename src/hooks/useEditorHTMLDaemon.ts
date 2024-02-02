@@ -158,7 +158,6 @@ export default function useEditorHTMLDaemon(
                 
                 // TextNodeCallback present, use TextNodeCallback result.
                 if (typeof HookOptions.TextNodeCallback === 'function') {
-                    
                     const ParentNode = mutation.target.parentNode as HTMLElement;
                     const OldTextNode = mutation.target;
                     
@@ -333,8 +332,9 @@ export default function useEditorHTMLDaemon(
                     }
                     // && mutation.previousSibling.textContent !== '\n'
                     // For undo, dealing with merged text nodes.
-                    if (mutation.previousSibling && mutation.previousSibling.nodeType === Node.TEXT_NODE) {
+                    if (removedNode.nodeType !== Node.TEXT_NODE && mutation.previousSibling && mutation.previousSibling.nodeType === Node.TEXT_NODE) {
                         const flag = mutation.previousSibling.textContent !== '\n';
+                        console.log(mutation.previousSibling.textContent);
                         Object.assign(operationLog, {
                             preTextNode: flag ? mutation.previousSibling!.cloneNode(true) : null,
                             preTextNodeXP: flag ? GetXPathFromNode(mutation.previousSibling!) : null,
@@ -343,7 +343,7 @@ export default function useEditorHTMLDaemon(
                     }
                     
                     // For undo, dealing with merged text nodes.
-                    if (mutation.nextSibling && mutation.nextSibling.nodeType === Node.TEXT_NODE) {
+                    if (removedNode.nodeType !== Node.TEXT_NODE && mutation.nextSibling && mutation.nextSibling.nodeType === Node.TEXT_NODE) {
                         const flag = mutation.nextSibling.textContent !== '\n';
                         Object.assign(operationLog, {
                             nxtTextNode: flag ? mutation.nextSibling!.cloneNode(true) : null,
@@ -955,6 +955,7 @@ export default function useEditorHTMLDaemon(
                 redoAndSync();
                 return;
             }
+            // if (ev.key === 'Enter') {}
         }
         
         const KeyUpHandler = () => {
