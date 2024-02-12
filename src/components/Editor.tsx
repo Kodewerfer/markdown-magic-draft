@@ -29,6 +29,7 @@ export default function Editor(
     
     const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorSourceRef, ReloadEditorContent,
         {
+            OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeHandler,
             IsEditable: !isEditingSubElement,
             ShouldObserve: !isEditingSubElement
@@ -68,6 +69,10 @@ export default function Editor(
     async function ExtractMD() {
         const ConvertedMarkdown = await HTML2MD(EditorHTMLString);
         console.log(String(ConvertedMarkdown));
+    }
+    
+    function MaskEditingArea() {
+        console.log("masking....");
     }
     
     async function ReloadEditorContent() {

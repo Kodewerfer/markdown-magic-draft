@@ -41,6 +41,7 @@ type TSelectionStatus = {
 
 type THookOptions = {
     TextNodeCallback?: (textNode: Node) => Node[] | null | undefined
+    OnRollback?: Function | undefined
     ShouldObserve: boolean
     IsEditable: boolean
     ShouldFocus: boolean
@@ -67,6 +68,7 @@ export default function useEditorHTMLDaemon(
     // Default options
     const HookOptions = {
         TextNodeCallback: undefined,
+        OnRollback: undefined,
         ShouldObserve: true,
         IsEditable: true,
         ParagraphTags: /^(p|div|main|body|h1|h2|h3|h4|h5|h6|section)$/i,   // Determined whether to use "replacement" logic or just change the text node.
@@ -122,6 +124,9 @@ export default function useEditorHTMLDaemon(
         // OB's callback is asynchronous
         // make sure no records are left behind
         if (!DaemonState.MutationQueue.length) return;
+        
+        if (typeof HookOptions.OnRollback === 'function')
+            HookOptions.OnRollback()
         
         toggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
