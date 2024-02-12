@@ -1,4 +1,4 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {Profiler, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
 import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
@@ -22,9 +22,7 @@ export default function Editor(
     });
     const EditorSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
-    const EditorHTMLString = useRef('');
-    
-    const [EditorContentCompo, setEditorContentCompo] = useState<React.ReactNode>(null);
+    const [EditorHTMLString, setEditorHTMLString] = useState('');
     
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
@@ -68,7 +66,7 @@ export default function Editor(
     }
     
     async function ExtractMD() {
-        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
+        const ConvertedMarkdown = await HTML2MD(EditorHTMLString);
         console.log(String(ConvertedMarkdown));
     }
     
@@ -76,10 +74,7 @@ export default function Editor(
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
         if (bodyElement)
-            EditorHTMLString.current = String(bodyElement!.innerHTML);
-        setEditorContentCompo((prev) => {
-            return HTML2EditorCompos(EditorHTMLString.current)
-        });
+            setEditorHTMLString(String(bodyElement!.innerHTML));
     }
     
     function TextNodeHandler(textNode: Node) {
@@ -115,7 +110,6 @@ export default function Editor(
             .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
                 acc[tagName] = (props: any) => {
                     if (props['data-md-syntax'] && props['data-md-container'] !== 'true') {
-                        // console.log(props)
                         if (props['data-link-to']) {
                             return <SpecialLinkComponent {...props}
                                                          ParentAction={toggleEditingSubElement}
@@ -150,20 +144,23 @@ export default function Editor(
             // Save a copy of HTML
             const HTMLParser = new DOMParser()
             EditorSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
-            EditorHTMLString.current = String(md2HTML);
-            setEditorContentCompo((prev) => {
-                return HTML2EditorCompos(EditorHTMLString.current)
-            })
+            setEditorHTMLString(String(md2HTML));
         })()
         
     }, [sourceMD])
+    
+    function EditorOnRender(id: any, phase: any, actualDuration: any, baseDuration: any, startTime: any, commitTime: any) {
+        console.log(id, ":", phase, actualDuration)
+    }
     
     return (
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorCurrentRef}>
-                    {EditorContentCompo}
+                    <Profiler id="Editor" onRender={EditorOnRender}>
+                        {HTML2EditorCompos(EditorHTMLString).props.children}
+                    </Profiler>
                 </main>
             </section>
         </>
