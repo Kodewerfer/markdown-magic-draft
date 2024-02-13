@@ -22,24 +22,32 @@ export default function Editor(
     });
     const EditorSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
+    const EditorMaskRef = useRef<HTMLDivElement | null>(null);
     const [EditorHTMLString, setEditorHTMLString] = useState('');
     
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
     
-    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorSourceRef, ReloadEditorContent,
-        {
-            OnRollback: MaskEditingArea,
-            TextNodeCallback: TextNodeHandler,
-            IsEditable: !isEditingSubElement,
-            ShouldObserve: !isEditingSubElement
-        });
+    useEffect(() => {
+        ;(async () => {
+            // convert MD to HTML
+            const md2HTML = await MD2HTML(sourceMD);
+            
+            // Save a copy of HTML
+            const HTMLParser = new DOMParser()
+            EditorSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
+            setEditorHTMLString(String(md2HTML));
+        })()
+        
+    }, [sourceMD]);
     
     const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
         if (!Identifier) {
             console.warn('Editing Sub Element with invalid Identifier', ElementRef);
             return;
         }
+        
+        console.log("Sub triggered:", bSubEditing, " ID:", Identifier)
         
         if (EditingQueue.current === null || EditingQueue.current === undefined) {
             EditingQueue.current = {};
@@ -72,7 +80,17 @@ export default function Editor(
     }
     
     function MaskEditingArea() {
+        
+        if (!EditorMaskRef.current || !EditorMaskRef.current.innerHTML) return;
+        
         console.log("masking....");
+        
+        const editorInnerHTML = EditorCurrentRef.current?.innerHTML;
+        if (editorInnerHTML) {
+            EditorCurrentRef.current?.classList.add("No-Vis");
+            EditorMaskRef.current!.innerHTML = editorInnerHTML;
+            EditorMaskRef.current!.classList.remove("Hide-It");
+        }
     }
     
     async function ReloadEditorContent() {
@@ -141,32 +159,31 @@ export default function Editor(
         return HTML2ReactSnyc(md2HTML, componentOptions).result;
     }
     
-    useEffect(() => {
-        ;(async () => {
-            // convert MD to HTML
-            const md2HTML = await MD2HTML(sourceMD);
-            
-            // Save a copy of HTML
-            const HTMLParser = new DOMParser()
-            EditorSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
-            setEditorHTMLString(String(md2HTML));
-        })()
-        
-    }, [sourceMD])
+    useLayoutEffect(() => {
+        EditorCurrentRef.current?.classList.remove("No-Vis");
+        if (EditorMaskRef.current) {
+            EditorMaskRef.current?.classList.add('Hide-It');
+        }
+    });
     
-    function EditorOnRender(id: any, phase: any, actualDuration: any, baseDuration: any, startTime: any, commitTime: any) {
-        console.log(id, ":", phase, actualDuration)
-    }
+    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorSourceRef, ReloadEditorContent,
+        {
+            OnRollback: MaskEditingArea,
+            TextNodeCallback: TextNodeHandler,
+            IsEditable: !isEditingSubElement,
+            ShouldObserve: !isEditingSubElement
+        });
     
     return (
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorCurrentRef}>
-                    <Profiler id="Editor" onRender={EditorOnRender}>
-                        {HTML2EditorCompos(EditorHTMLString).props.children}
-                    </Profiler>
+                    {HTML2EditorCompos(EditorHTMLString).props.children}
                 </main>
+                <div className={'Editor-Mask'} ref={EditorMaskRef}>
+                    MASK!
+                </div>
             </section>
         </>
     )
@@ -277,7 +294,7 @@ function PlainSyntax(props: any) {
             
             ElementRef.current?.removeEventListener("keydown", OnKeydown);
         }
-    })
+    }, [ElementRef.current!])
     
     return React.createElement(tagName, {
         tabIndex: -1,
