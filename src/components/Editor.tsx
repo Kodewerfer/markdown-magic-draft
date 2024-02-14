@@ -89,8 +89,6 @@ export default function Editor(
         
         if (!EditorMaskRef.current || !EditorMaskRef.current.innerHTML) return;
         
-        console.log("masking....");
-        
         const editorInnerHTML = EditorCurrentRef.current?.innerHTML;
         if (editorInnerHTML) {
             EditorCurrentRef.current?.classList.add("No-Vis");
@@ -167,10 +165,11 @@ export default function Editor(
     }
     
     useLayoutEffect(() => {
-        EditorCurrentRef.current?.classList.remove("No-Vis");
-        if (EditorMaskRef.current) {
-            EditorMaskRef.current?.classList.add('Hide-It');
-        }
+        if (!EditorCurrentRef.current || !EditorMaskRef.current) return;
+        // After elements are properly loaded, hide the mask to show editor content
+        EditorCurrentRef.current.classList.remove("No-Vis");
+        EditorMaskRef.current.classList.add('Hide-It');
+        EditorMaskRef.current.innerHTML = " ";
     });
     
     const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorSourceRef, ReloadEditorContent,
@@ -189,7 +188,7 @@ export default function Editor(
                     {EditorComponent}
                 </main>
                 <div className={'Editor-Mask'} ref={EditorMaskRef}>
-                    MASK!
+                    Floating Mask To Hide Flickering
                 </div>
             </section>
         </>
