@@ -43,6 +43,7 @@ type THookOptions = {
     TextNodeCallback?: (textNode: Node) => Node[] | null | undefined
     OnRollback?: Function | undefined
     ShouldObserve: boolean
+    ShouldLog: boolean
     IsEditable: boolean
     ShouldFocus: boolean
     ParagraphTags: RegExp //
@@ -70,6 +71,7 @@ export default function useEditorHTMLDaemon(
         TextNodeCallback: undefined,
         OnRollback: undefined,
         ShouldObserve: true,
+        ShouldLog: true,
         IsEditable: true,
         ParagraphTags: /^(p|div|main|body|h1|h2|h3|h4|h5|h6|section)$/i,   // Determined whether to use "replacement" logic or just change the text node.
         ...Options
@@ -163,8 +165,8 @@ export default function useEditorHTMLDaemon(
                     
                     const callbackResult = HookOptions.TextNodeCallback(OldTextNode);
                     
-                    // FIXME
-                    // console.log(callbackResult);
+                    if (HookOptions.ShouldLog)
+                        console.log("Text Handler result:", callbackResult);
                     
                     if (!callbackResult) {
                         if (OldTextNode.textContent !== '')
@@ -212,24 +214,13 @@ export default function useEditorHTMLDaemon(
                     
                     let logNodeXP = GetXPathNthChild(OldTextNode);
                     let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
-                    // flags
-                    let bParentPreSiblingTextNode: boolean | null = false;
-                    let bParentNxtSiblingTextNode: boolean | null = false;
-                    let logTextNodeAnchor: string | null = null;
                     
                     if (LogParentXP === ParentParentXPath) {
                         oldNodeRemovalTarget = ParentNode;
                         logNodeXP = GetXPathNthChild(ParentNode);
                         logSiblingXP = ParentNode.nextSibling ? GetXPathFromNode(ParentNode.nextSibling) : null;
-                        // flag
-                        bParentPreSiblingTextNode = ParentNode.previousSibling && ParentNode.previousSibling.nodeType === Node.TEXT_NODE;
-                        bParentNxtSiblingTextNode = ParentNode.nextSibling && ParentNode.nextSibling.nodeType === Node.TEXT_NODE;
-                        if (bParentPreSiblingTextNode)
-                            logTextNodeAnchor = ParentNode.nextSibling ? GetXPathFromNode(ParentNode.nextSibling) : null;
-                        if (bParentNxtSiblingTextNode)
-                            logTextNodeAnchor = ParentNode.nextSibling && ParentNode.nextSibling.nextSibling ? GetXPathFromNode(ParentNode.nextSibling.nextSibling) : null;
                     }
-                    
+                    const docFragment: DocumentFragment = document.createDocumentFragment();
                     // Add the new node/nodes
                     // toReversed(), because the later operation uses pop()
                     callbackResult.toReversed().forEach((node, index, array) => {
@@ -254,18 +245,20 @@ export default function useEditorHTMLDaemon(
                                 node.textContent = ' ' + node.textContent.trimStart();
                             }
                         }
-                        
-                        const operationLog: TOperationLog = {
-                            type: TOperationType.ADD,
-                            wasText: true,
-                            node: node.cloneNode(true),
-                            nodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
-                            parentXP: LogParentXP,
-                            siblingXP: logSiblingXP,
-                        };
-                        
-                        OperationLogs.push(operationLog);
+                        docFragment.prepend(node);
                     })
+                    
+                    const operationLog: TOperationLog = {
+                        type: TOperationType.ADD,
+                        wasText: true,
+                        node: docFragment.cloneNode(true),
+                        nodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
+                        parentXP: LogParentXP,
+                        siblingXP: logSiblingXP,
+                    };
+                    
+                    OperationLogs.push(operationLog);
+                    
                     // remove the old node
                     OperationLogs.push({
                         type: TOperationType.REMOVE,
@@ -276,7 +269,7 @@ export default function useEditorHTMLDaemon(
                         siblingXP: logSiblingXP
                     });
                     
-                    // Cache the last
+                    // Cache the last, early continue
                     lastMutation = mutation;
                     continue
                 }
@@ -371,7 +364,7 @@ export default function useEditorHTMLDaemon(
     }
     
     const undoAndSync = () => {
-        // TODO: This clone doc method can be very expensive, but the reverse 'OperationLog' method brings too much problems.
+        // TODO: expensive operation, but to revert the OpLogs brings too many problems
         console.log("Undo, stack length:", DaemonState.UndoStack?.length);
         if (!DaemonState.UndoStack || !DaemonState.UndoStack.length || !MirrorDocumentRef.current) return;
         
@@ -511,8 +504,8 @@ export default function useEditorHTMLDaemon(
         let operation: TOperationLog | void;
         while ((operation = Operations.pop())) {
             const {type, node, nodeXP, nodeText, parentXP, siblingXP} = operation;
-            
-            console.log(operation);
+            if (HookOptions.ShouldLog)
+                console.log(operation);
             try {
                 if (type === TOperationType.TEXT) {
                     UpdateMirrorDocument.Text(nodeXP, nodeText!);
@@ -532,7 +525,6 @@ export default function useEditorHTMLDaemon(
         return true;
     }
     
-    // TODO: performance could be improved.
     const UpdateMirrorDocument = {
         'Text': (NodeXpath: string, Text: string | null) => {
             
@@ -556,16 +548,14 @@ export default function useEditorHTMLDaemon(
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) return;
-            //FIXME:Debug output
             const regexp = /\/node\(\)\[\d+\]$/;
-            if (regexp.test(XPathParent))
+            if (regexp.test(XPathParent) && HookOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node Parent:", parentNode);
             
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
-            //FIXME:Debug output
             if (!targetNode) return;
-            if (regexp.test(XPathSelf))
+            if (regexp.test(XPathSelf) && HookOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node target:", targetNode);
             
             
@@ -580,9 +570,8 @@ export default function useEditorHTMLDaemon(
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) return;
-            //FIXME:Debug output
             const regexp = /\/node\(\)\[\d+\]$/;
-            if (regexp.test(XPathParent))
+            if (regexp.test(XPathParent) && HookOptions.ShouldLog)
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
             
@@ -596,12 +585,11 @@ export default function useEditorHTMLDaemon(
                     SiblingNode = null;
                 }
             }
-            //FIXME:Debug output
-            if (XPathSibling !== null && regexp.test(XPathSibling))
+            if (XPathSibling !== null && regexp.test(XPathSibling) && HookOptions.ShouldLog)
                 console.log("Fuzzy ADD node Sibling:", SiblingNode);
             
             if (SiblingNode === null && XPathSibling)
-                console.warn("Adding Operation: Sibling should not have been null, but got null result: ", XPathSibling)
+                console.warn("Adding Operation: Sibling should not have been null, but got null result anyways: ", XPathSibling)
             
             parentNode.insertBefore(targetNode, SiblingNode);
         }
@@ -798,7 +786,6 @@ export default function useEditorHTMLDaemon(
                 redoAndSync();
                 return;
             }
-            // if (ev.key === 'Enter') {}
         }
         
         const KeyUpHandler = () => {

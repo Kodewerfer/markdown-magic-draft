@@ -30,23 +30,6 @@ export default function Editor(
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
     
-    useEffect(() => {
-        ;(async () => {
-            // convert MD to HTML
-            const convertedHTML: string = String(await MD2HTML(sourceMD));
-            
-            // Save a copy of HTML
-            const HTMLParser = new DOMParser()
-            EditorSourceRef.current = HTMLParser.parseFromString(convertedHTML, "text/html");
-            
-            // save a text copy
-            EditorHTMLString.current = convertedHTML;
-            // load editor component
-            setEditorComponent(EditorConverter(convertedHTML))
-        })()
-        
-    }, [sourceMD]);
-    
     const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
         if (!Identifier) {
             console.warn('Editing Sub Element with invalid Identifier', ElementRef);
@@ -164,6 +147,23 @@ export default function Editor(
         return HTML2ReactSnyc(md2HTML, componentOptions).result;
     }
     
+    useEffect(() => {
+        ;(async () => {
+            // convert MD to HTML
+            const convertedHTML: string = String(await MD2HTML(sourceMD));
+            
+            // Save a copy of HTML
+            const HTMLParser = new DOMParser()
+            EditorSourceRef.current = HTMLParser.parseFromString(convertedHTML, "text/html");
+            
+            // save a text copy
+            EditorHTMLString.current = convertedHTML;
+            // load editor component
+            setEditorComponent(EditorConverter(convertedHTML))
+        })()
+        
+    }, [sourceMD]);
+    
     useLayoutEffect(() => {
         if (!EditorCurrentRef.current || !EditorMaskRef.current) return;
         // After elements are properly loaded, hide the mask to show editor content
@@ -176,6 +176,7 @@ export default function Editor(
         {
             OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeHandler,
+            ShouldLog: true,
             IsEditable: !isEditingSubElement,
             ShouldObserve: !isEditingSubElement
         });
@@ -304,7 +305,7 @@ function PlainSyntax(props: any) {
     
     return React.createElement(tagName, {
         tabIndex: -1,
-        contentEditable: isEditing,
+        ...(isEditing ? {contentEditable: true, suppressContentEditableWarning: true} : {}),
         suppressContentEditableWarning: true,
         ...otherProps,
         ref: ElementRef,
