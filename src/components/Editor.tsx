@@ -23,7 +23,9 @@ export default function Editor(
     const EditorSourceRef = useRef<Document | null>(null);
     const EditorCurrentRef = useRef<HTMLElement | null>(null);
     const EditorMaskRef = useRef<HTMLDivElement | null>(null);
-    const [EditorHTMLString, setEditorHTMLString] = useState('');
+    
+    const EditorHTMLString = useRef('');
+    const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
@@ -31,12 +33,16 @@ export default function Editor(
     useEffect(() => {
         ;(async () => {
             // convert MD to HTML
-            const md2HTML = await MD2HTML(sourceMD);
+            const convertedHTML: string = String(await MD2HTML(sourceMD));
             
             // Save a copy of HTML
             const HTMLParser = new DOMParser()
-            EditorSourceRef.current = HTMLParser.parseFromString(String(md2HTML), "text/html");
-            setEditorHTMLString(String(md2HTML));
+            EditorSourceRef.current = HTMLParser.parseFromString(convertedHTML, "text/html");
+            
+            // save a text copy
+            EditorHTMLString.current = convertedHTML;
+            // load editor component
+            setEditorComponent(EditorConverter(convertedHTML))
         })()
         
     }, [sourceMD]);
@@ -75,7 +81,7 @@ export default function Editor(
     }
     
     async function ExtractMD() {
-        const ConvertedMarkdown = await HTML2MD(EditorHTMLString);
+        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
         console.log(String(ConvertedMarkdown));
     }
     
@@ -96,8 +102,9 @@ export default function Editor(
     async function ReloadEditorContent() {
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
-        if (bodyElement)
-            setEditorHTMLString(String(bodyElement!.innerHTML));
+        if (!bodyElement) return;
+        EditorHTMLString.current = String(bodyElement!.innerHTML);
+        setEditorComponent(EditorConverter(EditorHTMLString.current));
     }
     
     function TextNodeHandler(textNode: Node) {
@@ -126,7 +133,7 @@ export default function Editor(
         return newNodes;
     }
     
-    function HTML2EditorCompos(md2HTML: Compatible) {
+    function EditorConverter(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
         const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
@@ -179,7 +186,7 @@ export default function Editor(
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorCurrentRef}>
-                    {HTML2EditorCompos(EditorHTMLString).props.children}
+                    {EditorComponent}
                 </main>
                 <div className={'Editor-Mask'} ref={EditorMaskRef}>
                     MASK!
