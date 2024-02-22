@@ -117,19 +117,34 @@ export default function Editor(
     function EditorConverter(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
-        const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
+        const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
             .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
                 acc[tagName] = (props: any) => {
+                    // inline syntax
                     if (props['data-md-syntax'] && props['data-md-container'] !== 'true') {
                         if (props['data-link-to']) {
                             return <SpecialLinkComponent {...props}
                                                          ParentAction={toggleEditingSubElement}
                                                          tagName={tagName}/>;
                         }
-                        
+                        //Containers
+                        //Simple syntax
                         return <PlainSyntax {...props}
                                             ParentAction={toggleEditingSubElement}
                                             tagName={tagName}/>;
+                    }
+                    // Paragraph and Headers
+                    if (props['data-md-paragraph'] || props['data-md-header']) {
+                        
+                        // Header
+                        if (props['data-md-header'] !== undefined) {
+                            return <Paragraph {...props}
+                                              isHeader={true}
+                                              tagName={tagName}/>
+                        }
+                        // Normal P tags
+                        return <Paragraph {...props}
+                                          tagName={tagName}/>
                     }
                     
                     // Placeholder
@@ -141,8 +156,7 @@ export default function Editor(
             }, {});
         
         const componentOptions = {
-            ...TextNodesMappingConfig,
-            'p': Paragraph
+            ...TextNodesMappingConfig
         }
         return HTML2ReactSnyc(md2HTML, componentOptions).result;
     }
@@ -197,10 +211,13 @@ export default function Editor(
 }
 
 const Paragraph = (props: any) => {
-    const {children, ...otherProps} = props;
-    return (
-        <p {...otherProps}>{children}</p>
-    )
+    const {children, tagName, isHeader, ...otherProps} = props;
+    const ParagraphRef = useRef<HTMLElement | null>(null);
+    
+    return React.createElement(tagName, {
+        ...otherProps,
+        ref: ParagraphRef,
+    }, children)
 };
 
 const CommonRenderer = (props: any) => {

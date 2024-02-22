@@ -8,8 +8,11 @@ function AddSyntaxAttrTransformer(ast: object) {
         const NodeProps = node.properties || (node.properties = {})
         const tagName = node.tagName.toLowerCase()
         
-        // ['a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'del']
+        // ['p','a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'del']
         switch (tagName) {
+            case 'p':
+                NodeProps['data-md-paragraph'] = "true";
+                break;
             case 'h1':
                 NodeProps['data-md-header'] = "# ";
                 break;
