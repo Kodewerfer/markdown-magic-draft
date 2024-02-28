@@ -11,19 +11,13 @@
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
-//Type of actions to perform on the mirror document
-enum TOperationType {
-    TEXT = "TEXT",
-    ADD = "ADD",
-    REMOVE = "REMOVE"
-}
-
 // Instructions for DOM manipulations on the mirror document
-type TOperationLog = {
-    type: TOperationType,
+type TSyncOperation = {
+    type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE',
     fromTextHandler?: boolean,  //indicate if it was a replacement node resulting from text node callback
-    node?: Node,
-    nodeXP: string,
+    newNode?: Node,
+    targetNode?: Node, //Alternative to XP
+    targetNodeXP?: string,
     nodeText?: string | null,
     nodeTextOld?: string | null, //used in redo
     parentXP?: string | null,
@@ -38,6 +32,27 @@ type TSelectionStatus = {
     AnchorNodeXPath: string,
 }
 
+type TDOMTrigger = 'add' | 'remove' | 'any';
+// Type for add to ignore map
+export type TIgnoreMap = Map<HTMLElement, TDOMTrigger>;
+
+export type TElementOperation = Map<HTMLElement, {
+    Trigger: TDOMTrigger,
+    Operation: TSyncOperation | TSyncOperation[]
+}>;
+
+// Hook's persistent variables
+type TDaemonState = {
+    Observer: MutationObserver //Mutation Observer instance
+    MutationQueue: MutationRecord[] // All records will be pushed to here
+    IgnoreMap: TIgnoreMap
+    ElementOperationMap: TElementOperation
+    UndoStack: [Document] | null
+    RedoStack: [Document] | null
+    SelectionStatusCache: TSelectionStatus | null
+    SelectionStatusCachePreBlur: TSelectionStatus | null
+}
+
 type THookOptions = {
     TextNodeCallback?: (textNode: Node) => Node[] | null | undefined
     OnRollback?: Function | undefined
@@ -48,24 +63,10 @@ type THookOptions = {
     ParagraphTags: RegExp //
 }
 
-type EIgnoreType = 'add' | 'remove' | 'any';
-// Type for add to ignore map
-export type TIgnoreMap = Map<HTMLElement, EIgnoreType>;
-
-// Hook's persistent variables
-type TDaemonState = {
-    Observer: MutationObserver //Mutation Observer instance
-    MutationQueue: MutationRecord[] // All records will be pushed to here
-    IgnoreMap: TIgnoreMap
-    UndoStack: [Document] | null
-    RedoStack: [Document] | null
-    SelectionStatusCache: TSelectionStatus | null
-    SelectionStatusCachePreBlur: TSelectionStatus | null
-}
-
 export type TDaemonReturn = {
     AddToRecord: (record: MutationRecord) => void;
-    AddToIgnore: (Element: HTMLElement, Type: EIgnoreType) => void;
+    AddToIgnore: (Element: HTMLElement, Type: TDOMTrigger) => void;
+    AddToOperation: (Element: HTMLElement, Type: TDOMTrigger, Operation: TSyncOperation) => void;
 }
 
 export default function useEditorHTMLDaemon(
@@ -93,6 +94,7 @@ export default function useEditorHTMLDaemon(
         const state: TDaemonState = {
             Observer: null as any,
             IgnoreMap: new Map(),
+            ElementOperationMap: new Map(),
             MutationQueue: [],
             UndoStack: null,
             RedoStack: null,
@@ -145,7 +147,7 @@ export default function useEditorHTMLDaemon(
         // Rollback Changes
         let mutation: MutationRecord | void;
         let lastMutation: MutationRecord | null = null;
-        let OperationLogs: TOperationLog[] = []
+        let OperationLogs: TSyncOperation[] = []
         
         while ((mutation = DaemonState.MutationQueue.pop())) {
             
@@ -203,15 +205,13 @@ export default function useEditorHTMLDaemon(
                         if (HookOptions.ShouldLog)
                             console.log("Case 1:Text Handler results in one text node");
                         
-                        const Operation: TOperationLog = {
-                            type: TOperationType.TEXT,
+                        OperationLogs.push({
+                            type: "TEXT",
                             fromTextHandler: true,
-                            nodeXP: GetXPathFromNode(mutation.target),
+                            targetNodeXP: GetXPathFromNode(mutation.target),
                             nodeText: RestoredText,
                             nodeTextOld: TextNodeOriginalValue
-                        }
-                        
-                        OperationLogs.push(Operation);
+                        });
                         
                         // Cache the last
                         lastMutation = mutation;
@@ -264,23 +264,21 @@ export default function useEditorHTMLDaemon(
                         docFragment.prepend(node);
                     })
                     
-                    const operationLog: TOperationLog = {
-                        type: TOperationType.ADD,
+                    OperationLogs.push({
+                        type: "ADD",
                         fromTextHandler: true,
-                        node: docFragment.cloneNode(true),
-                        nodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
+                        newNode: docFragment.cloneNode(true),
+                        targetNodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
                         parentXP: LogParentXP,
                         siblingXP: logSiblingXP,
-                    };
-                    
-                    OperationLogs.push(operationLog);
+                    });
                     
                     // remove the old node
                     OperationLogs.push({
-                        type: TOperationType.REMOVE,
+                        type: "REMOVE",
                         fromTextHandler: true,
-                        node: oldNodeRemovalTarget.cloneNode(true),
-                        nodeXP: logNodeXP,
+                        newNode: oldNodeRemovalTarget.cloneNode(true),
+                        targetNodeXP: logNodeXP,
                         parentXP: LogParentXP,
                         siblingXP: logSiblingXP
                     });
@@ -291,9 +289,9 @@ export default function useEditorHTMLDaemon(
                 }
                 
                 // Default handling, change text content only
-                const Operation: TOperationLog = {
-                    type: TOperationType.TEXT,
-                    nodeXP: GetXPathFromNode(mutation.target),
+                const Operation: TSyncOperation = {
+                    type: "TEXT",
+                    targetNodeXP: GetXPathFromNode(mutation.target),
                     nodeText: mutation.target.textContent,
                     nodeTextOld: TextNodeOriginalValue
                 }
@@ -317,14 +315,13 @@ export default function useEditorHTMLDaemon(
                         removedNode,
                         mutation.nextSibling,
                     );
-                    const operationLog = {
-                        type: TOperationType.REMOVE,
-                        node: mutation.removedNodes[i].cloneNode(true),
-                        nodeXP: GetXPathFromNode(mutation.removedNodes[i]),
+                    const operationLog: TSyncOperation = {
+                        type: "REMOVE",
+                        newNode: mutation.removedNodes[i].cloneNode(true),
+                        targetNodeXP: GetXPathFromNode(mutation.removedNodes[i]),
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     }
-                    
                     OperationLogs.push(operationLog);
                 }
             }
@@ -348,10 +345,10 @@ export default function useEditorHTMLDaemon(
                         mutation.target.removeChild(addedNode);
                     }
                     
-                    const operationLog = {
-                        type: TOperationType.ADD,
-                        node: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
-                        nodeXP: addedNodeXP,
+                    const operationLog: TSyncOperation = {
+                        type: "ADD",
+                        newNode: addedNode.cloneNode(true), //MUST be a deep clone, otherwise when breaking a new line, the text node content of a sub node will be lost.
+                        targetNodeXP: addedNodeXP,
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     }
@@ -528,23 +525,26 @@ export default function useEditorHTMLDaemon(
     }
     
     // Sync to the mirror document, middleman function
-    const syncToMirror = (Operations: TOperationLog[]) => {
+    const syncToMirror = (Operations: TSyncOperation[]) => {
         
         if (!Operations.length) return false;
-        let operation: TOperationLog | void;
+        let operation: TSyncOperation | void;
         while ((operation = Operations.pop())) {
-            const {type, node, nodeXP, nodeText, parentXP, siblingXP} = operation;
+            const {type, newNode, targetNodeXP, nodeText, parentXP, siblingXP} = operation;
             if (HookOptions.ShouldLog)
                 console.log(operation);
             try {
-                if (type === TOperationType.TEXT) {
-                    UpdateMirrorDocument.Text(nodeXP, nodeText!);
+                if (type === "TEXT") {
+                    UpdateMirrorDocument.Text(targetNodeXP!, nodeText!);
                 }
-                if (type === TOperationType.REMOVE) {
-                    UpdateMirrorDocument.Remove(parentXP!, nodeXP);
+                if (type === "REMOVE") {
+                    UpdateMirrorDocument.Remove(parentXP!, targetNodeXP!);
                 }
-                if (type === TOperationType.ADD) {
-                    UpdateMirrorDocument.Add(parentXP!, node!, siblingXP!);
+                if (type === "ADD") {
+                    UpdateMirrorDocument.Add(parentXP!, newNode!, siblingXP!);
+                }
+                if (type === "REPLACE") {
+                    UpdateMirrorDocument.Replace(targetNodeXP!, newNode!);
                 }
             } catch (e) {
                 console.error("Error When Syncing:", e);
@@ -591,9 +591,9 @@ export default function useEditorHTMLDaemon(
             
             parentNode.removeChild(targetNode);
         },
-        'Add': (XPathParent: string, Node: Node, XPathSibling: string | null) => {
+        'Add': (XPathParent: string, NewNode: Node, XPathSibling: string | null) => {
             
-            if (!XPathParent || !Node) {
+            if (!XPathParent || !NewNode) {
                 console.error("UpdateMirrorDocument.Add: Invalid Parameter");
                 return;
             }
@@ -605,7 +605,7 @@ export default function useEditorHTMLDaemon(
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
             
-            const targetNode = Node;
+            const targetNode = NewNode;
             if (!targetNode) return;
             
             let SiblingNode = null
@@ -622,7 +622,19 @@ export default function useEditorHTMLDaemon(
                 console.warn("Adding Operation: Sibling should not have been null, but got null result anyways: ", XPathSibling)
             
             parentNode.insertBefore(targetNode, SiblingNode);
-        }
+        },
+        'Replace': (NodeXpath: string, Node: Node) => {
+            
+            if (!NodeXpath || !Node) {
+                console.error("UpdateMirrorDocument.Replace Invalid Parameter");
+                return;
+            }
+            
+            const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
+            if (!targetNode) return;
+            
+            (targetNode as HTMLElement).replaceWith(Node);
+        },
     }
     
     function GetSelectionStatus(targetElement: Element = WatchElementRef.current as Element): TSelectionStatus | null {
@@ -909,15 +921,21 @@ export default function useEditorHTMLDaemon(
         
     }, [WatchElementRef.current!])
     
-    // Hook's interface
+    // Hook's public interface
     return {
-        'AddToRecord': (Record: MutationRecord) => {
+        AddToRecord: (Record: MutationRecord) => {
             DaemonState.MutationQueue.push(Record);
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        'AddToIgnore': (Element: HTMLElement, Type: EIgnoreType) => {
+        AddToIgnore: (Element: HTMLElement, Type: TDOMTrigger) => {
             DaemonState.IgnoreMap.set(Element, Type);
+        },
+        AddToOperation: (Element: HTMLElement, Type: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
+            DaemonState.ElementOperationMap.set(Element, {
+                Trigger: Type,
+                Operation: Operation
+            })
         }
     }
 }

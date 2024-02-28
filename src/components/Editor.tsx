@@ -251,8 +251,11 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
     const IgnoreItemRef = useRef<HTMLElement>();
     
     useLayoutEffect(() => {
-        if (isHeader && IgnoreItemRef.current)
+        if (isHeader && IgnoreItemRef.current) {
             daemonHandle.AddToIgnore(IgnoreItemRef.current, "any");
+            daemonHandle.AddToOperation(IgnoreItemRef.current, "remove", {type: "ADD"});
+            
+        }
     });
     
     return React.createElement(tagName, {
