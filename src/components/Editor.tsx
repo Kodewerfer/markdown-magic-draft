@@ -1,6 +1,6 @@
 import React, {Profiler, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
-import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
+import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
@@ -20,8 +20,8 @@ export default function Editor(
         SourceData = SourceData || "";
         return SourceData;
     });
+    const EditorRef = useRef<HTMLElement | null>(null);
     const EditorSourceRef = useRef<Document | null>(null);
-    const EditorCurrentRef = useRef<HTMLElement | null>(null);
     const EditorMaskRef = useRef<HTMLDivElement | null>(null);
     
     const EditorHTMLString = useRef('');
@@ -72,9 +72,9 @@ export default function Editor(
         
         if (!EditorMaskRef.current || !EditorMaskRef.current.innerHTML) return;
         
-        const editorInnerHTML = EditorCurrentRef.current?.innerHTML;
+        const editorInnerHTML = EditorRef.current?.innerHTML;
         if (editorInnerHTML) {
-            EditorCurrentRef.current?.classList.add("No-Vis");
+            EditorRef.current?.classList.add("No-Vis");
             EditorMaskRef.current!.innerHTML = editorInnerHTML;
             EditorMaskRef.current!.classList.remove("Hide-It");
         }
@@ -140,16 +140,18 @@ export default function Editor(
                         if (props['data-md-header'] !== undefined) {
                             return <Paragraph {...props}
                                               isHeader={true}
+                                              headerSyntax={props['data-md-header']}
+                                              daemonHandle={DaemonHandle}
                                               tagName={tagName}/>
                         }
                         // Normal P tags
                         return <Paragraph {...props}
+                                          daemonHandle={DaemonHandle}
                                           tagName={tagName}/>
                     }
                     
                     // Placeholder
                     return <CommonRenderer {...props}
-                                           ParentAction={toggleEditingSubElement}
                                            tagName={tagName}/>;
                 }
                 return acc;
@@ -179,14 +181,40 @@ export default function Editor(
     }, [sourceMD]);
     
     useLayoutEffect(() => {
-        if (!EditorCurrentRef.current || !EditorMaskRef.current) return;
+        if (!EditorRef.current || !EditorMaskRef.current) return;
         // After elements are properly loaded, hide the mask to show editor content
-        EditorCurrentRef.current.classList.remove("No-Vis");
+        EditorRef.current.classList.remove("No-Vis");
         EditorMaskRef.current.classList.add('Hide-It');
         EditorMaskRef.current.innerHTML = " ";
     });
     
-    const DaemonHandle = useEditorHTMLDaemon(EditorCurrentRef, EditorSourceRef, ReloadEditorContent,
+    useLayoutEffect(() => {
+        // Editor level selection status monitor
+        const debouncedSelectionMonitor = _.debounce((ev: Event) => {
+            const selection: Selection | null = window.getSelection();
+            if (!selection) return;
+            // Must be an editor element
+            if (!EditorRef.current?.contains(selection?.anchorNode)) return;
+            // Must not contains multiple elements
+            if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
+            
+            // console.log('Editor selection!', selection.anchorNode)
+            
+        }, 200);
+        const OnSelectionChange = (ev: Event) => debouncedSelectionMonitor(ev);
+        const OnSelectStart = (ev: Event) => debouncedSelectionMonitor(ev);
+        
+        document.addEventListener("selectstart", OnSelectStart);
+        document.addEventListener("selectionchange", OnSelectionChange);
+        
+        return () => {
+            document.removeEventListener("selectstart", OnSelectStart);
+            document.removeEventListener("selectionchange", OnSelectionChange);
+        }
+        
+    }, [EditorRef.current, document]);
+    
+    const DaemonHandle = useEditorHTMLDaemon(EditorRef, EditorSourceRef, ReloadEditorContent,
         {
             OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeHandler,
@@ -199,7 +227,7 @@ export default function Editor(
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
-                <main className={'Editor-Inner'} ref={EditorCurrentRef}>
+                <main className={'Editor-Inner'} ref={EditorRef}>
                     {EditorComponent}
                 </main>
                 <div className={'Editor-Mask'} ref={EditorMaskRef}>
@@ -210,14 +238,34 @@ export default function Editor(
     )
 }
 
-const Paragraph = (props: any) => {
-    const {children, tagName, isHeader, ...otherProps} = props;
+const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
+    children: React.ReactNode[] | React.ReactNode;
+    tagName: string;
+    isHeader: boolean;
+    headerSyntax: string;
+    daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
+    [key: string]: any; // for otherProps
+}) => {
     const ParagraphRef = useRef<HTMLElement | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const IgnoreItemRef = useRef<HTMLElement>();
+    
+    useLayoutEffect(() => {
+        if (isHeader && IgnoreItemRef.current)
+            daemonHandle.AddToIgnore(IgnoreItemRef.current, "any");
+    });
     
     return React.createElement(tagName, {
         ...otherProps,
         ref: ParagraphRef,
-    }, children)
+    }, [
+        isHeader && React.createElement('span', {
+            key: 'HeaderSyntaxLead',
+            ref: IgnoreItemRef,
+            contentEditable: false,
+        }, headerSyntax),
+        ...(Array.isArray(children) ? children : [children]),
+    ]);
 };
 
 const CommonRenderer = (props: any) => {
@@ -328,4 +376,36 @@ function PlainSyntax(props: any) {
         ref: ElementRef,
     }, isEditing ? childrenWithSyntax : children);
     
+}
+
+// Modified helper function to get react component from Dom Element
+// FIXME: this is a terrible hack.
+function FindReactComponent(DomNode: HTMLElement, traverseUp: number = 0): any {
+    // Find the key starting with "__reactFiber$" which indicates a React 18 element
+    const key = Object.keys(DomNode).find(key => key.startsWith("__reactFiber$"));
+    if (!key) return null;
+    
+    // Get the Fiber node from the DOM element
+    const domFiber = (DomNode as any)[key] as { type?: string; return?: any; stateNode?: any; };
+    
+    if (domFiber === undefined) return null;
+    
+    // Function to get parent component fiber
+    const getCompFiber = (fiber: { type?: string; return?: any; stateNode?: any; }) => {
+        let parentFiber = fiber.return;
+        while (parentFiber && typeof parentFiber.type === "string") {
+            parentFiber = parentFiber.return;
+        }
+        return parentFiber;
+    };
+    
+    // Get the component fiber
+    let compFiber = getCompFiber(domFiber);
+    
+    // If traverseUp is specified, we move up the component tree
+    for (let i = 0; i < traverseUp; i++) {
+        compFiber = getCompFiber(compFiber);
+    }
+    
+    return compFiber.stateNode;
 }

@@ -41,8 +41,6 @@ alert(s);
 
 A note[1](#user-content-fn-1)
 
-## Footnotes
-
 1. Big note. [↩](#user-content-fnref-1)
 `
 

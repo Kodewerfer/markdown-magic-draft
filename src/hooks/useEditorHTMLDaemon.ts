@@ -21,8 +21,7 @@ enum TOperationType {
 // Instructions for DOM manipulations on the mirror document
 type TOperationLog = {
     type: TOperationType,
-    wasText?: boolean,  //indicate if it was a replacement node resulting from text node callback
-    // noRedo?: boolean, // undo operation may end up creating additional logs, these logs are not suitable for redo
+    fromTextHandler?: boolean,  //indicate if it was a replacement node resulting from text node callback
     node?: Node,
     nodeXP: string,
     nodeText?: string | null,
@@ -49,14 +48,24 @@ type THookOptions = {
     ParagraphTags: RegExp //
 }
 
+type EIgnoreType = 'add' | 'remove' | 'any';
+// Type for add to ignore map
+export type TIgnoreMap = Map<HTMLElement, EIgnoreType>;
+
 // Hook's persistent variables
 type TDaemonState = {
-    Observer: MutationObserver, //Mutation Observer instance
-    MutationQueue: MutationRecord[], // All records will be pushed to here
+    Observer: MutationObserver //Mutation Observer instance
+    MutationQueue: MutationRecord[] // All records will be pushed to here
+    IgnoreMap: TIgnoreMap
     UndoStack: [Document] | null
     RedoStack: [Document] | null
-    SelectionStatusCache: TSelectionStatus | null,
+    SelectionStatusCache: TSelectionStatus | null
     SelectionStatusCachePreBlur: TSelectionStatus | null
+}
+
+export type TDaemonReturn = {
+    AddToRecord: (record: MutationRecord) => void;
+    AddToIgnore: (Element: HTMLElement, Type: EIgnoreType) => void;
 }
 
 export default function useEditorHTMLDaemon(
@@ -64,7 +73,7 @@ export default function useEditorHTMLDaemon(
     MirrorDocumentRef: { current: Document | undefined | null },
     FinalizeChanges: Function,
     Options: Partial<THookOptions>
-) {
+): TDaemonReturn {
     
     // Default options
     const HookOptions = {
@@ -83,6 +92,7 @@ export default function useEditorHTMLDaemon(
         
         const state: TDaemonState = {
             Observer: null as any,
+            IgnoreMap: new Map(),
             MutationQueue: [],
             UndoStack: null,
             RedoStack: null,
@@ -138,6 +148,7 @@ export default function useEditorHTMLDaemon(
         let OperationLogs: TOperationLog[] = []
         
         while ((mutation = DaemonState.MutationQueue.pop())) {
+            
             /**
              * Text Changed
              */
@@ -186,12 +197,15 @@ export default function useEditorHTMLDaemon(
                     /**
                      *  Result in only one text node
                      */
-                    if (LogParentXP === ParentXPath && callbackResult.length === 1 && callbackResult[0].textContent !== null) {
-                        
+                    if (LogParentXP === ParentXPath && callbackResult.length === 1 && callbackResult[0].nodeType === Node.TEXT_NODE && callbackResult[0].textContent !== null) {
                         const RestoredText = whiteSpaceStart[0] + callbackResult[0].textContent.trim() + whiteSpaceEnd[0];
+                        
+                        if (HookOptions.ShouldLog)
+                            console.log("Case 1:Text Handler results in one text node");
                         
                         const Operation: TOperationLog = {
                             type: TOperationType.TEXT,
+                            fromTextHandler: true,
                             nodeXP: GetXPathFromNode(mutation.target),
                             nodeText: RestoredText,
                             nodeTextOld: TextNodeOriginalValue
@@ -208,6 +222,8 @@ export default function useEditorHTMLDaemon(
                      *  Result in multiple nodes
                      *  or only one node but no longer a text node.
                      */
+                    if (HookOptions.ShouldLog)
+                        console.log("Case 2:Text Handler multi returns / Changed Type");
                     
                     let oldNodeRemovalTarget = OldTextNode;
                     oldNodeRemovalTarget.textContent = TextNodeOriginalValue;// Restore the text node to old value
@@ -250,7 +266,7 @@ export default function useEditorHTMLDaemon(
                     
                     const operationLog: TOperationLog = {
                         type: TOperationType.ADD,
-                        wasText: true,
+                        fromTextHandler: true,
                         node: docFragment.cloneNode(true),
                         nodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
                         parentXP: LogParentXP,
@@ -262,7 +278,7 @@ export default function useEditorHTMLDaemon(
                     // remove the old node
                     OperationLogs.push({
                         type: TOperationType.REMOVE,
-                        wasText: true,
+                        fromTextHandler: true,
                         node: oldNodeRemovalTarget.cloneNode(true),
                         nodeXP: logNodeXP,
                         parentXP: LogParentXP,
@@ -290,6 +306,11 @@ export default function useEditorHTMLDaemon(
                 for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
                     
                     let removedNode = mutation.removedNodes[i] as HTMLElement;
+                    // Check Ignore map
+                    if (removedNode.nodeType === Node.ELEMENT_NODE) {
+                        if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
+                            continue;
+                    }
                     
                     // rollback
                     mutation.target.insertBefore(
@@ -312,11 +333,17 @@ export default function useEditorHTMLDaemon(
              */
             if (mutation.addedNodes && mutation.addedNodes.length) {
                 for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
-                    // rollback
-                    const addedNode: Node = mutation.addedNodes[i];
+                    
+                    const addedNode = mutation.addedNodes[i] as HTMLElement;
+                    // Check Ignore map
+                    if (addedNode.nodeType === Node.ELEMENT_NODE) {
+                        if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
+                            continue;
+                    }
                     
                     const addedNodeXP = GetXPathFromNode(addedNode);
                     
+                    // rollback
                     if (addedNode.parentNode) {
                         mutation.target.removeChild(addedNode);
                     }
@@ -341,6 +368,9 @@ export default function useEditorHTMLDaemon(
         if (!syncToMirror(OperationLogs)) {
             DaemonState.UndoStack?.pop();
         }
+        
+        // Reset ignore
+        DaemonState.IgnoreMap.clear();
         
         // Notify parent
         FinalizeChanges();
@@ -879,11 +909,15 @@ export default function useEditorHTMLDaemon(
         
     }, [WatchElementRef.current!])
     
+    // Hook's interface
     return {
         'AddToRecord': (Record: MutationRecord) => {
             DaemonState.MutationQueue.push(Record);
             throttledSelectionStatus();
             throttledRollbackAndSync();
+        },
+        'AddToIgnore': (Element: HTMLElement, Type: EIgnoreType) => {
+            DaemonState.IgnoreMap.set(Element, Type);
         }
     }
 }
