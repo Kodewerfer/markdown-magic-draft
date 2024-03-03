@@ -33,12 +33,13 @@ type TSelectionStatus = {
 }
 
 type TDOMTrigger = 'add' | 'remove' | 'any';
+
 // Type for add to ignore map
 export type TIgnoreMap = Map<HTMLElement, TDOMTrigger>;
 
 export type TElementOperation = Map<HTMLElement, {
     Trigger: TDOMTrigger,
-    Operation: TSyncOperation | TSyncOperation[]
+    Operations: TSyncOperation | TSyncOperation[]
 }>;
 
 // Hook's persistent variables
@@ -46,7 +47,7 @@ type TDaemonState = {
     Observer: MutationObserver //Mutation Observer instance
     MutationQueue: MutationRecord[] // All records will be pushed to here
     IgnoreMap: TIgnoreMap
-    ElementOperationMap: TElementOperation
+    BindOperationMap: TElementOperation
     UndoStack: [Document] | null
     RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null
@@ -66,7 +67,7 @@ type THookOptions = {
 export type TDaemonReturn = {
     AddToRecord: (record: MutationRecord) => void;
     AddToIgnore: (Element: HTMLElement, Type: TDOMTrigger) => void;
-    AddToOperation: (Element: HTMLElement, Type: TDOMTrigger, Operation: TSyncOperation) => void;
+    AddToBindOperation: (Element: HTMLElement, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
 }
 
 export default function useEditorHTMLDaemon(
@@ -94,7 +95,7 @@ export default function useEditorHTMLDaemon(
         const state: TDaemonState = {
             Observer: null as any,
             IgnoreMap: new Map(),
-            ElementOperationMap: new Map(),
+            BindOperationMap: new Map(),
             MutationQueue: [],
             UndoStack: null,
             RedoStack: null,
@@ -304,11 +305,17 @@ export default function useEditorHTMLDaemon(
                 for (let i = mutation.removedNodes.length - 1; i >= 0; i--) {
                     
                     let removedNode = mutation.removedNodes[i] as HTMLElement;
-                    // Check Ignore map
-                    if (removedNode.nodeType === Node.ELEMENT_NODE) {
-                        if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
-                            continue;
+                    
+                    // Check if the element had bind operations
+                    const OperationItem = DaemonState.BindOperationMap.get(removedNode);
+                    if (OperationItem && (OperationItem.Trigger === 'remove' || OperationItem.Trigger === 'any')) {
+                        const AdditionalOperations = BuildBindOperation(removedNode, OperationItem.Operations)
+                        OperationLogs.push(...AdditionalOperations);
                     }
+                    
+                    // Check Ignore map
+                    if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
+                        continue;
                     
                     // rollback
                     mutation.target.insertBefore(
@@ -317,8 +324,8 @@ export default function useEditorHTMLDaemon(
                     );
                     const operationLog: TSyncOperation = {
                         type: "REMOVE",
-                        newNode: mutation.removedNodes[i].cloneNode(true),
-                        targetNodeXP: GetXPathFromNode(mutation.removedNodes[i]),
+                        newNode: removedNode.cloneNode(true),
+                        targetNodeXP: GetXPathFromNode(removedNode),
                         parentXP: GetXPathFromNode(mutation.target),
                         siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
                     }
@@ -332,11 +339,16 @@ export default function useEditorHTMLDaemon(
                 for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
                     
                     const addedNode = mutation.addedNodes[i] as HTMLElement;
-                    // Check Ignore map
-                    if (addedNode.nodeType === Node.ELEMENT_NODE) {
-                        if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
-                            continue;
+                    // Check if the element had bind operations
+                    const OperationItem = DaemonState.BindOperationMap.get(addedNode);
+                    if (OperationItem && (OperationItem.Trigger === 'add' || OperationItem.Trigger === 'any')) {
+                        const AdditionalOperations = BuildBindOperation(addedNode, OperationItem.Operations);
+                        OperationLogs.push(...AdditionalOperations);
                     }
+                    
+                    // Check Ignore map
+                    if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
+                        continue;
                     
                     const addedNodeXP = GetXPathFromNode(addedNode);
                     
@@ -360,7 +372,7 @@ export default function useEditorHTMLDaemon(
             lastMutation = mutation;
         }
         
-        SaveMirrorToHistory();
+        saveMirrorToHistory();
         
         if (!syncToMirror(OperationLogs)) {
             DaemonState.UndoStack?.pop();
@@ -373,7 +385,7 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
-    const SaveMirrorToHistory = () => {
+    const saveMirrorToHistory = () => {
         if (!MirrorDocumentRef || !MirrorDocumentRef.current) {
             return;
         }
@@ -391,7 +403,7 @@ export default function useEditorHTMLDaemon(
     }
     
     const undoAndSync = () => {
-        // TODO: expensive operation, but to revert the OpLogs brings too many problems
+        // FIXME: expensive operation, but to revert the OpLogs brings too many problems
         console.log("Undo, stack length:", DaemonState.UndoStack?.length);
         if (!DaemonState.UndoStack || !DaemonState.UndoStack.length || !MirrorDocumentRef.current) return;
         
@@ -425,7 +437,7 @@ export default function useEditorHTMLDaemon(
         if (!DaemonState.RedoStack || !DaemonState.RedoStack.length || !MirrorDocumentRef.current) return;
         
         // save to history again
-        SaveMirrorToHistory();
+        saveMirrorToHistory();
         
         MirrorDocumentRef.current = DaemonState.RedoStack.pop();
         
@@ -524,6 +536,35 @@ export default function useEditorHTMLDaemon(
         return '';
     }
     
+    function BuildBindOperation(node: Node, Operations: TSyncOperation | TSyncOperation[]) {
+        let OPStack: TSyncOperation[];
+        if (Array.isArray(Operations)) {
+            OPStack = [...Operations];
+        } else {
+            OPStack = [Operations]
+        }
+        
+        for (const OPItem of OPStack) {
+            if (!OPItem.targetNodeXP && OPItem.targetNode) {
+                Object.assign(OPItem, {
+                    targetNodeXP: GetXPathFromNode(OPItem.targetNode)
+                })
+            }
+            if (!OPItem.parentXP && OPItem.targetNode && OPItem.targetNode.parentNode) {
+                Object.assign(OPItem, {
+                    parentXP: GetXPathFromNode(OPItem.targetNode.parentNode)
+                })
+            }
+            if (!OPItem.siblingXP && OPItem.targetNode) {
+                Object.assign(OPItem, {
+                    siblingXP: OPItem.targetNode.nextSibling ? GetXPathFromNode(OPItem.targetNode.nextSibling) : null
+                })
+            }
+        }
+        
+        return OPStack;
+    }
+    
     // Sync to the mirror document, middleman function
     const syncToMirror = (Operations: TSyncOperation[]) => {
         
@@ -559,32 +600,32 @@ export default function useEditorHTMLDaemon(
         'Text': (NodeXpath: string, Text: string | null) => {
             
             if (!NodeXpath) {
-                console.error("UpdateMirrorDocument.Text: Invalid Parameter");
-                return;
+                throw "UpdateMirrorDocument.Text: Invalid Parameter";
             }
             
-            const NodeResult = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
-            if (!NodeResult || NodeResult.nodeType !== Node.TEXT_NODE) return;
+            const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
+            if (!targetNode || targetNode.nodeType !== Node.TEXT_NODE) throw "UpdateMirrorDocument.Text: invalid target text node";
             
             if (!Text) Text = "";
             
-            NodeResult.nodeValue = Text;
+            targetNode.nodeValue = Text;
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
             if (!XPathParent || !XPathSelf) {
-                console.error("UpdateMirrorDocument.Remove: Invalid Parameter");
-                return;
+                throw "UpdateMirrorDocument.Remove: Invalid Parameter";
             }
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
-            if (!parentNode) return;
+            if (!parentNode) throw "UpdateMirrorDocument.Remove: No parentNode";
+            
             const regexp = /\/node\(\)\[\d+\]$/;
             if (regexp.test(XPathParent) && HookOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node Parent:", parentNode);
             
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
-            if (!targetNode) return;
+            if (!targetNode) throw "UpdateMirrorDocument.Remove: No targetNode";
+            
             if (regexp.test(XPathSelf) && HookOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node target:", targetNode);
             
@@ -594,19 +635,18 @@ export default function useEditorHTMLDaemon(
         'Add': (XPathParent: string, NewNode: Node, XPathSibling: string | null) => {
             
             if (!XPathParent || !NewNode) {
-                console.error("UpdateMirrorDocument.Add: Invalid Parameter");
-                return;
+                throw "UpdateMirrorDocument.Add: Invalid Parameter";
             }
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
-            if (!parentNode) return;
+            if (!parentNode) throw "UpdateMirrorDocument.Add: No parentNode";
             const regexp = /\/node\(\)\[\d+\]$/;
             if (regexp.test(XPathParent) && HookOptions.ShouldLog)
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
             
             const targetNode = NewNode;
-            if (!targetNode) return;
+            if (!targetNode) throw "UpdateMirrorDocument.Add: No targetNode";
             
             let SiblingNode = null
             if (XPathSibling) {
@@ -626,8 +666,7 @@ export default function useEditorHTMLDaemon(
         'Replace': (NodeXpath: string, Node: Node) => {
             
             if (!NodeXpath || !Node) {
-                console.error("UpdateMirrorDocument.Replace Invalid Parameter");
-                return;
+                throw 'UpdateMirrorDocument.Replace Invalid Parameter';
             }
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
@@ -805,15 +844,6 @@ export default function useEditorHTMLDaemon(
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
             
-            // if (ev.key === 'Enter') {
-            //     if (DaemonState.MutationQueue.length >= 1) {
-            //         ev.preventDefault();
-            //         ev.stopPropagation();
-            //         DaemonState.SelectionStatusCache = GetSelectionStatus((WatchElementRef.current as Element));
-            //         rollbackAndSync();
-            //     }
-            // }
-            
             if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.code === 'KeyZ') {
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -931,10 +961,10 @@ export default function useEditorHTMLDaemon(
         AddToIgnore: (Element: HTMLElement, Type: TDOMTrigger) => {
             DaemonState.IgnoreMap.set(Element, Type);
         },
-        AddToOperation: (Element: HTMLElement, Type: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
-            DaemonState.ElementOperationMap.set(Element, {
-                Trigger: Type,
-                Operation: Operation
+        AddToBindOperation: (Element: HTMLElement, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
+            DaemonState.BindOperationMap.set(Element, {
+                Trigger: Trigger,
+                Operations: Operation
             })
         }
     }

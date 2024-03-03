@@ -1,9 +1,11 @@
-import React, {Profiler, useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import {renderToString} from 'react-dom/server';
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
 import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
+
 
 type TSubElementsQueue = {
     [key: string]: HTMLElement | null;
@@ -30,91 +32,16 @@ export default function Editor(
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
     
-    const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
-        if (!Identifier) {
-            console.warn('Editing Sub Element with invalid Identifier', ElementRef);
-            return;
-        }
-        
-        console.log("Sub triggered:", bSubEditing, " ID:", Identifier)
-        
-        if (EditingQueue.current === null || EditingQueue.current === undefined) {
-            EditingQueue.current = {};
-        }
-        
-        if (!bSubEditing) {
-            if (typeof EditingQueue.current[Identifier] !== 'undefined') {
-                let {[Identifier]: value, ...remaining} = EditingQueue.current;
-                EditingQueue.current = remaining;
-            }
-            
-            if (EditingQueue.current && Object.keys(EditingQueue.current).length === 0) {
-                setIsEditingSubElement(false);
-            }
-            
-            if (ChangeRecord) {
-                DaemonHandle.AddToRecord(ChangeRecord);
-            }
-            
-            return;
-        }
-        
-        EditingQueue.current[Identifier] = ElementRef
-        setIsEditingSubElement(true);
-    }
-    
-    async function ExtractMD() {
-        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
-        console.log(String(ConvertedMarkdown));
-    }
-    
-    function MaskEditingArea() {
-        
-        if (!EditorMaskRef.current || !EditorMaskRef.current.innerHTML) return;
-        
-        const editorInnerHTML = EditorRef.current?.innerHTML;
-        if (editorInnerHTML) {
-            EditorRef.current?.classList.add("No-Vis");
-            EditorMaskRef.current!.innerHTML = editorInnerHTML;
-            EditorMaskRef.current!.classList.remove("Hide-It");
-        }
-    }
-    
+    // Subsequence reload
     async function ReloadEditorContent() {
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
         if (!bodyElement) return;
         EditorHTMLString.current = String(bodyElement!.innerHTML);
-        setEditorComponent(EditorConverter(EditorHTMLString.current));
+        setEditorComponent(ConfigAndConvertToReact(EditorHTMLString.current));
     }
     
-    function TextNodeHandler(textNode: Node) {
-        if (textNode.textContent === null) return;
-        const convertedHTML = String(MD2HTMLSync(textNode.textContent));
-        
-        let DOC = new DOMParser().parseFromString(convertedHTML, "text/html");
-        
-        const treeWalker: TreeWalker = DOC.createTreeWalker(DOC, NodeFilter.SHOW_TEXT);
-        let newNodes: Node[] = [];
-        let newTextNode;
-        while (newTextNode = treeWalker.nextNode()) {
-            
-            if (!newTextNode.parentNode) continue;
-            
-            if (newTextNode.parentNode.nodeName.toLowerCase() === 'p'
-                || newTextNode.parentNode.nodeName.toLowerCase() === 'body') {
-                newNodes.push(newTextNode);
-            } else {
-                newNodes.push(newTextNode.parentNode);
-            }
-        }
-        
-        if (newNodes.length === 0) return null;
-        
-        return newNodes;
-    }
-    
-    function EditorConverter(md2HTML: Compatible) {
+    function ConfigAndConvertToReact(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
         const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
@@ -150,7 +77,7 @@ export default function Editor(
                                           tagName={tagName}/>
                     }
                     
-                    // Placeholder
+                    // FIXME:Placeholder
                     return <CommonRenderer {...props}
                                            tagName={tagName}/>;
                 }
@@ -163,6 +90,83 @@ export default function Editor(
         return HTML2ReactSnyc(md2HTML, componentOptions).result;
     }
     
+    const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
+        if (!Identifier) {
+            console.warn('Editing Sub Element with invalid Identifier', ElementRef);
+            return;
+        }
+        
+        console.log("Sub triggered:", bSubEditing, " ID:", Identifier)
+        
+        if (EditingQueue.current === null || EditingQueue.current === undefined) {
+            EditingQueue.current = {};
+        }
+        
+        if (!bSubEditing) {
+            if (typeof EditingQueue.current[Identifier] !== 'undefined') {
+                let {[Identifier]: value, ...remaining} = EditingQueue.current;
+                EditingQueue.current = remaining;
+            }
+            
+            if (EditingQueue.current && Object.keys(EditingQueue.current).length === 0) {
+                setIsEditingSubElement(false);
+            }
+            
+            if (ChangeRecord) {
+                DaemonHandle.AddToRecord(ChangeRecord);
+            }
+            
+            return;
+        }
+        
+        EditingQueue.current[Identifier] = ElementRef
+        setIsEditingSubElement(true);
+    }
+    
+    function MaskEditingArea() {
+        
+        if (!EditorMaskRef.current || !EditorMaskRef.current.innerHTML) return;
+        
+        const editorInnerHTML = EditorRef.current?.innerHTML;
+        if (editorInnerHTML) {
+            EditorRef.current?.classList.add("No-Vis");
+            EditorMaskRef.current!.innerHTML = editorInnerHTML;
+            EditorMaskRef.current!.classList.remove("Hide-It");
+        }
+    }
+    
+    function DaemonTextNodeHandler(textNode: Node) {
+        if (textNode.textContent === null) return;
+        const convertedHTML = String(MD2HTMLSync(textNode.textContent));
+        
+        let DOC = new DOMParser().parseFromString(convertedHTML, "text/html");
+        
+        const treeWalker: TreeWalker = DOC.createTreeWalker(DOC, NodeFilter.SHOW_TEXT);
+        let newNodes: Node[] = [];
+        let newTextNode;
+        while (newTextNode = treeWalker.nextNode()) {
+            
+            if (!newTextNode.parentNode) continue;
+            
+            if (newTextNode.parentNode.nodeName.toLowerCase() === 'p'
+                || newTextNode.parentNode.nodeName.toLowerCase() === 'body') {
+                newNodes.push(newTextNode);
+            } else {
+                newNodes.push(newTextNode.parentNode);
+            }
+        }
+        
+        if (newNodes.length === 0) return null;
+        
+        return newNodes;
+    }
+    
+    async function ExtractMD() {
+        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
+        console.log(String(ConvertedMarkdown));
+    }
+    
+    // First time loading
     useEffect(() => {
         ;(async () => {
             // convert MD to HTML
@@ -175,11 +179,12 @@ export default function Editor(
             // save a text copy
             EditorHTMLString.current = convertedHTML;
             // load editor component
-            setEditorComponent(EditorConverter(convertedHTML))
+            setEditorComponent(ConfigAndConvertToReact(convertedHTML))
         })()
         
     }, [sourceMD]);
     
+    // Masking and unmasking to hide flicker
     useLayoutEffect(() => {
         if (!EditorRef.current || !EditorMaskRef.current) return;
         // After elements are properly loaded, hide the mask to show editor content
@@ -188,8 +193,8 @@ export default function Editor(
         EditorMaskRef.current.innerHTML = " ";
     });
     
+    // Editor level selection status monitor
     useLayoutEffect(() => {
-        // Editor level selection status monitor
         const debouncedSelectionMonitor = _.debounce((ev: Event) => {
             const selection: Selection | null = window.getSelection();
             if (!selection) return;
@@ -217,8 +222,8 @@ export default function Editor(
     const DaemonHandle = useEditorHTMLDaemon(EditorRef, EditorSourceRef, ReloadEditorContent,
         {
             OnRollback: MaskEditingArea,
-            TextNodeCallback: TextNodeHandler,
-            ShouldLog: true,
+            TextNodeCallback: DaemonTextNodeHandler,
+            ShouldLog: true, //detailed logs
             IsEditable: !isEditingSubElement,
             ShouldObserve: !isEditingSubElement
         });
@@ -246,25 +251,49 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
     daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
     [key: string]: any; // for otherProps
 }) => {
-    const ParagraphRef = useRef<HTMLElement | null>(null);
     const [isEditing, setIsEditing] = useState(false);
-    const IgnoreItemRef = useRef<HTMLElement>();
+    const MainElementRef = useRef<HTMLElement | null>(null);
+    const SyntaxElementRef = useRef<HTMLElement>();  //filler element
+    const ChildrenHTMLString = useRef("");
     
-    useLayoutEffect(() => {
-        if (isHeader && IgnoreItemRef.current) {
-            daemonHandle.AddToIgnore(IgnoreItemRef.current, "any");
-            daemonHandle.AddToOperation(IgnoreItemRef.current, "remove", {type: "ADD"});
-            
+    // Get Child html string without the filler
+    useEffect(() => {
+        let ActualChildren;
+        if (Array.isArray(children)) {
+            ActualChildren = [...children];
+        } else {
+            ActualChildren = [children];
+        }
+        const ElementStrings = ActualChildren.map(element =>
+            renderToString(element));
+        
+        ChildrenHTMLString.current = ElementStrings.join('');
+    })
+    
+    // Add filler element to ignore, add filler element's special handling operation
+    useEffect(() => {
+        if (isHeader && SyntaxElementRef.current) {
+            daemonHandle.AddToIgnore(SyntaxElementRef.current, "any");
+            if (MainElementRef.current) {
+                const ReplacementElement = document.createElement('p') as HTMLElement;
+                ReplacementElement.innerHTML = ChildrenHTMLString.current;
+                
+                daemonHandle.AddToBindOperation(SyntaxElementRef.current, "remove", {
+                    type: "REPLACE",
+                    targetNode: MainElementRef.current,
+                    newNode: ReplacementElement
+                });
+            }
         }
     });
     
     return React.createElement(tagName, {
         ...otherProps,
-        ref: ParagraphRef,
+        ref: MainElementRef,
     }, [
         isHeader && React.createElement('span', {
             key: 'HeaderSyntaxLead',
-            ref: IgnoreItemRef,
+            ref: SyntaxElementRef,
             contentEditable: false,
         }, headerSyntax),
         ...(Array.isArray(children) ? children : [children]),
@@ -283,6 +312,7 @@ function SpecialLinkComponent(props: any) {
 }
 
 function PlainSyntax(props: any) {
+    // TODO: Rewrite the component with new monitoring logic
     const {tagName, ParentAction, children, ...otherProps} = props;
     
     const propSyntaxData: any = otherProps['data-md-syntax'];
@@ -302,7 +332,8 @@ function PlainSyntax(props: any) {
     const [isEditing, setIsEditing] = useState(false);
     const IdentifierRef = useRef<string | undefined>(undefined);
     
-    useLayoutEffect(() => {
+    // FIXME: temp fix for using ssr function
+    useEffect(() => {
         const OnClick = (ev: Event) => {
             ev.stopPropagation();
             ElementRef.current?.focus();
@@ -382,7 +413,7 @@ function PlainSyntax(props: any) {
 }
 
 // Modified helper function to get react component from Dom Element
-// FIXME: this is a terrible hack.
+// FIXME: This is a terrible hack.
 function FindReactComponent(DomNode: HTMLElement, traverseUp: number = 0): any {
     // Find the key starting with "__reactFiber$" which indicates a React 18 element
     const key = Object.keys(DomNode).find(key => key.startsWith("__reactFiber$"));

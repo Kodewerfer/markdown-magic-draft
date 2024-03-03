@@ -52,6 +52,7 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Rec
     return await unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
+        .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
             ...jsxElementConfig,
             components: componentOptions
@@ -64,6 +65,7 @@ export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Recor
     return unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
+        .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
             ...jsxElementConfig,
             components: componentOptions
