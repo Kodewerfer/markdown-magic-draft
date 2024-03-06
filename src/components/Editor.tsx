@@ -1,4 +1,4 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useDebugValue, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {renderToString} from 'react-dom/server';
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
 import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
@@ -28,6 +28,8 @@ export default function Editor(
     
     const EditorHTMLString = useRef('');
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
+    
+    const ActiveComponentStack = useRef<((arg: boolean) => void)[]>([]);
     
     const [isEditingSubElement, setIsEditingSubElement] = useState(false);
     const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
@@ -202,8 +204,24 @@ export default function Editor(
             if (!EditorRef.current?.contains(selection?.anchorNode)) return;
             // Must not contains multiple elements
             if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
+            // TODO: retrieve the component, set the editing state
+            const findActiveEditorComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
             
-            // console.log('Editor selection!', selection.anchorNode)
+            // FIXME: This is VERY VERY VERY HACKY
+            // FIXME: right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
+            // FIXME: with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
+            if (findActiveEditorComponent) {
+                // Switch off the last
+                let LastestActive;
+                while (LastestActive = ActiveComponentStack.current.shift()) {
+                    LastestActive(false);
+                }
+                // Switch on the current, add to cache
+                if (findActiveEditorComponent.memoizedState && typeof findActiveEditorComponent.memoizedState.memoizedState === "function") {
+                    ActiveComponentStack.current.push(findActiveEditorComponent.memoizedState.memoizedState);
+                    findActiveEditorComponent.memoizedState.memoizedState(true);
+                }
+            }
             
         }, 200);
         const OnSelectionChange = (ev: Event) => debouncedSelectionMonitor(ev);
@@ -251,7 +269,15 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
     daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
     [key: string]: any; // for otherProps
 }) => {
-    const [isEditing, setIsEditing] = useState(false);
+    const [SetActivation] = useState<(state: boolean) => void>(() => {
+        return (state: boolean) => {
+            // setIsEditing((prev) => {
+            //     return !prev;
+            // });
+            setIsEditing(state);
+        }
+    }); // the Meta state, called by parent via dom fiber
+    const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const MainElementRef = useRef<HTMLElement | null>(null);
     const SyntaxElementRef = useRef<HTMLElement>();  //filler element
     const ChildrenHTMLString = useRef("");
@@ -295,6 +321,7 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
             key: 'HeaderSyntaxLead',
             ref: SyntaxElementRef,
             contentEditable: false,
+            className: ` ${isEditing ? '' : 'Hide-It'}`
         }, headerSyntax),
         ...(Array.isArray(children) ? children : [children]),
     ]);
@@ -412,16 +439,23 @@ function PlainSyntax(props: any) {
     
 }
 
-// Modified helper function to get react component from Dom Element
-// FIXME: This is a terrible hack.
-function FindReactComponent(DomNode: HTMLElement, traverseUp: number = 0): any {
+// Modified helper function to find domfiber
+function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
+    if (DomNode.nodeType === Node.TEXT_NODE) {
+        if (DomNode.parentNode)
+            DomNode = DomNode.parentNode as HTMLElement
+        else {
+            console.log("Activation Monitor: Text node without parent");
+            return null;
+        }
+    }
     // Find the key starting with "__reactFiber$" which indicates a React 18 element
     const key = Object.keys(DomNode).find(key => key.startsWith("__reactFiber$"));
+    
     if (!key) return null;
     
     // Get the Fiber node from the DOM element
     const domFiber = (DomNode as any)[key] as { type?: string; return?: any; stateNode?: any; };
-    
     if (domFiber === undefined) return null;
     
     // Function to get parent component fiber
@@ -435,11 +469,10 @@ function FindReactComponent(DomNode: HTMLElement, traverseUp: number = 0): any {
     
     // Get the component fiber
     let compFiber = getCompFiber(domFiber);
-    
-    // If traverseUp is specified, we move up the component tree
-    for (let i = 0; i < traverseUp; i++) {
+    for (let i = 0; i < TraverseUp; i++) {
         compFiber = getCompFiber(compFiber);
     }
     
-    return compFiber.stateNode;
+    // return compFiber.stateNode; // if dealing with class component, in that case "setState" can be called from this directly.
+    return compFiber;
 }

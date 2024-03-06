@@ -188,11 +188,21 @@ export default function useEditorHTMLDaemon(
                         continue;
                     }
                     
+                    /**
+                     * The following code is to deal with the "scope" of the replacement,
+                     * when user make an edit on page, they can only operate on the text node, which may be a part of a Strong tag,
+                     * so when the result from that text node comes back, and it is not just a simple text editing,
+                     * it only makes sense to replace the whole Strong tag, therefore Parent node should be Parent of Parent.
+                     * but the text node may be directly under a P tag, in that case, add handler result in the p tag, delete only the text node
+                     * unless the result contains at least one paragraph leve tag(h1/div etc).
+                     */
+                    
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
                     const ParentParentXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
                     
+                    // Determined if parent of the text is paragraph level (p/div etc.) then choose candidate, !! may be overwritten later.
                     const ParentTagsTest = HookOptions.ParagraphTags
-                    const LogParentXP = ParentTagsTest.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
+                    let LogParentXP = ParentTagsTest.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
                     
                     let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
                     let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
@@ -226,27 +236,29 @@ export default function useEditorHTMLDaemon(
                     if (HookOptions.ShouldLog)
                         console.log("Case 2:Text Handler multi returns / Changed Type");
                     
-                    let oldNodeRemovalTarget = OldTextNode;
-                    oldNodeRemovalTarget.textContent = TextNodeOriginalValue;// Restore the text node to old value
-                    
-                    let logNodeXP = GetXPathNthChild(OldTextNode);
+                    let LogNodeXP = GetXPathNthChild(OldTextNode);
                     let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
                     
-                    if (LogParentXP === ParentParentXPath) {
-                        oldNodeRemovalTarget = ParentNode;
-                        logNodeXP = GetXPathNthChild(ParentNode);
-                        logSiblingXP = ParentNode.nextSibling ? GetXPathFromNode(ParentNode.nextSibling) : null;
-                    }
-                    const docFragment: DocumentFragment = document.createDocumentFragment();
-                    // Add the new node/nodes
-                    // toReversed(), because the later operation uses pop()
+                    // Add the new node/nodes in a doc frag.It's "toReversed()", because the later operation uses pop()
+                    // Also check if contains any paragraph level tags.
+                    const NewFragment: DocumentFragment = document.createDocumentFragment();
+                    let shouldOverrideParent: boolean = false; //flag
                     callbackResult.toReversed().forEach((node, index, array) => {
+                        // Check to set the flag
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const tagName = (node as HTMLElement).tagName.toLowerCase();
+                            if (ParentTagsTest.test(tagName))
+                                shouldOverrideParent = true;
+                        }
+                        
+                        // Add trailing whitespace
                         if (index === 0) {
                             // the last element,because it is flipped,
                             if (node.textContent) {
                                 node.textContent = node.textContent.trim() + whiteSpaceEnd[0];
                             }
                         }
+                        // Add starting whitespace
                         if (index === array.length - 1) {
                             // the first element,because it is flipped,
                             if (node.textContent) {
@@ -262,14 +274,26 @@ export default function useEditorHTMLDaemon(
                                 node.textContent = ' ' + node.textContent.trimStart();
                             }
                         }
-                        docFragment.prepend(node);
+                        
+                        // Frag to make sure elements are in correct order
+                        NewFragment.prepend(node);
                     })
+                    
+                    // ! Scope override
+                    if (shouldOverrideParent)
+                        LogParentXP = ParentParentXPath;
+                    
+                    if (LogParentXP === ParentParentXPath) {
+                        LogNodeXP = GetXPathNthChild(ParentNode);
+                        logSiblingXP = ParentNode.nextSibling ? GetXPathNthChild(ParentNode.nextSibling) : null;
+                    }
+                    
                     
                     OperationLogs.push({
                         type: "ADD",
                         fromTextHandler: true,
-                        newNode: docFragment.cloneNode(true),
-                        targetNodeXP: logNodeXP, //redo will remove at the position of the "replaced" text node
+                        newNode: NewFragment.cloneNode(true),
+                        targetNodeXP: LogNodeXP, //redo will remove at the position of the "replaced" text node
                         parentXP: LogParentXP,
                         siblingXP: logSiblingXP,
                     });
@@ -278,8 +302,7 @@ export default function useEditorHTMLDaemon(
                     OperationLogs.push({
                         type: "REMOVE",
                         fromTextHandler: true,
-                        newNode: oldNodeRemovalTarget.cloneNode(true),
-                        targetNodeXP: logNodeXP,
+                        targetNodeXP: LogNodeXP,
                         parentXP: LogParentXP,
                         siblingXP: logSiblingXP
                     });
