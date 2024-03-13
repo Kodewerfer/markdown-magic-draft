@@ -329,6 +329,12 @@ export default function useEditorHTMLDaemon(
                     
                     let removedNode = mutation.removedNodes[i] as HTMLElement;
                     
+                    // rollback
+                    mutation.target.insertBefore(
+                        removedNode,
+                        mutation.nextSibling,
+                    );
+                    
                     // Check if the element had bind operations
                     const OperationItem = DaemonState.BindOperationMap.get(removedNode);
                     if (OperationItem && (OperationItem.Trigger === 'remove' || OperationItem.Trigger === 'any')) {
@@ -340,11 +346,7 @@ export default function useEditorHTMLDaemon(
                     if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
                         continue;
                     
-                    // rollback
-                    mutation.target.insertBefore(
-                        removedNode,
-                        mutation.nextSibling,
-                    );
+                    
                     const operationLog: TSyncOperation = {
                         type: "REMOVE",
                         newNode: removedNode.cloneNode(true),
@@ -362,6 +364,12 @@ export default function useEditorHTMLDaemon(
                 for (let i = mutation.addedNodes.length - 1; i >= 0; i--) {
                     
                     const addedNode = mutation.addedNodes[i] as HTMLElement;
+                    
+                    // rollback
+                    if (addedNode.parentNode) {
+                        mutation.target.removeChild(addedNode);
+                    }
+                    
                     // Check if the element had bind operations
                     const OperationItem = DaemonState.BindOperationMap.get(addedNode);
                     if (OperationItem && (OperationItem.Trigger === 'add' || OperationItem.Trigger === 'any')) {
@@ -374,11 +382,6 @@ export default function useEditorHTMLDaemon(
                         continue;
                     
                     const addedNodeXP = GetXPathFromNode(addedNode);
-                    
-                    // rollback
-                    if (addedNode.parentNode) {
-                        mutation.target.removeChild(addedNode);
-                    }
                     
                     const operationLog: TSyncOperation = {
                         type: "ADD",
@@ -796,6 +799,7 @@ export default function useEditorHTMLDaemon(
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
             CurrentSelection.addRange(RangeCached);
+            
         } catch (e) {
             // console.error(e);
             console.warn("AnchorNode:", AnchorNode, "Starting offset:", StartingOffset);

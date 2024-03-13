@@ -31,9 +31,6 @@ export default function Editor(
     
     const ActiveComponentStack = useRef<((arg: boolean) => void)[]>([]);
     
-    const [isEditingSubElement, setIsEditingSubElement] = useState(false);
-    const EditingQueue: React.MutableRefObject<TSubElementsQueue> = useRef<TSubElementsQueue>({});
-    
     // Subsequence reload
     async function ReloadEditorContent() {
         if (!EditorSourceRef.current) return;
@@ -53,13 +50,13 @@ export default function Editor(
                     if (props['data-md-syntax'] && props['data-md-container'] !== 'true') {
                         if (props['data-link-to']) {
                             return <SpecialLinkComponent {...props}
-                                                         ParentAction={toggleEditingSubElement}
+                                                         daemonHandle={DaemonHandle}
                                                          tagName={tagName}/>;
                         }
                         //Containers
                         //Simple syntax
                         return <PlainSyntax {...props}
-                                            ParentAction={toggleEditingSubElement}
+                                            daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
                     }
                     // Paragraph and Headers
@@ -90,39 +87,6 @@ export default function Editor(
             ...TextNodesMappingConfig
         }
         return HTML2ReactSnyc(md2HTML, componentOptions).result;
-    }
-    
-    const toggleEditingSubElement = (bSubEditing: boolean, Identifier: string, ElementRef: HTMLElement, ChangeRecord?: MutationRecord) => {
-        if (!Identifier) {
-            console.warn('Editing Sub Element with invalid Identifier', ElementRef);
-            return;
-        }
-        
-        console.log("Sub triggered:", bSubEditing, " ID:", Identifier)
-        
-        if (EditingQueue.current === null || EditingQueue.current === undefined) {
-            EditingQueue.current = {};
-        }
-        
-        if (!bSubEditing) {
-            if (typeof EditingQueue.current[Identifier] !== 'undefined') {
-                let {[Identifier]: value, ...remaining} = EditingQueue.current;
-                EditingQueue.current = remaining;
-            }
-            
-            if (EditingQueue.current && Object.keys(EditingQueue.current).length === 0) {
-                setIsEditingSubElement(false);
-            }
-            
-            if (ChangeRecord) {
-                DaemonHandle.AddToRecord(ChangeRecord);
-            }
-            
-            return;
-        }
-        
-        EditingQueue.current[Identifier] = ElementRef
-        setIsEditingSubElement(true);
     }
     
     function MaskEditingArea() {
@@ -195,37 +159,37 @@ export default function Editor(
         EditorMaskRef.current.innerHTML = " ";
     });
     
+    const debouncedSelectionMonitor = _.debounce(() => {
+        const selection: Selection | null = window.getSelection();
+        if (!selection) return;
+        // Must be an editor element
+        if (!EditorRef.current?.contains(selection?.anchorNode)) return;
+        // Must not contains multiple elements
+        if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
+        // TODO: retrieve the component, set the editing state
+        const findActiveEditorComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
+        
+        // FIXME: This is VERY VERY VERY HACKY
+        // FIXME: right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
+        // FIXME: with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
+        if (findActiveEditorComponent) {
+            // Switch off the last
+            let LastestActive;
+            while (LastestActive = ActiveComponentStack.current.shift()) {
+                LastestActive(false);
+            }
+            // Switch on the current, add to cache
+            if (findActiveEditorComponent.memoizedState && typeof findActiveEditorComponent.memoizedState.memoizedState === "function") {
+                ActiveComponentStack.current.push(findActiveEditorComponent.memoizedState.memoizedState);
+                findActiveEditorComponent.memoizedState.memoizedState(true);
+            }
+        }
+        
+    }, 200);
     // Editor level selection status monitor
     useLayoutEffect(() => {
-        const debouncedSelectionMonitor = _.debounce((ev: Event) => {
-            const selection: Selection | null = window.getSelection();
-            if (!selection) return;
-            // Must be an editor element
-            if (!EditorRef.current?.contains(selection?.anchorNode)) return;
-            // Must not contains multiple elements
-            if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
-            // TODO: retrieve the component, set the editing state
-            const findActiveEditorComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
-            
-            // FIXME: This is VERY VERY VERY HACKY
-            // FIXME: right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
-            // FIXME: with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
-            if (findActiveEditorComponent) {
-                // Switch off the last
-                let LastestActive;
-                while (LastestActive = ActiveComponentStack.current.shift()) {
-                    LastestActive(false);
-                }
-                // Switch on the current, add to cache
-                if (findActiveEditorComponent.memoizedState && typeof findActiveEditorComponent.memoizedState.memoizedState === "function") {
-                    ActiveComponentStack.current.push(findActiveEditorComponent.memoizedState.memoizedState);
-                    findActiveEditorComponent.memoizedState.memoizedState(true);
-                }
-            }
-            
-        }, 200);
-        const OnSelectionChange = (ev: Event) => debouncedSelectionMonitor(ev);
-        const OnSelectStart = (ev: Event) => debouncedSelectionMonitor(ev);
+        const OnSelectionChange = (ev: Event) => debouncedSelectionMonitor();
+        const OnSelectStart = (ev: Event) => debouncedSelectionMonitor();
         
         document.addEventListener("selectstart", OnSelectStart);
         document.addEventListener("selectionchange", OnSelectionChange);
@@ -242,8 +206,8 @@ export default function Editor(
             OnRollback: MaskEditingArea,
             TextNodeCallback: DaemonTextNodeHandler,
             ShouldLog: true, //detailed logs
-            IsEditable: !isEditingSubElement,
-            ShouldObserve: !isEditingSubElement
+            IsEditable: true,
+            ShouldObserve: true
         });
     
     return (
@@ -282,27 +246,13 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
     const SyntaxElementRef = useRef<HTMLElement>();  //filler element
     const ChildrenHTMLString = useRef("");
     
-    // Get Child html string without the filler
-    useEffect(() => {
-        let ActualChildren;
-        if (Array.isArray(children)) {
-            ActualChildren = [...children];
-        } else {
-            ActualChildren = [children];
-        }
-        const ElementStrings = ActualChildren.map(element =>
-            renderToString(element));
-        
-        ChildrenHTMLString.current = ElementStrings.join('');
-    })
-    
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {
         if (isHeader && SyntaxElementRef.current) {
             daemonHandle.AddToIgnore(SyntaxElementRef.current, "any");
             if (MainElementRef.current) {
                 const ReplacementElement = document.createElement('p') as HTMLElement;
-                ReplacementElement.innerHTML = ChildrenHTMLString.current;
+                ReplacementElement.innerHTML = ExtraRealChild(children);
                 
                 daemonHandle.AddToBindOperation(SyntaxElementRef.current, "remove", {
                     type: "REPLACE",
@@ -333,110 +283,100 @@ const CommonRenderer = (props: any) => {
     return React.createElement(tagName, otherProps, children);
 };
 
+// TODO
 function SpecialLinkComponent(props: any) {
     const {children, tagName, ParentAction, ...otherProps} = props;
     return React.createElement(tagName, otherProps, children);
 }
 
-function PlainSyntax(props: any) {
-    // TODO: Rewrite the component with new monitoring logic
-    const {tagName, ParentAction, children, ...otherProps} = props;
+function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
+    children: React.ReactNode[] | React.ReactNode;
+    tagName: string;
+    daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
+    [key: string]: any; // for otherProps
+}) {
+    const [SetActivation] = useState<(state: boolean) => void>(() => {
+        return (state: boolean) => {
+            setIsEditing(state);
+        }
+    }); // the Meta state, called by parent via dom fiber
+    const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
     
     const propSyntaxData: any = otherProps['data-md-syntax'];
     const propShouldWrap: any = otherProps['data-md-wrapped'];
-    const [childrenWithSyntax] = useState<String>(() => {
-        let result;
-        if (propSyntaxData) {
-            result = propSyntaxData + children;
-            if (propShouldWrap === 'true')
-                result += propSyntaxData;
-        }
+    
+    const SyntaxElementRefLead = useRef<HTMLElement>(null);
+    const SyntaxElementRefRear = useRef<HTMLElement>(null);
+    
+    const WholeElementRef = useRef<HTMLElement | null>(null);
+    
+    useLayoutEffect(() => {
+        if (SyntaxElementRefLead.current)
+            daemonHandle.AddToIgnore(SyntaxElementRefLead.current, "any");
+        if (SyntaxElementRefRear.current)
+            daemonHandle.AddToIgnore(SyntaxElementRefRear.current, "any");
         
-        return result;
+        if (WholeElementRef.current) {
+            const ReplacementElement = document.createTextNode(ExtraRealChild(children));
+            
+            if (SyntaxElementRefLead.current)
+                daemonHandle.AddToBindOperation(SyntaxElementRefLead.current, "remove", {
+                    type: "REPLACE",
+                    targetNode: WholeElementRef.current,
+                    newNode: ReplacementElement
+                });
+            if (SyntaxElementRefRear.current)
+                daemonHandle.AddToBindOperation(SyntaxElementRefRear.current, "remove", {
+                    type: "REPLACE",
+                    targetNode: WholeElementRef.current,
+                    newNode: ReplacementElement
+                });
+        }
     });
     
-    const ElementRef = useRef<HTMLElement | null>(null);
-    const [isEditing, setIsEditing] = useState(false);
-    const IdentifierRef = useRef<string | undefined>(undefined);
-    
-    // FIXME: temp fix for using ssr function
-    useEffect(() => {
-        const OnClick = (ev: Event) => {
+    const OnKeydown = (ev: HTMLElementEventMap['keydown']) => {
+        if (ev.key === 'Enter') {
             ev.stopPropagation();
-            ElementRef.current?.focus();
-        };
-        
-        const OnFocus = (ev: HTMLElementEventMap['focusin']) => {
-            ev.stopPropagation();
-            
-            if (!isEditing)
-                setIsEditing(true);
-            
-            const timestamp = new Date().valueOf();
-            const generatedId: string = _.uniqueId("_" + ElementRef.current?.tagName.toLowerCase());
-            IdentifierRef.current = timestamp + generatedId;
-            
-            
-            ParentAction(true, IdentifierRef.current, ElementRef.current);
-            
-        };
-        
-        const OnFocusOut = (ev: Event) => {
-            ev.stopPropagation();
-            if (!ElementRef.current) return;
-            
-            let mutation;
-            
-            if (!ElementRef.current.firstChild || ElementRef.current.firstChild.textContent === '' || ElementRef.current.firstChild.textContent === null) {
-                mutation = {
-                    type: "childList",
-                    target: ElementRef.current?.parentNode,
-                    removedNodes: [ElementRef.current],
-                }
-            } else {
-                mutation = {
-                    type: "characterData",
-                    oldValue: String(children),
-                    target: ElementRef.current?.firstChild!,
-                    newValue: ElementRef.current?.firstChild!.nodeValue
-                }
-            }
-            
-            ParentAction(false, IdentifierRef.current, ElementRef.current, mutation);
-            setIsEditing(false);
+            ev.preventDefault();
         }
-        
-        const OnKeydown = (ev: HTMLElementEventMap['keydown']) => {
-            if (ev.key === 'Enter') {
-                ev.stopPropagation();
-                ev.preventDefault();
-                ElementRef.current?.blur();
-            }
-        }
-        
-        ElementRef.current?.addEventListener("mouseup", OnClick);
-        ElementRef.current?.addEventListener("focusin", OnFocus);
-        ElementRef.current?.addEventListener("focusout", OnFocusOut);
-        // prevent enter breaking new line
-        ElementRef.current?.addEventListener("keydown", OnKeydown);
-        
-        return () => {
-            ElementRef.current?.removeEventListener("mouseup", OnClick);
-            ElementRef.current?.removeEventListener("focusin", OnFocus);
-            ElementRef.current?.removeEventListener("focusout", OnFocusOut);
-            
-            ElementRef.current?.removeEventListener("keydown", OnKeydown);
-        }
-    }, [ElementRef.current!])
+    }
     
     return React.createElement(tagName, {
-        tabIndex: -1,
-        ...(isEditing ? {contentEditable: true, suppressContentEditableWarning: true} : {}),
-        suppressContentEditableWarning: true,
         ...otherProps,
-        ref: ElementRef,
-    }, isEditing ? childrenWithSyntax : children);
+        ref: WholeElementRef,
+        onKeyDown: OnKeydown,
+    }, [
+        // Leading syntax element isEditing &&
+        React.createElement('span', {
+            key: 'HeaderSyntaxLead',
+            ref: SyntaxElementRefLead,
+            contentEditable: false,
+            className: ` ${isEditing ? '' : 'Hide-It'}`
+        }, propSyntaxData),
+        // Actual child
+        ...(Array.isArray(children) ? children : [children]),
+        // Appending syntax element
+        propShouldWrap === 'true' && React.createElement('span', {
+            key: 'HeaderSyntaxRear',
+            ref: SyntaxElementRefRear,
+            contentEditable: false,
+            className: ` ${isEditing ? '' : 'Hide-It'}`
+        }, propSyntaxData)
+    ]);
     
+}
+
+function ExtraRealChild(children: React.ReactNode[] | React.ReactNode) {
+    let ActualChildren;
+    if (Array.isArray(children)) {
+        ActualChildren = [...children];
+    } else {
+        ActualChildren = [children];
+    }
+    const ElementStrings = ActualChildren.map(element =>
+        renderToString(element));
+    
+    return ElementStrings.join('');
 }
 
 // Modified helper function to find domfiber
