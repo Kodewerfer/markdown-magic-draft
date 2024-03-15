@@ -32,12 +32,12 @@ type TSelectionStatus = {
     AnchorNodeXPath: string,
 }
 
-type TDOMTrigger = 'add' | 'remove' | 'any';
+type TDOMTrigger = 'add' | 'remove' | 'text' | 'any';
 
 // Type for add to ignore map
-export type TIgnoreMap = Map<HTMLElement, TDOMTrigger>;
+export type TIgnoreMap = Map<Node, TDOMTrigger>;
 
-export type TElementOperation = Map<HTMLElement, {
+export type TElementOperation = Map<Node, {
     Trigger: TDOMTrigger,
     Operations: TSyncOperation | TSyncOperation[]
 }>;
@@ -48,6 +48,7 @@ type TDaemonState = {
     MutationQueue: MutationRecord[] // All records will be pushed to here
     IgnoreMap: TIgnoreMap
     BindOperationMap: TElementOperation
+    AdditionalOperation: TSyncOperation[]
     UndoStack: [Document] | null
     RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null
@@ -65,9 +66,10 @@ type THookOptions = {
 }
 
 export type TDaemonReturn = {
-    AddToRecord: (record: MutationRecord) => void;
-    AddToIgnore: (Element: HTMLElement, Type: TDOMTrigger) => void;
-    AddToBindOperation: (Element: HTMLElement, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
+    SyncNow: () => void;
+    AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
+    AddToBindOperation: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
+    AddToOperationAndSync: (Operation: TSyncOperation | TSyncOperation[]) => void;
 }
 
 export default function useEditorHTMLDaemon(
@@ -78,7 +80,7 @@ export default function useEditorHTMLDaemon(
 ): TDaemonReturn {
     
     // Default options
-    const HookOptions = {
+    const DaemonOptions = {
         TextNodeCallback: undefined,
         OnRollback: undefined,
         ShouldObserve: true,
@@ -94,9 +96,10 @@ export default function useEditorHTMLDaemon(
         
         const state: TDaemonState = {
             Observer: null as any,
+            MutationQueue: [],
             IgnoreMap: new Map(),
             BindOperationMap: new Map(),
-            MutationQueue: [],
+            AdditionalOperation: [],
             UndoStack: null,
             RedoStack: null,
             SelectionStatusCache: null,
@@ -135,16 +138,25 @@ export default function useEditorHTMLDaemon(
     
     // Flush all changes in the MutationQueue
     const rollbackAndSync = () => {
-        DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords())
+        
         // OB's callback is asynchronous
         // make sure no records are left behind
-        if (!DaemonState.MutationQueue.length) return;
+        DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords())
         
-        if (typeof HookOptions.OnRollback === 'function')
-            HookOptions.OnRollback()
+        if (!DaemonState.MutationQueue.length && !DaemonState.AdditionalOperation.length) {
+            if (DaemonOptions.ShouldLog)
+                console.log("MutationQueue and AdditionalOperation empty, sync aborted.");
+            return;
+        }
+        
+        let onRollback: any;
+        // Rollback mask
+        if (typeof DaemonOptions.OnRollback === 'function')
+            onRollback = DaemonOptions.OnRollback();
         
         toggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
+        
         // Rollback Changes
         let mutation: MutationRecord | void;
         let lastMutation: MutationRecord | null = null;
@@ -160,10 +172,13 @@ export default function useEditorHTMLDaemon(
                 // only use the latest character data mutation.
                 if (lastMutation && mutation.target === lastMutation.target) continue;
                 
+                // Check for ignore
+                if (DaemonState.IgnoreMap.get(mutation.target) === 'text' || DaemonState.IgnoreMap.get(mutation.target) === 'any') continue;
+                
                 // Get the original value for the text node. used in undo
                 let TextNodeOriginalValue = mutation.oldValue;
                 if (DaemonState.MutationQueue.length >= 1) {
-                    DaemonState.MutationQueue.slice().reverse().some((mutationData, index) => {
+                    DaemonState.MutationQueue.slice().reverse().some((mutationData) => {
                         if (mutationData.target === mutation?.target && mutationData.oldValue !== null) {
                             TextNodeOriginalValue = mutationData.oldValue;
                         } else {
@@ -173,13 +188,13 @@ export default function useEditorHTMLDaemon(
                 }
                 
                 // TextNodeCallback present, use TextNodeCallback result.
-                if (typeof HookOptions.TextNodeCallback === 'function') {
+                if (typeof DaemonOptions.TextNodeCallback === 'function') {
                     const ParentNode = mutation.target.parentNode as HTMLElement;
                     const OldTextNode = mutation.target;
                     
-                    const callbackResult = HookOptions.TextNodeCallback(OldTextNode);
+                    const callbackResult = DaemonOptions.TextNodeCallback(OldTextNode);
                     
-                    if (HookOptions.ShouldLog)
+                    if (DaemonOptions.ShouldLog)
                         console.log("Text Handler result:", callbackResult);
                     
                     if (!callbackResult) {
@@ -201,7 +216,7 @@ export default function useEditorHTMLDaemon(
                     const ParentParentXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
                     
                     // Determined if parent of the text is paragraph level (p/div etc.) then choose candidate, !! may be overwritten later.
-                    const ParentTagsTest = HookOptions.ParagraphTags
+                    const ParentTagsTest = DaemonOptions.ParagraphTags
                     let LogParentXP = ParentTagsTest.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
                     
                     let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
@@ -213,7 +228,7 @@ export default function useEditorHTMLDaemon(
                     if (LogParentXP === ParentXPath && callbackResult.length === 1 && callbackResult[0].nodeType === Node.TEXT_NODE && callbackResult[0].textContent !== null) {
                         const RestoredText = whiteSpaceStart[0] + callbackResult[0].textContent.trim() + whiteSpaceEnd[0];
                         
-                        if (HookOptions.ShouldLog)
+                        if (DaemonOptions.ShouldLog)
                             console.log("Case 1:Text Handler results in one text node");
                         
                         OperationLogs.push({
@@ -233,7 +248,7 @@ export default function useEditorHTMLDaemon(
                      *  Result in multiple nodes
                      *  or only one node but no longer a text node.
                      */
-                    if (HookOptions.ShouldLog)
+                    if (DaemonOptions.ShouldLog)
                         console.log("Case 2:Text Handler multi returns / Changed Type");
                     
                     let LogNodeXP = GetXPathNthChild(OldTextNode);
@@ -288,6 +303,14 @@ export default function useEditorHTMLDaemon(
                         logSiblingXP = ParentNode.nextSibling ? GetXPathNthChild(ParentNode.nextSibling) : null;
                     }
                     
+                    // remove the old node, later operation uses pop(), so this happens last.
+                    OperationLogs.push({
+                        type: "REMOVE",
+                        fromTextHandler: true,
+                        targetNodeXP: LogNodeXP,
+                        parentXP: LogParentXP,
+                        siblingXP: logSiblingXP
+                    });
                     
                     OperationLogs.push({
                         type: "ADD",
@@ -296,15 +319,6 @@ export default function useEditorHTMLDaemon(
                         targetNodeXP: LogNodeXP, //redo will remove at the position of the "replaced" text node
                         parentXP: LogParentXP,
                         siblingXP: logSiblingXP,
-                    });
-                    
-                    // remove the old node
-                    OperationLogs.push({
-                        type: "REMOVE",
-                        fromTextHandler: true,
-                        targetNodeXP: LogNodeXP,
-                        parentXP: LogParentXP,
-                        siblingXP: logSiblingXP
                     });
                     
                     // Cache the last, early continue
@@ -329,16 +343,10 @@ export default function useEditorHTMLDaemon(
                     
                     let removedNode = mutation.removedNodes[i] as HTMLElement;
                     
-                    // rollback
-                    mutation.target.insertBefore(
-                        removedNode,
-                        mutation.nextSibling,
-                    );
-                    
                     // Check if the element had bind operations
                     const OperationItem = DaemonState.BindOperationMap.get(removedNode);
                     if (OperationItem && (OperationItem.Trigger === 'remove' || OperationItem.Trigger === 'any')) {
-                        const AdditionalOperations = BuildBindOperation(removedNode, OperationItem.Operations)
+                        const AdditionalOperations = BuildOperations(OperationItem.Operations)
                         OperationLogs.push(...AdditionalOperations);
                     }
                     
@@ -346,6 +354,11 @@ export default function useEditorHTMLDaemon(
                     if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
                         continue;
                     
+                    // rollback
+                    mutation.target.insertBefore(
+                        removedNode,
+                        mutation.nextSibling,
+                    );
                     
                     const operationLog: TSyncOperation = {
                         type: "REMOVE",
@@ -365,21 +378,21 @@ export default function useEditorHTMLDaemon(
                     
                     const addedNode = mutation.addedNodes[i] as HTMLElement;
                     
-                    // rollback
-                    if (addedNode.parentNode) {
-                        mutation.target.removeChild(addedNode);
-                    }
-                    
                     // Check if the element had bind operations
                     const OperationItem = DaemonState.BindOperationMap.get(addedNode);
                     if (OperationItem && (OperationItem.Trigger === 'add' || OperationItem.Trigger === 'any')) {
-                        const AdditionalOperations = BuildBindOperation(addedNode, OperationItem.Operations);
+                        const AdditionalOperations = BuildOperations(OperationItem.Operations);
                         OperationLogs.push(...AdditionalOperations);
                     }
                     
                     // Check Ignore map
                     if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
                         continue;
+                    
+                    // rollback
+                    if (addedNode.parentNode) {
+                        mutation.target.removeChild(addedNode);
+                    }
                     
                     const addedNodeXP = GetXPathFromNode(addedNode);
                     
@@ -398,9 +411,31 @@ export default function useEditorHTMLDaemon(
             lastMutation = mutation;
         }
         
+        // Append ops sent direcly from components
+        const newOperations: TSyncOperation[] = AppendAdditionalOperations(OperationLogs);
+        DaemonState.AdditionalOperation = []
+        
+        // Revert back to editing state when no operations are queued.
+        // This can happen when all elements in the MutationQueue are ignored.
+        if (newOperations.length === 0) {
+            if (DaemonOptions.ShouldLog)
+                console.log("No Operation generated, abort.");
+            
+            toggleObserve(true);
+            WatchElementRef.current!.contentEditable = 'true';
+            
+            if (typeof onRollback === "function")
+                // Run the cleanup/revert function that is the return of the onRollback handler.
+                // right now it's just unmasking.
+                onRollback();
+            
+            RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
+            return;
+        }
+        
         saveMirrorToHistory();
         
-        if (!syncToMirror(OperationLogs)) {
+        if (!syncToMirror(newOperations)) {
             DaemonState.UndoStack?.pop();
         }
         
@@ -409,6 +444,14 @@ export default function useEditorHTMLDaemon(
         
         // Notify parent
         FinalizeChanges();
+    }
+    
+    const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
+        if (DaemonState.AdditionalOperation.length) {
+            const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation);
+            OperationLogs.push(...syncOpsBuilt);
+        }
+        return OperationLogs;
     }
     
     const saveMirrorToHistory = () => {
@@ -562,7 +605,7 @@ export default function useEditorHTMLDaemon(
         return '';
     }
     
-    function BuildBindOperation(node: Node, Operations: TSyncOperation | TSyncOperation[]) {
+    function BuildOperations(Operations: TSyncOperation | TSyncOperation[]) {
         let OPStack: TSyncOperation[];
         if (Array.isArray(Operations)) {
             OPStack = [...Operations];
@@ -598,8 +641,8 @@ export default function useEditorHTMLDaemon(
         let operation: TSyncOperation | void;
         while ((operation = Operations.pop())) {
             const {type, newNode, targetNodeXP, nodeText, parentXP, siblingXP} = operation;
-            if (HookOptions.ShouldLog)
-                console.log(operation);
+            if (DaemonOptions.ShouldLog)
+                console.log("OP Log:", operation);
             try {
                 if (type === "TEXT") {
                     UpdateMirrorDocument.Text(targetNodeXP!, nodeText!);
@@ -645,14 +688,14 @@ export default function useEditorHTMLDaemon(
             if (!parentNode) throw "UpdateMirrorDocument.Remove: No parentNode";
             
             const regexp = /\/node\(\)\[\d+\]$/;
-            if (regexp.test(XPathParent) && HookOptions.ShouldLog)
+            if (regexp.test(XPathParent) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node Parent:", parentNode);
             
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
             if (!targetNode) throw "UpdateMirrorDocument.Remove: No targetNode";
             
-            if (regexp.test(XPathSelf) && HookOptions.ShouldLog)
+            if (regexp.test(XPathSelf) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node target:", targetNode);
             
             
@@ -667,7 +710,7 @@ export default function useEditorHTMLDaemon(
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) throw "UpdateMirrorDocument.Add: No parentNode";
             const regexp = /\/node\(\)\[\d+\]$/;
-            if (regexp.test(XPathParent) && HookOptions.ShouldLog)
+            if (regexp.test(XPathParent) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
             
@@ -681,7 +724,7 @@ export default function useEditorHTMLDaemon(
                     SiblingNode = null;
                 }
             }
-            if (XPathSibling !== null && regexp.test(XPathSibling) && HookOptions.ShouldLog)
+            if (XPathSibling !== null && regexp.test(XPathSibling) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy ADD node Sibling:", SiblingNode);
             
             if (SiblingNode === null && XPathSibling)
@@ -827,13 +870,13 @@ export default function useEditorHTMLDaemon(
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
         
-        if (HookOptions?.IsEditable) {
+        if (DaemonOptions?.IsEditable) {
             // !!plaintext-only actually introduces unwanted behavior
             WatchedElement.contentEditable = 'true';
             WatchElementRef.current.focus();
         }
         
-        if (DaemonState.SelectionStatusCachePreBlur && HookOptions.IsEditable) {
+        if (DaemonState.SelectionStatusCachePreBlur && DaemonOptions.IsEditable) {
             // consume the saved status
             RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCachePreBlur);
             DaemonState.SelectionStatusCachePreBlur = null;
@@ -845,7 +888,7 @@ export default function useEditorHTMLDaemon(
             DaemonState.SelectionStatusCache = null;
         }
         
-        if (HookOptions.ShouldObserve) {
+        if (DaemonOptions.ShouldObserve) {
             toggleObserve(true);
         }
         
@@ -889,9 +932,7 @@ export default function useEditorHTMLDaemon(
         
         const KeyUpHandler = () => {
             debounceSelectionStatus();
-            if (DaemonState.MutationQueue.length >= 1) {
-                debounceRollbackAndSync();
-            }
+            debounceRollbackAndSync();
         }
         
         const PastHandler = (ev: ClipboardEvent) => {
@@ -979,20 +1020,27 @@ export default function useEditorHTMLDaemon(
     }, [WatchElementRef.current!])
     
     // Hook's public interface
+    // Used by the already existing components in the editor
     return {
-        AddToRecord: (Record: MutationRecord) => {
-            DaemonState.MutationQueue.push(Record);
+        SyncNow: () => {
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        AddToIgnore: (Element: HTMLElement, Type: TDOMTrigger) => {
+        AddToIgnore: (Element: Node, Type: TDOMTrigger) => {
             DaemonState.IgnoreMap.set(Element, Type);
         },
-        AddToBindOperation: (Element: HTMLElement, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
+        AddToBindOperation: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
             DaemonState.BindOperationMap.set(Element, {
                 Trigger: Trigger,
                 Operations: Operation
             })
+        },
+        AddToOperationAndSync: (Operation: TSyncOperation | TSyncOperation[]) => {
+            if (!Array.isArray(Operation))
+                Operation = [Operation];
+            DaemonState.AdditionalOperation.push(...Operation);
+            throttledSelectionStatus()
+            throttledRollbackAndSync()
         }
     }
 }
