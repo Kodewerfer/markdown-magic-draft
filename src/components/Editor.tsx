@@ -1,15 +1,10 @@
-import React, {useDebugValue, useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {renderToString} from 'react-dom/server';
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
 import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
-
-
-type TSubElementsQueue = {
-    [key: string]: HTMLElement | null;
-};
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -30,7 +25,7 @@ export default function Editor(
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
     const ActiveComponentStack = useRef<((arg: boolean) => void)[]>([]);
-    const AnchorNodeLastCache = useRef<Node | null>(null);
+    const LastAnchorNodeCache = useRef<Node | null>(null);
     
     // Subsequence reload
     async function ReloadEditorContent() {
@@ -153,16 +148,16 @@ export default function Editor(
             // Must not contains multiple elements
             if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
             
-            if (AnchorNodeLastCache.current === selection.anchorNode) return;
+            if (LastAnchorNodeCache.current === selection.anchorNode) return;
             // refresh the cache
-            AnchorNodeLastCache.current = selection.anchorNode;
+            LastAnchorNodeCache.current = selection.anchorNode;
             
             // retrieve the component, set the editing state
             const findActiveEditorComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
             
             // FIXME: This is VERY VERY VERY HACKY
-            // FIXME: right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
-            // FIXME: with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
+            // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
+            // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
             if (findActiveEditorComponent) {
                 // Switch off the last
                 let LastestActive;
@@ -177,8 +172,8 @@ export default function Editor(
             }
             
         }, 200);
-        const OnSelectionChange = (ev: Event) => debouncedSelectionMonitor();
-        const OnSelectStart = (ev: Event) => debouncedSelectionMonitor();
+        const OnSelectionChange = () => debouncedSelectionMonitor();
+        const OnSelectStart = () => debouncedSelectionMonitor();
         
         document.addEventListener("selectstart", OnSelectStart);
         document.addEventListener("selectionchange", OnSelectionChange);
@@ -215,7 +210,7 @@ export default function Editor(
 }
 
 const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
-    children: React.ReactNode[] | React.ReactNode;
+    children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
     isHeader: boolean;
     headerSyntax: string;
@@ -233,7 +228,6 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const MainElementRef = useRef<HTMLElement | null>(null);
     const SyntaxElementRef = useRef<HTMLElement>();  //filler element
-    const ChildrenHTMLString = useRef("");
     
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {
@@ -279,7 +273,7 @@ function SpecialLinkComponent(props: any) {
 }
 
 function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
-    children: React.ReactNode[] | React.ReactNode;
+    children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
     daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
     [key: string]: any; // for otherProps
@@ -311,7 +305,7 @@ function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     
     const propSyntaxData: any = otherProps['data-md-syntax'];
     const propShouldWrap: any = otherProps['data-md-wrapped'];
-    
+    // Show when actively editing
     const [childrenWithSyntax] = useState<String>(() => {
         let result;
         if (propSyntaxData) {
@@ -322,16 +316,16 @@ function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
         
         return result;
     });
-    
+    // the element tag
     const WholeElementRef = useRef<HTMLElement | null>(null);
     
     useLayoutEffect(() => {
+        // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
         if (WholeElementRef.current && WholeElementRef.current?.firstChild)
             daemonHandle.AddToIgnore(WholeElementRef.current?.firstChild, "any");
-        // if (WholeElementRef.current)
-        //     const ReplacementElement = document.createTextNode(ExtraRealChild(children));
     });
     
+    // TODO
     const OnKeydown = (ev: HTMLElementEventMap['keydown']) => {
         if (ev.key === 'Enter') {
             ev.stopPropagation();
