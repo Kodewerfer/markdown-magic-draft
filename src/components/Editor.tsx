@@ -149,7 +149,7 @@ export default function Editor(
         
         // console.log("Editor anchor:", CurrentAnchorNode)
         if (bEmptyLine) {
-            console.log('Empty line');
+            console.log('Breaking - Empty line');
             
             const lineBreakElement: HTMLBRElement = document.createElement("br");
             NewLine.appendChild(lineBreakElement);
@@ -187,7 +187,7 @@ export default function Editor(
         
         // Breaking anywhere in the middle of the line
         if (RemainingText !== '' || FollowingNodes.length) {
-            console.log("Breaking - mid line");
+            console.log("Breaking - Mid line");
             
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
             if (anchorNodeClone.textContent !== null) anchorNodeClone.textContent = RemainingText;
@@ -221,7 +221,6 @@ export default function Editor(
             });
             DaemonHandle.SetCaretOverride('nextline');
             DaemonHandle.SyncNow();
-            
             
             return;
         }
@@ -399,6 +398,7 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
         ref: MainElementRef,
     }, [
         isHeader && React.createElement('span', {
+            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'HeaderSyntaxLead',
             ref: SyntaxElementRef,
             contentEditable: false,
@@ -423,7 +423,7 @@ function SpecialLinkComponent(props: any) {
 function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
-    daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
+    daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
     
