@@ -111,6 +111,138 @@ export default function Editor(
         console.log(String(ConvertedMarkdown));
     }
     
+    // Replacement logic for when user pressed enter key in the editor
+    function EnterKeyHandler(): void {
+        const currentSelection = window.getSelection();
+        if (currentSelection === null) return;
+        
+        const Range = currentSelection.getRangeAt(0);
+        
+        let CurrentAnchorNode = window.getSelection()?.anchorNode;
+        if (!CurrentAnchorNode) return;
+        
+        let textContent: string | null = CurrentAnchorNode.textContent;
+        if (textContent === null) return;
+        const RemainingText: string = textContent.substring(Range.startOffset, textContent.length);
+        const PrecedingText: string = textContent.substring(0, Range.startOffset);
+        
+        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode);
+        
+        let FollowingNodes: Node[] = [];
+        // Check if caret at an empty line
+        const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
+        
+        if (bEmptyLine && NearestContainer!.firstChild) {
+            CurrentAnchorNode = NearestContainer!.firstChild;
+        }
+        
+        if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer) {
+            // When caret is in the text node of a, for example, strong tag within a p tag
+            FollowingNodes = GetNextSiblings(CurrentAnchorNode.parentNode);
+            CurrentAnchorNode = CurrentAnchorNode.parentNode;
+        } else {
+            FollowingNodes = GetNextSiblings(CurrentAnchorNode)
+        }
+        
+        // The Element waiting to be added
+        let NewLine = document.createElement("p");
+        
+        // console.log("Editor anchor:", CurrentAnchorNode)
+        if (bEmptyLine) {
+            console.log('Empty line');
+            
+            const lineBreakElement: HTMLBRElement = document.createElement("br");
+            NewLine.appendChild(lineBreakElement);
+            
+            DaemonHandle.AddToOperations({
+                type: "ADD",
+                newNode: NewLine,
+                siblingNode: NearestContainer,
+                parentXP: "//body"
+            });
+            DaemonHandle.SetCaretOverride('nextline');
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // Breaking at the very beginning of the line
+        if ((!CurrentAnchorNode.previousSibling || ((CurrentAnchorNode.previousSibling as HTMLElement).contentEditable !== 'true') && !CurrentAnchorNode.previousSibling.previousSibling)
+            && Range.startOffset === 0
+        ) {
+            console.log('Breaking - First element');
+            
+            // A new line with only a br
+            const lineBreakElement: HTMLBRElement = document.createElement("br");
+            NewLine.appendChild(lineBreakElement);
+            
+            DaemonHandle.AddToOperations({
+                type: "ADD",
+                newNode: NewLine,
+                siblingNode: NearestContainer,
+                parentXP: "//body"
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // Breaking anywhere in the middle of the line
+        if (RemainingText !== '' || FollowingNodes.length) {
+            console.log("Breaking - mid line");
+            
+            let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
+            if (anchorNodeClone.textContent !== null) anchorNodeClone.textContent = RemainingText;
+            NewLine.appendChild(anchorNodeClone);
+            
+            if (FollowingNodes.length) {
+                for (let Node of FollowingNodes) {
+                    NewLine.appendChild(Node.cloneNode(true));
+                    
+                    DaemonHandle.AddToOperations({
+                        type: "REMOVE",
+                        targetNode: Node,
+                    });
+                }
+            }
+            
+            // Clean up the old line
+            DaemonHandle.AddToOperations({
+                type: "TEXT",
+                targetNode: CurrentAnchorNode,
+                nodeText: PrecedingText
+            });
+            
+            // CurrentAnchorNode.textContent
+            
+            DaemonHandle.AddToOperations({
+                type: "ADD",
+                newNode: NewLine,
+                siblingNode: NearestContainer?.nextSibling,
+                parentXP: "//body"
+            });
+            DaemonHandle.SetCaretOverride('nextline');
+            DaemonHandle.SyncNow();
+            
+            
+            return;
+        }
+        
+        // Breaking at the very end of the line
+        console.log("Breaking - End of line");
+        
+        // A new line with only a br
+        const lineBreakElement: HTMLBRElement = document.createElement("br");
+        NewLine.appendChild(lineBreakElement);
+        
+        DaemonHandle.AddToOperations({
+            type: "ADD",
+            newNode: NewLine,
+            siblingNode: NearestContainer?.nextSibling,
+            parentXP: "//body"
+        });
+        DaemonHandle.SetCaretOverride('nextline');
+        DaemonHandle.SyncNow();
+    }
+    
     // First time loading
     useEffect(() => {
         ;(async () => {
@@ -185,6 +317,22 @@ export default function Editor(
         
     }, [EditorRef.current, document]);
     
+    // Hijack the enter key
+    useLayoutEffect(() => {
+        function EditorKeydown(ev: HTMLElementEventMap['keydown']) {
+            if (ev.key === "Enter") {
+                ev.preventDefault();
+                ev.stopPropagation();
+                EnterKeyHandler();
+            }
+        }
+        
+        EditorRef.current?.addEventListener("keydown", EditorKeydown);
+        return () => {
+            EditorRef.current?.removeEventListener("keydown", EditorKeydown);
+        }
+    }, [EditorRef.current])
+    
     const DaemonHandle = useEditorHTMLDaemon(EditorRef, EditorSourceRef, ReloadEditorContent,
         {
             OnRollback: MaskEditingArea,
@@ -237,7 +385,7 @@ const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...
                 const ReplacementElement = document.createElement('p') as HTMLElement;
                 ReplacementElement.innerHTML = ExtraRealChild(children);
                 
-                daemonHandle.AddToBindOperation(SyntaxElementRef.current, "remove", {
+                daemonHandle.AddToBindOperations(SyntaxElementRef.current, "remove", {
                     type: "REPLACE",
                     targetNode: MainElementRef.current,
                     newNode: ReplacementElement
@@ -286,11 +434,12 @@ function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
                 if (WholeElementRef.current && WholeElementRef.current.firstChild) {
                     const textNodeResult = TextNodeProcessor(WholeElementRef.current.firstChild);
                     if (textNodeResult) {
-                        daemonHandle.AddToOperationAndSync({
+                        daemonHandle.AddToOperations({
                             type: "REPLACE",
                             targetNode: WholeElementRef.current,
                             newNode: textNodeResult[0] //first result node only
                         });
+                        daemonHandle.SyncNow();
                     }
                 }
             }
@@ -420,3 +569,32 @@ function TextNodeProcessor(textNode: Node) {
     
     return newNodes;
 }
+
+function FindNearestParagraph(node: Node, tagTest?: RegExp): HTMLElement | null {
+    
+    let tagNames = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|section)$/i;
+    if (tagTest) tagNames = tagTest;
+    
+    let current: Node | null = node;
+    while (current) {
+        if (current.nodeName && tagNames.test(current.nodeName)) {
+            return current as HTMLElement;
+        }
+        current = current.parentNode;
+    }
+    return null;
+}
+
+function GetNextSiblings(node: Node): Node[] {
+    let current: Node | null = node;
+    const siblings: Node[] = [];
+    while (current) {
+        if (current.nextSibling) {
+            siblings.push(current.nextSibling);
+            current = current.nextSibling;
+        } else {
+            break;
+        }
+    }
+    return siblings;
+};

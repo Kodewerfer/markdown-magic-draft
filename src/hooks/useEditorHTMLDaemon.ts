@@ -21,7 +21,8 @@ type TSyncOperation = {
     nodeText?: string | null,
     nodeTextOld?: string | null, //used in redo
     parentXP?: string | null,
-    siblingXP?: string | null
+    siblingXP?: string | null,
+    siblingNode?: Node | undefined | null
 }
 
 // For storing selection before parent re-rendering
@@ -49,6 +50,7 @@ type TDaemonState = {
     IgnoreMap: TIgnoreMap
     BindOperationMap: TElementOperation
     AdditionalOperation: TSyncOperation[]
+    CaretOverrideToken: null | string // for now, enter key logic only, move the caret to the beginning of the next line if need be.
     UndoStack: [Document] | null
     RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null
@@ -67,9 +69,10 @@ type THookOptions = {
 
 export type TDaemonReturn = {
     SyncNow: () => void;
+    SetCaretOverride: (token: string | null) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
-    AddToBindOperation: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
-    AddToOperationAndSync: (Operation: TSyncOperation | TSyncOperation[]) => void;
+    AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
+    AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
 }
 
 export default function useEditorHTMLDaemon(
@@ -100,6 +103,7 @@ export default function useEditorHTMLDaemon(
             IgnoreMap: new Map(),
             BindOperationMap: new Map(),
             AdditionalOperation: [],
+            CaretOverrideToken: null,
             UndoStack: null,
             RedoStack: null,
             SelectionStatusCache: null,
@@ -624,7 +628,11 @@ export default function useEditorHTMLDaemon(
                     parentXP: GetXPathFromNode(OPItem.targetNode.parentNode)
                 })
             }
-            if (!OPItem.siblingXP && OPItem.targetNode) {
+            if (!OPItem.siblingXP && OPItem.siblingNode !== undefined) {
+                Object.assign(OPItem, {
+                    siblingXP: OPItem.siblingNode ? GetXPathFromNode(OPItem.siblingNode) : null // if not undefined, then there isn't a sibling node
+                })
+            } else if (!OPItem.siblingXP && OPItem.targetNode) {
                 Object.assign(OPItem, {
                     siblingXP: OPItem.targetNode.nextSibling ? GetXPathFromNode(OPItem.targetNode.nextSibling) : null
                 })
@@ -693,7 +701,7 @@ export default function useEditorHTMLDaemon(
             
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
-            if (!targetNode) throw "UpdateMirrorDocument.Remove: No targetNode";
+            if (!targetNode) throw "UpdateMirrorDocument.Remove: Cannot find targetNode";
             
             if (regexp.test(XPathSelf) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node target:", targetNode);
@@ -759,6 +767,7 @@ export default function useEditorHTMLDaemon(
         const SelectedTextRange = CurrentSelection.getRangeAt(0);
         
         const FullRange = document.createRange();
+        
         FullRange.setStart(targetElement, 0);
         FullRange.setEnd(SelectedTextRange.startContainer, SelectedTextRange.startOffset);
         
@@ -771,7 +780,7 @@ export default function useEditorHTMLDaemon(
         return {CaretPosition, SelectionExtent, AnchorNodeType, AnchorNodeXPath,};
     }
     
-    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
+    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus, OverrideToken?: null | string) {
         
         const CurrentSelection = window.getSelection();
         if (!CurrentSelection) return;
@@ -797,6 +806,7 @@ export default function useEditorHTMLDaemon(
             if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
                 CharsToCaretPosition -= AnchorNode!.textContent.length;
             }
+            
             // the anchor AnchorNode found.
             if (CharsToCaretPosition <= 0) {
                 // Make sure that the caret lands on a node that is actually editable
@@ -824,17 +834,26 @@ export default function useEditorHTMLDaemon(
             }
         }
         
-        // Type narrowing
-        if (!AnchorNode) return;
-        
         // reconstruct the old CurrentSelection range
         const RangeCached = document.createRange();
         
         let StartingOffset = 0;
-        if (AnchorNode.textContent) {
+        if (AnchorNode && AnchorNode.textContent) {
             StartingOffset = AnchorNode.textContent.length + CharsToCaretPosition
             if (StartingOffset < 0) StartingOffset = 0;
         }
+        
+        // Overrides
+        if (OverrideToken && OverrideToken.toLowerCase() === 'nextline') {
+            while (AnchorNode = Walker.nextNode()) {
+                if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName))
+                    break;
+            }
+            StartingOffset = 0;
+        }
+        
+        // Type narrowing
+        if (!AnchorNode) return;
         
         try {
             RangeCached.setStart(AnchorNode, StartingOffset);
@@ -844,7 +863,6 @@ export default function useEditorHTMLDaemon(
             CurrentSelection.addRange(RangeCached);
             
         } catch (e) {
-            // console.error(e);
             console.warn("AnchorNode:", AnchorNode, "Starting offset:", StartingOffset);
             console.warn("Saved State:", SavedState);
         }
@@ -884,8 +902,9 @@ export default function useEditorHTMLDaemon(
         
         if (DaemonState.SelectionStatusCache) {
             // consume the saved status
-            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
+            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache, DaemonState.CaretOverrideToken);
             DaemonState.SelectionStatusCache = null;
+            DaemonState.CaretOverrideToken = null;
         }
         
         if (DaemonOptions.ShouldObserve) {
@@ -1026,21 +1045,23 @@ export default function useEditorHTMLDaemon(
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
+        SetCaretOverride(token: string | null): void {
+            DaemonState.CaretOverrideToken = token;
+        },
+        
         AddToIgnore: (Element: Node, Type: TDOMTrigger) => {
             DaemonState.IgnoreMap.set(Element, Type);
         },
-        AddToBindOperation: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
+        AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
             DaemonState.BindOperationMap.set(Element, {
                 Trigger: Trigger,
                 Operations: Operation
             })
         },
-        AddToOperationAndSync: (Operation: TSyncOperation | TSyncOperation[]) => {
+        AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => {
             if (!Array.isArray(Operation))
                 Operation = [Operation];
             DaemonState.AdditionalOperation.push(...Operation);
-            throttledSelectionStatus()
-            throttledRollbackAndSync()
         }
     }
 }
