@@ -24,10 +24,11 @@ export default function Editor(
     const EditorHTMLString = useRef('');
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
-    const ActiveComponentStack = useRef<((arg: boolean) => void)[]>([]);
-    const LastAnchorNodeCache = useRef<Node | null>(null);
+    const ActiveComponentSwitchStack = useRef<((arg: boolean) => void)[]>([]);
+    const ActiveSubComponent = useRef<HTMLElement | null>(null);
+    const LastActivationCache = useRef<Node | null>(null);
     
-    // Subsequence reload
+    // Subsequence reload5
     async function ReloadEditorContent() {
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
@@ -52,6 +53,7 @@ export default function Editor(
                         //Containers
                         //Simple syntax
                         return <PlainSyntax {...props}
+                                            parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
                                             daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
                     }
@@ -123,6 +125,7 @@ export default function Editor(
         
         let textContent: string | null = CurrentAnchorNode.textContent;
         if (textContent === null) return;
+        
         const RemainingText: string = textContent.substring(Range.startOffset, textContent.length);
         const PrecedingText: string = textContent.substring(0, Range.startOffset);
         
@@ -132,10 +135,11 @@ export default function Editor(
         // Check if caret at an empty line
         const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
         
-        if (bEmptyLine && NearestContainer!.firstChild) {
+        // Empty line when caret landed on the p tag itself. the NearestContainer would be the p tag
+        if (bEmptyLine && NearestContainer!.firstChild)
             CurrentAnchorNode = NearestContainer!.firstChild;
-        }
         
+        // Check if it was a text node under P tag or under other tags such as strong
         if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer) {
             // When caret is in the text node of a, for example, strong tag within a p tag
             FollowingNodes = GetNextSiblings(CurrentAnchorNode.parentNode);
@@ -144,8 +148,31 @@ export default function Editor(
             FollowingNodes = GetNextSiblings(CurrentAnchorNode)
         }
         
-        // The Element waiting to be added
-        let NewLine = document.createElement("p");
+        // "Sub elements", those that have their own editing rules
+        // Try to move the caret to the next elment
+        if (CurrentAnchorNode === ActiveSubComponent.current) {
+            let NextNode = CurrentAnchorNode.nextSibling as Node;
+            
+            // No sibling, move to the first element of the next line
+            if (!NextNode && NearestContainer?.nextSibling)
+                NextNode = NearestContainer.nextSibling.firstChild as Node;
+            // fallback
+            if (!NextNode) {
+                NextNode = CurrentAnchorNode;
+            }
+            
+            Range.selectNodeContents(NextNode);
+            Range.collapse(true);
+            
+            currentSelection.removeAllRanges();
+            currentSelection.addRange(Range);
+            
+            return;
+        }
+        
+        // Normal logic
+        
+        let NewLine = document.createElement("p");  // The new line
         
         // console.log("Editor anchor:", CurrentAnchorNode)
         if (bEmptyLine) {
@@ -226,9 +253,9 @@ export default function Editor(
         }
         
         // Breaking at the very end of the line
+        // Fallback logic
         console.log("Breaking - End of line");
         
-        // A new line with only a br
         const lineBreakElement: HTMLBRElement = document.createElement("br");
         NewLine.appendChild(lineBreakElement);
         
@@ -238,8 +265,12 @@ export default function Editor(
             siblingNode: NearestContainer?.nextSibling,
             parentXP: "//body"
         });
-        DaemonHandle.SetCaretOverride('nextline');
+        DaemonHandle.SetCaretOverride("nextline");
         DaemonHandle.SyncNow();
+    }
+    
+    function SetActiveSubComponent(DOMNode: HTMLElement) {
+        ActiveSubComponent.current = DOMNode;
     }
     
     // First time loading
@@ -279,9 +310,9 @@ export default function Editor(
             // Must not contains multiple elements
             if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
             
-            if (LastAnchorNodeCache.current === selection.anchorNode) return;
+            if (LastActivationCache.current === selection.anchorNode) return;
             // refresh the cache
-            LastAnchorNodeCache.current = selection.anchorNode;
+            LastActivationCache.current = selection.anchorNode;
             
             // retrieve the component, set the editing state
             const findActiveEditorComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
@@ -292,12 +323,12 @@ export default function Editor(
             if (findActiveEditorComponent) {
                 // Switch off the last
                 let LastestActive;
-                while (LastestActive = ActiveComponentStack.current.shift()) {
+                while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
                     LastestActive(false);
                 }
                 // Switch on the current, add to cache
                 if (findActiveEditorComponent.memoizedState && typeof findActiveEditorComponent.memoizedState.memoizedState === "function") {
-                    ActiveComponentStack.current.push(findActiveEditorComponent.memoizedState.memoizedState);
+                    ActiveComponentSwitchStack.current.push(findActiveEditorComponent.memoizedState.memoizedState);
                     findActiveEditorComponent.memoizedState.memoizedState(true);
                 }
             }
@@ -420,9 +451,10 @@ function SpecialLinkComponent(props: any) {
     return React.createElement(tagName, otherProps, children);
 }
 
-function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
+function PlainSyntax({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
+    parentSetActivation: (DOMNode: HTMLElement) => void;
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
@@ -447,6 +479,8 @@ function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
                 daemonHandle.SyncNow();
             }
             setIsEditing(state);
+            if (WholeElementRef.current)
+                parentSetActivation(WholeElementRef.current);
         }
     }); // the Meta state, called by parent via dom fiber
     

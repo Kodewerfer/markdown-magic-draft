@@ -50,7 +50,7 @@ type TDaemonState = {
     IgnoreMap: TIgnoreMap
     BindOperationMap: TElementOperation
     AdditionalOperation: TSyncOperation[]
-    CaretOverrideToken: null | string // for now, enter key logic only, move the caret to the beginning of the next line if need be.
+    CaretOverrideToken: 'nextline' | null // for now, enter key logic only, move the caret to the beginning of the next line if need be.
     UndoStack: [Document] | null
     RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null
@@ -69,7 +69,7 @@ type THookOptions = {
 
 export type TDaemonReturn = {
     SyncNow: () => void;
-    SetCaretOverride: (token: string | null) => void;
+    SetCaretOverride: (token: 'nextline' | null) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
     AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
     AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
@@ -518,7 +518,7 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
-    // Helper to get the precise location in the original DOM tree
+    // Helper to get the precise location in the original DOM tree, ignore generated tags
     function GetXPathFromNode(node: Node): string {
         
         if (!WatchElementRef.current) return '';
@@ -1052,10 +1052,9 @@ export default function useEditorHTMLDaemon(
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        SetCaretOverride(token: string | null): void {
+        SetCaretOverride(token: 'nextline' | null): void {
             DaemonState.CaretOverrideToken = token;
         },
-        
         AddToIgnore: (Element: Node, Type: TDOMTrigger) => {
             DaemonState.IgnoreMap.set(Element, Type);
         },
