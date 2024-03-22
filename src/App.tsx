@@ -8,7 +8,7 @@ const MarkdownFakeDate = `
 
 Hi! I'm ~~your~~ Markdown file in Editor**.
 
-**custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH [123](google.com)
+**custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH
 
 :br
 
@@ -17,6 +17,14 @@ Hi! I'm ~~your~~ Markdown file in Editor**.
 :br
 
 Test with no sibling
+
+:br
+
+[Link test](google.com)
+
+:br
+
+> back quote test
 
 :br
 
