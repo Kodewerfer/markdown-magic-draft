@@ -46,9 +46,9 @@ export default function Editor(
                     // inline syntax
                     if (props['data-md-syntax'] && props['data-md-container'] !== 'true') {
                         if (props['data-link-to']) {
-                            return <SpecialLinkComponent {...props}
-                                                         daemonHandle={DaemonHandle}
-                                                         tagName={tagName}/>;
+                            return <SpecialLink {...props}
+                                                daemonHandle={DaemonHandle}
+                                                tagName={tagName}/>;
                         }
                         //Containers
                         //Simple syntax
@@ -56,6 +56,13 @@ export default function Editor(
                                             parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
                                             daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
+                    }
+                    // Links
+                    if (props['data-md-link']) {
+                        return <Links {...props}
+                                      parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
+                                      daemonHandle={DaemonHandle}
+                                      tagName={tagName}/>;
                     }
                     // Paragraph and Headers
                     if (props['data-md-paragraph'] || props['data-md-header']) {
@@ -148,28 +155,6 @@ export default function Editor(
             FollowingNodes = GetNextSiblings(CurrentAnchorNode)
         }
         
-        // "Sub elements", those that have their own editing rules
-        // Try to move the caret to the next elment
-        if (CurrentAnchorNode === ActiveSubComponent.current) {
-            let NextNode = CurrentAnchorNode.nextSibling as Node;
-            
-            // No sibling, move to the first element of the next line
-            if (!NextNode && NearestContainer?.nextSibling)
-                NextNode = NearestContainer.nextSibling.firstChild as Node;
-            // fallback
-            if (!NextNode) {
-                NextNode = CurrentAnchorNode;
-            }
-            
-            Range.selectNodeContents(NextNode);
-            Range.collapse(true);
-            
-            currentSelection.removeAllRanges();
-            currentSelection.addRange(Range);
-            
-            return;
-        }
-        
         // Normal logic
         
         let NewLine = document.createElement("p");  // The new line
@@ -214,6 +199,29 @@ export default function Editor(
         
         // Breaking anywhere in the middle of the line
         if (RemainingText !== '' || FollowingNodes.length) {
+            
+            // "Sub elements", those that have their own editing rules
+            // Try to move the caret to the next elment
+            if (CurrentAnchorNode === ActiveSubComponent.current) {
+                let NextNode = CurrentAnchorNode.nextSibling as Node;
+                
+                // No sibling, move to the first element of the next line
+                if (!NextNode && NearestContainer?.nextSibling)
+                    NextNode = NearestContainer.nextSibling as Node;
+                // fallback
+                if (!NextNode) {
+                    NextNode = CurrentAnchorNode;
+                }
+                
+                Range.setStart(NextNode, 0);
+                Range.collapse(true);
+                
+                currentSelection.removeAllRanges();
+                currentSelection.addRange(Range);
+                
+                return;
+            }
+            
             console.log("Breaking - Mid line");
             
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
@@ -237,8 +245,6 @@ export default function Editor(
                 targetNode: CurrentAnchorNode,
                 nodeText: PrecedingText
             });
-            
-            // CurrentAnchorNode.textContent
             
             DaemonHandle.AddToOperations({
                 type: "ADD",
@@ -445,12 +451,6 @@ const CommonRenderer = (props: any) => {
     return React.createElement(tagName, otherProps, children);
 };
 
-// TODO
-function SpecialLinkComponent(props: any) {
-    const {children, tagName, ParentAction, ...otherProps} = props;
-    return React.createElement(tagName, otherProps, children);
-}
-
 function PlainSyntax({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
@@ -508,20 +508,76 @@ function PlainSyntax({children, tagName, parentSetActivation, daemonHandle, ...o
             daemonHandle.AddToIgnore(WholeElementRef.current?.firstChild, "any");
     });
     
-    // TODO
-    const OnKeydown = (ev: HTMLElementEventMap['keydown']) => {
-        if (ev.key === 'Enter') {
-            ev.stopPropagation();
-            ev.preventDefault();
-        }
-    }
-    
     return React.createElement(tagName, {
         ...otherProps,
         ref: WholeElementRef,
-        onKeyDown: OnKeydown,
     }, isEditing ? childrenWithSyntax : children);
     
+}
+
+function Links({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
+    children?: React.ReactNode[] | React.ReactNode;
+    tagName: string;
+    parentSetActivation: (DOMNode: HTMLElement) => void;
+    daemonHandle: TDaemonReturn;
+    [key: string]: any; // for otherProps
+}) {
+    
+    const [SetActivation] = useState<(state: boolean) => void>(() => {
+        return (state: boolean) => {
+            // send whatever within the text node before re-rendering to the processor
+            if (!state) {
+                if (LinkElementRef.current && LinkElementRef.current.firstChild) {
+                    const textNodeResult = TextNodeProcessor(LinkElementRef.current.firstChild);
+                    if (textNodeResult) {
+                        daemonHandle.AddToOperations({
+                            type: "REPLACE",
+                            targetNode: LinkElementRef.current,
+                            newNode: textNodeResult[0] //first result node only
+                        });
+                        daemonHandle.SyncNow();
+                    }
+                }
+            }
+            if (state) {
+                daemonHandle.SyncNow();
+            }
+            setIsEditing(state);
+            if (LinkElementRef.current)
+                parentSetActivation(LinkElementRef.current);
+        }
+    }); // the Meta state, called by parent via dom fiber
+    
+    const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
+    
+    const LinkText: string = String(children);
+    const LinkTarget: string = otherProps['href'] || '';
+    
+    // Show when actively editing
+    const [EditingStateChild] = useState<String>(() => {
+        return `[${LinkText}](${LinkTarget})`;
+    });
+    
+    // the element tag
+    const LinkElementRef = useRef<HTMLElement | null>(null);
+    
+    // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
+    useLayoutEffect(() => {
+        if (LinkElementRef.current && LinkElementRef.current?.firstChild)
+            daemonHandle.AddToIgnore(LinkElementRef.current?.firstChild, "any");
+    });
+    
+    return React.createElement(tagName, {
+        ...otherProps,
+        ref: LinkElementRef,
+    }, isEditing ? EditingStateChild : children);
+    
+}
+
+// TODO
+function SpecialLink(props: any) {
+    const {children, tagName, ParentAction, ...otherProps} = props;
+    return React.createElement(tagName, otherProps, children);
 }
 
 function ExtraRealChild(children: React.ReactNode[] | React.ReactNode) {

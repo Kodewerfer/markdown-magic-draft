@@ -10,6 +10,9 @@ function AddSyntaxAttrTransformer(ast: object) {
         
         // ['p','a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'del']
         switch (tagName) {
+            case 'a':
+                NodeProps['data-md-link'] = "true";
+                break
             case 'p':
                 NodeProps['data-md-paragraph'] = "true";
                 break;
@@ -35,9 +38,6 @@ function AddSyntaxAttrTransformer(ast: object) {
                 NodeProps['data-md-syntax'] = "**";
                 NodeProps['data-md-wrapped'] = 'true';
                 break;
-            case 'blockquote':
-                NodeProps['data-md-syntax'] = ">";
-                break;
             case 'em':
                 NodeProps['data-md-syntax'] = "_";
                 NodeProps['data-md-wrapped'] = 'true';
@@ -45,6 +45,11 @@ function AddSyntaxAttrTransformer(ast: object) {
             case 'del':
                 NodeProps['data-md-syntax'] = "~~";
                 NodeProps['data-md-wrapped'] = 'true';
+                break;
+            // Container-like elements
+            case 'blockquote':
+                NodeProps['data-md-syntax'] = ">";
+                NodeProps['data-md-container'] = "true";
                 break;
             case 'ul':
             case 'ol':

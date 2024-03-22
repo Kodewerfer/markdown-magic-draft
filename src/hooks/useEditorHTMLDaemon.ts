@@ -200,7 +200,7 @@ export default function useEditorHTMLDaemon(
                     const callbackResult = DaemonOptions.TextNodeCallback(OldTextNode);
                     
                     if (DaemonOptions.ShouldLog)
-                        console.log("Text Handler result:", callbackResult);
+                        console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
                     
                     if (!callbackResult) {
                         if (OldTextNode.textContent !== '')
