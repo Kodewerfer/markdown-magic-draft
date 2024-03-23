@@ -12,9 +12,13 @@ function MDTransformer(ast: object) {
             
             // Empty Lines
             if (node.name === 'br' && node.type === 'textDirective') {
-                const hast = h('p', [
-                    h('br')
-                ]);
+                
+                // this created an extra layer of p tag, although it may be useful when using :br in a existing line.
+                // const hast = h('p', [
+                //     h('br')
+                // ]);
+                
+                const hast = h('br');
                 
                 data.hName = hast.tagName
                 data.hProperties = hast.properties
