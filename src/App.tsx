@@ -28,11 +28,13 @@ Test with no sibling
 
 :br
 
-GFM syntax:
+* list1
+* list2
+* list3
 
 :br
 
-* [x] done
+* [x] List with items
 
 :br
 
@@ -41,15 +43,6 @@ var s = "JavaScript syntax highlighting";
 alert(s);
 \`\`\`
 
-:br
-
-* list1
-* list2
-* list3
-
-A note[1](#user-content-fn-1)
-
-1. Big note. [↩](#user-content-fnref-1)
 `
 
 export default function App() {
