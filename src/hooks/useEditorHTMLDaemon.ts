@@ -851,12 +851,14 @@ export default function useEditorHTMLDaemon(
         }
         
         // Overrides
-        if (OverrideToken && OverrideToken.toLowerCase() === 'nextline') {
-            while (AnchorNode = Walker.nextNode()) {
-                if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName))
-                    break;
+        if (OverrideToken) {
+            if (OverrideToken.toLowerCase() === 'nextline') {
+                StartingOffset = 0;
+                while (AnchorNode = Walker.nextNode()) {
+                    if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName) || AnchorNode.textContent === '\n')
+                        break;
+                }
             }
-            StartingOffset = 0;
         }
         
         // Type narrowing
@@ -865,6 +867,7 @@ export default function useEditorHTMLDaemon(
         try {
             RangeCached.setStart(AnchorNode, StartingOffset);
             RangeCached.setEnd(AnchorNode, StartingOffset + SavedState.SelectionExtent);
+            
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
             CurrentSelection.addRange(RangeCached);
@@ -1052,7 +1055,7 @@ export default function useEditorHTMLDaemon(
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        SetCaretOverride(token: 'nextline' | null): void {
+        SetCaretOverride: (token: 'nextline' | null) => {
             DaemonState.CaretOverrideToken = token;
         },
         AddToIgnore: (Element: Node, Type: TDOMTrigger) => {
