@@ -28,7 +28,7 @@ export default function Editor(
     const ActiveSubComponent = useRef<HTMLElement | null>(null);
     const LastActivationCache = useRef<Node | null>(null);
     
-    // Subsequence reload5
+    // Subsequence reload
     async function ReloadEditorContent() {
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
@@ -66,7 +66,6 @@ export default function Editor(
                     }
                     // Paragraph and Headers
                     if (props['data-md-paragraph'] || props['data-md-header']) {
-                        
                         // Header
                         if (props['data-md-header'] !== undefined) {
                             return <Paragraph {...props}
@@ -79,6 +78,14 @@ export default function Editor(
                         return <Paragraph {...props}
                                           daemonHandle={DaemonHandle}
                                           tagName={tagName}/>
+                    }
+                    // TODO:list component
+                    if (props['data-md-blockquote'] === 'true') {
+                        return <Blockquote {...props}
+                                           daemonHandle={DaemonHandle}
+                                           tagName={tagName}/>
+                    }
+                    if (props['data-md-list'] === 'true') {
                     }
                     
                     // FIXME:Placeholder
@@ -122,10 +129,10 @@ export default function Editor(
     
     // Replacement logic for when user pressed enter key in the editor
     function EnterKeyHandler(): void {
-        const currentSelection = window.getSelection();
-        if (currentSelection === null) return;
+        const CurrentSelection = window.getSelection();
+        if (CurrentSelection === null) return;
         
-        const Range = currentSelection.getRangeAt(0);
+        const Range = CurrentSelection.getRangeAt(0);
         
         let CurrentAnchorNode = window.getSelection()?.anchorNode;
         if (!CurrentAnchorNode) return;
@@ -154,8 +161,6 @@ export default function Editor(
         } else {
             FollowingNodes = GetNextSiblings(CurrentAnchorNode)
         }
-        
-        // Normal logic
         
         let NewLine = document.createElement("p");  // The new line
         
@@ -193,6 +198,10 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
+            if (CurrentAnchorNode === ActiveSubComponent.current) {
+                MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
+                return;
+            }
             DaemonHandle.SyncNow();
             return;
         }
@@ -203,22 +212,7 @@ export default function Editor(
             // "Sub elements", those that have their own editing rules
             // Try to move the caret to the next elment
             if (CurrentAnchorNode === ActiveSubComponent.current) {
-                let NextNode = CurrentAnchorNode.nextSibling as Node;
-                
-                // No sibling, move to the first element of the next line
-                if (!NextNode && NearestContainer?.nextSibling)
-                    NextNode = NearestContainer.nextSibling as Node;
-                // fallback
-                if (!NextNode) {
-                    NextNode = CurrentAnchorNode;
-                }
-                
-                Range.setStart(NextNode, 0);
-                Range.collapse(true);
-                
-                currentSelection.removeAllRanges();
-                currentSelection.addRange(Range);
-                
+                MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
                 return;
             }
             
@@ -265,12 +259,19 @@ export default function Editor(
         const lineBreakElement: HTMLBRElement = document.createElement("br");
         NewLine.appendChild(lineBreakElement);
         
+        EditorRef.current?.insertBefore(NewLine, NearestContainer!.nextSibling);
+        
         DaemonHandle.AddToOperations({
             type: "ADD",
             newNode: NewLine,
             siblingNode: NearestContainer?.nextSibling,
             parentXP: "//body"
         });
+        
+        if (CurrentAnchorNode === ActiveSubComponent.current) {
+            MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
+            return;
+        }
         DaemonHandle.SetCaretOverride("nextline");
         DaemonHandle.SyncNow();
     }
@@ -490,12 +491,14 @@ function PlainSyntax({children, tagName, parentSetActivation, daemonHandle, ...o
     const propShouldWrap: any = otherProps['data-md-wrapped'];
     // Show when actively editing
     const [childrenWithSyntax] = useState<String>(() => {
-        let result;
-        if (propSyntaxData) {
-            result = propSyntaxData + children;
-            if (propShouldWrap === 'true')
-                result += propSyntaxData;
-        }
+        
+        let result = String(children);
+        
+        if (propSyntaxData && !String(children).startsWith(propSyntaxData))
+            result = propSyntaxData + String(children);
+        
+        if (propShouldWrap === 'true' && !String(children).endsWith(propShouldWrap))
+            result += propSyntaxData;
         
         return result;
     });
@@ -574,6 +577,68 @@ function Links({children, tagName, parentSetActivation, daemonHandle, ...otherPr
     
 }
 
+function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
+    children?: React.ReactNode[] | React.ReactNode;
+    tagName: string;
+    parentSetActivation: (DOMNode: HTMLElement) => void;
+    daemonHandle: TDaemonReturn;
+    [key: string]: any; // for otherProps
+}) {
+    const [SetActivation] = useState<(state: boolean) => void>(() => {
+        return (state: boolean) => {
+            // setIsEditing((prev) => {
+            //     return !prev;
+            // });
+            setIsEditing(state);
+        }
+    }); // the Meta state, called by parent via dom fiber
+    const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
+    const ContainerRef = useRef<HTMLElement | null>(null);
+    
+    useEffect(() => {
+    });
+    
+    return React.createElement(tagName, {
+        ref: ContainerRef,
+        ...otherProps
+    }, children);
+}
+
+function TextNodeProcessor(textNode: Node) {
+    if (textNode.textContent === null) {
+        console.warn(textNode, " Not a text node.");
+        return
+    }
+    const convertedHTML = String(MD2HTMLSync(textNode.textContent));
+    
+    let TemplateConverter: HTMLTemplateElement = document.createElement('template');
+    TemplateConverter.innerHTML = convertedHTML;
+    // New node for the daemon
+    let NewNodes: Node[] = [];
+    
+    // Normal case where the P tag was added by the converter serving as a simple wrapper.
+    if (TemplateConverter.content.children.length === 1 && TemplateConverter.content.children[0].tagName.toLowerCase() === 'p') {
+        
+        let WrapperTag = TemplateConverter.content.children[0];
+        NewNodes = [...WrapperTag.children];
+        
+        if (!NewNodes.length) return null;
+        
+        return NewNodes;
+    }
+    
+    // if there're multiple element as top level result. (Not likely as of yet)
+    if (TemplateConverter.content.children.length > 1) {
+        NewNodes = [...TemplateConverter.content.children];
+        console.warn("TextNodeProcessor: Multiple top level nodes.");
+        return NewNodes;
+    }
+    
+    // Outter-most element is the like of "Blockquote"/"UL"/"CODE"
+    NewNodes = [...TemplateConverter.content.children];
+    return NewNodes;
+}
+
 // TODO
 function SpecialLink(props: any) {
     const {children, tagName, ParentAction, ...otherProps} = props;
@@ -631,34 +696,6 @@ function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     return compFiber;
 }
 
-function TextNodeProcessor(textNode: Node) {
-    if (textNode.textContent === null) {
-        console.warn(textNode, " Not a text node.");
-        return
-    }
-    const convertedHTML = String(MD2HTMLSync(textNode.textContent));
-    
-    let DOC = new DOMParser().parseFromString(convertedHTML, "text/html");
-    
-    const treeWalker: TreeWalker = DOC.createTreeWalker(DOC, NodeFilter.SHOW_TEXT);
-    let newNodes: Node[] = [];
-    let newTextNode;
-    while (newTextNode = treeWalker.nextNode()) {
-        
-        if (!newTextNode.parentNode) continue;
-        
-        if (newTextNode.parentNode.nodeName.toLowerCase() === 'p'
-            || newTextNode.parentNode.nodeName.toLowerCase() === 'body') {
-            newNodes.push(newTextNode);
-        } else {
-            newNodes.push(newTextNode.parentNode);
-        }
-    }
-    
-    if (newNodes.length === 0) return null;
-    
-    return newNodes;
-}
 
 function FindNearestParagraph(node: Node, tagTest?: RegExp): HTMLElement | null {
     
@@ -688,3 +725,22 @@ function GetNextSiblings(node: Node): Node[] {
     }
     return siblings;
 };
+
+function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAnchorNode: Node, NearestContainer: Node) {
+    let NextNode = CurrentAnchorNode.nextSibling as Node;
+    
+    // No sibling, move to the first element of the next line
+    if (!NextNode && NearestContainer?.nextSibling)
+        NextNode = NearestContainer.nextSibling as Node;
+    // fallback
+    if (!NextNode) {
+        NextNode = CurrentAnchorNode;
+    }
+    console.log(NextNode);
+    Range.setStart(NextNode, 0);
+    Range.collapse(true);
+    
+    currentSelection.removeAllRanges();
+    currentSelection.addRange(Range);
+    return;
+}

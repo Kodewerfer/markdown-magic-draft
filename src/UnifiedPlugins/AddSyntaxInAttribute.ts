@@ -49,12 +49,14 @@ function AddSyntaxAttrTransformer(ast: object) {
             // Container-like elements
             case 'blockquote':
                 NodeProps['data-md-syntax'] = ">";
+                NodeProps['data-md-blockquote'] = "true";
                 NodeProps['data-md-container'] = "true";
                 break;
             case 'ul':
             case 'ol':
             case 'li':
                 NodeProps['data-md-syntax'] = "-";
+                NodeProps['data-md-list'] = "true";
                 NodeProps['data-md-container'] = 'true';
                 break;
             case 'pre':

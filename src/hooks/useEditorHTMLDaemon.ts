@@ -89,7 +89,7 @@ export default function useEditorHTMLDaemon(
         ShouldObserve: true,
         ShouldLog: true,
         IsEditable: true,
-        ParagraphTags: /^(p|div|main|body|h1|h2|h3|h4|h5|h6|section)$/i,   // Determined whether to use "replacement" logic or just change the text node.
+        ParagraphTags: /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|ul|section)$/i,   // Determined whether to use "replacement" logic or just change the text node.
         ...Options
     };
     
