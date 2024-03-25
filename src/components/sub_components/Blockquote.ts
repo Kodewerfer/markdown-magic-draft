@@ -1,5 +1,6 @@
-import React, {useEffect, useRef, useState} from "react";
+import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
+import {ExtraRealChild} from "../Helpers";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -19,7 +20,21 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const ContainerRef = useRef<HTMLElement | null>(null);
     
+    // Delete the whole blockquote if there were no items left.
     useEffect(() => {
+        if (!children || React.Children.count(children) === 1) {
+            if (String(children).trim() === '' && ContainerRef.current) {
+                
+                daemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: ContainerRef.current
+                });
+                
+                daemonHandle.SyncNow();
+                // set it to null so the syncing won't run more than once(in strict mode especially)
+                ContainerRef.current = null;
+            }
+        }
     });
     
     return React.createElement(tagName, {
@@ -51,14 +66,21 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         if (QuoteSyntaxFiller.current) {
             daemonHandle.AddToIgnore(QuoteSyntaxFiller.current, "any");
             if (MainElementRef.current) {
-                const ReplacementElement = document.createElement('p') as HTMLElement;
-                // ReplacementElement.innerHTML = ExtraRealChild(children);
                 
-                daemonHandle.AddToBindOperations(QuoteSyntaxFiller.current, "remove", {
-                    type: "REPLACE",
-                    targetNode: MainElementRef.current,
-                    newNode: ReplacementElement
-                });
+                const newParagraph = document.createElement('p') as HTMLElement;
+                newParagraph.innerHTML = ExtraRealChild(children);
+                
+                daemonHandle.AddToBindOperations(QuoteSyntaxFiller.current, "remove", [
+                    {
+                        type: "REMOVE",
+                        targetNode: MainElementRef.current,
+                    },
+                    {
+                        type: "ADD",
+                        newNode: newParagraph,
+                        parentXP: "//body",
+                        siblingNode: MainElementRef.current?.parentNode?.nextSibling
+                    }]);
             }
         }
     });
