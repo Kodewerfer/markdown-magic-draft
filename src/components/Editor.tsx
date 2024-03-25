@@ -1,10 +1,16 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
-import {renderToString} from 'react-dom/server';
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
 import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
+
+// Utils
+import {TextNodeProcessor} from "./Helpers";
+// Editor Components
+import Paragraph from './sub_components/Paragraph';
+import PlainSyntax from "./sub_components/PlainSyntax";
+import Links from "./sub_components/Links";
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -79,12 +85,13 @@ export default function Editor(
                                           daemonHandle={DaemonHandle}
                                           tagName={tagName}/>
                     }
-                    // TODO:list component
+                    
                     if (props['data-md-blockquote'] === 'true') {
                         return <Blockquote {...props}
                                            daemonHandle={DaemonHandle}
                                            tagName={tagName}/>
                     }
+                    // TODO:list component
                     if (props['data-md-list'] === 'true') {
                     }
                     
@@ -322,21 +329,21 @@ export default function Editor(
             LastActivationCache.current = selection.anchorNode;
             
             // retrieve the component, set the editing state
-            const findActiveEditorComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
+            const ActiveComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
             
             // FIXME: This is VERY VERY VERY HACKY
             // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
             // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
-            if (findActiveEditorComponent) {
+            if (ActiveComponent) {
                 // Switch off the last
                 let LastestActive;
                 while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
                     LastestActive(false);
                 }
                 // Switch on the current, add to cache
-                if (findActiveEditorComponent.memoizedState && typeof findActiveEditorComponent.memoizedState.memoizedState === "function") {
-                    ActiveComponentSwitchStack.current.push(findActiveEditorComponent.memoizedState.memoizedState);
-                    findActiveEditorComponent.memoizedState.memoizedState(true);
+                if (ActiveComponent.memoizedState && typeof ActiveComponent.memoizedState.memoizedState === "function") {
+                    ActiveComponentSwitchStack.current.push(ActiveComponent.memoizedState.memoizedState);
+                    ActiveComponent.memoizedState.memoizedState(true);
                 }
             }
             
@@ -394,188 +401,12 @@ export default function Editor(
     )
 }
 
-const Paragraph = ({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
-    children?: React.ReactNode[] | React.ReactNode;
-    tagName: string;
-    isHeader: boolean;
-    headerSyntax: string;
-    daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
-    [key: string]: any; // for otherProps
-}) => {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            // setIsEditing((prev) => {
-            //     return !prev;
-            // });
-            setIsEditing(state);
-        }
-    }); // the Meta state, called by parent via dom fiber
-    const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
-    const MainElementRef = useRef<HTMLElement | null>(null);
-    const SyntaxElementRef = useRef<HTMLElement>();  //filler element
-    
-    // Add filler element to ignore, add filler element's special handling operation
-    useEffect(() => {
-        if (isHeader && SyntaxElementRef.current) {
-            daemonHandle.AddToIgnore(SyntaxElementRef.current, "any");
-            if (MainElementRef.current) {
-                const ReplacementElement = document.createElement('p') as HTMLElement;
-                ReplacementElement.innerHTML = ExtraRealChild(children);
-                
-                daemonHandle.AddToBindOperations(SyntaxElementRef.current, "remove", {
-                    type: "REPLACE",
-                    targetNode: MainElementRef.current,
-                    newNode: ReplacementElement
-                });
-            }
-        }
-    });
-    
-    return React.createElement(tagName, {
-        ...otherProps,
-        ref: MainElementRef,
-    }, [
-        isHeader && React.createElement('span', {
-            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
-            key: 'HeaderSyntaxLead',
-            ref: SyntaxElementRef,
-            contentEditable: false,
-            className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, headerSyntax),
-        ...(Array.isArray(children) ? children : [children]),
-    ]);
-};
-
+// FIXME: placeholder
 const CommonRenderer = (props: any) => {
     const {children, tagName, ParentAction, ...otherProps} = props;
     
     return React.createElement(tagName, otherProps, children);
 };
-
-function PlainSyntax({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
-    children?: React.ReactNode[] | React.ReactNode;
-    tagName: string;
-    parentSetActivation: (DOMNode: HTMLElement) => void;
-    daemonHandle: TDaemonReturn;
-    [key: string]: any; // for otherProps
-}) {
-    
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            // send whatever within the text node before re-rendering to the processor
-            if (!state) {
-                if (WholeElementRef.current && WholeElementRef.current.firstChild) {
-                    const textNodeResult = TextNodeProcessor(WholeElementRef.current.firstChild);
-                    if (textNodeResult) {
-                        daemonHandle.AddToOperations({
-                            type: "REPLACE",
-                            targetNode: WholeElementRef.current,
-                            newNode: textNodeResult[0] //first result node only
-                        });
-                        daemonHandle.SyncNow();
-                    }
-                }
-            }
-            if (state) {
-                daemonHandle.SyncNow();
-            }
-            setIsEditing(state);
-            if (WholeElementRef.current)
-                parentSetActivation(WholeElementRef.current);
-        }
-    }); // the Meta state, called by parent via dom fiber
-    
-    const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
-    
-    const propSyntaxData: any = otherProps['data-md-syntax'];
-    const propShouldWrap: any = otherProps['data-md-wrapped'];
-    // Show when actively editing
-    const [childrenWithSyntax] = useState<String>(() => {
-        
-        let result = String(children);
-        
-        if (propSyntaxData && !String(children).startsWith(propSyntaxData))
-            result = propSyntaxData + String(children);
-        
-        if (propShouldWrap === 'true' && !String(children).endsWith(propShouldWrap))
-            result += propSyntaxData;
-        
-        return result;
-    });
-    // the element tag
-    const WholeElementRef = useRef<HTMLElement | null>(null);
-    
-    useLayoutEffect(() => {
-        // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
-        if (WholeElementRef.current && WholeElementRef.current?.firstChild)
-            daemonHandle.AddToIgnore(WholeElementRef.current?.firstChild, "any");
-    });
-    
-    return React.createElement(tagName, {
-        ...otherProps,
-        ref: WholeElementRef,
-    }, isEditing ? childrenWithSyntax : children);
-    
-}
-
-function Links({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
-    children?: React.ReactNode[] | React.ReactNode;
-    tagName: string;
-    parentSetActivation: (DOMNode: HTMLElement) => void;
-    daemonHandle: TDaemonReturn;
-    [key: string]: any; // for otherProps
-}) {
-    
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            // send whatever within the text node before re-rendering to the processor
-            if (!state) {
-                if (LinkElementRef.current && LinkElementRef.current.firstChild) {
-                    const textNodeResult = TextNodeProcessor(LinkElementRef.current.firstChild);
-                    if (textNodeResult) {
-                        daemonHandle.AddToOperations({
-                            type: "REPLACE",
-                            targetNode: LinkElementRef.current,
-                            newNode: textNodeResult[0] //first result node only
-                        });
-                        daemonHandle.SyncNow();
-                    }
-                }
-            }
-            if (state) {
-                daemonHandle.SyncNow();
-            }
-            setIsEditing(state);
-            if (LinkElementRef.current)
-                parentSetActivation(LinkElementRef.current);
-        }
-    }); // the Meta state, called by parent via dom fiber
-    
-    const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
-    
-    const LinkText: string = String(children);
-    const LinkTarget: string = otherProps['href'] || '';
-    
-    // Show when actively editing
-    const [EditingStateChild] = useState<String>(() => {
-        return `[${LinkText}](${LinkTarget})`;
-    });
-    
-    // the element tag
-    const LinkElementRef = useRef<HTMLElement | null>(null);
-    
-    // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
-    useLayoutEffect(() => {
-        if (LinkElementRef.current && LinkElementRef.current?.firstChild)
-            daemonHandle.AddToIgnore(LinkElementRef.current?.firstChild, "any");
-    });
-    
-    return React.createElement(tagName, {
-        ...otherProps,
-        ref: LinkElementRef,
-    }, isEditing ? EditingStateChild : children);
-    
-}
 
 function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -604,40 +435,54 @@ function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...ot
     }, children);
 }
 
-function TextNodeProcessor(textNode: Node) {
-    if (textNode.textContent === null) {
-        console.warn(textNode, " Not a text node.");
-        return
-    }
-    const convertedHTML = String(MD2HTMLSync(textNode.textContent));
+const QuoteItem = ({children, tagName, daemonHandle, ...otherProps}: {
+    children?: React.ReactNode[] | React.ReactNode;
+    tagName: string;
+    isHeader: boolean;
+    headerSyntax: string;
+    daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
+    [key: string]: any; // for otherProps
+}) => {
+    const [SetActivation] = useState<(state: boolean) => void>(() => {
+        return (state: boolean) => {
+            setIsEditing(state);
+        }
+    }); // the Meta state, called by parent via dom fiber
+    const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
+    const MainElementRef = useRef<HTMLElement | null>(null);
+    const SyntaxElementRef = useRef<HTMLElement>();  //filler element
     
-    let TemplateConverter: HTMLTemplateElement = document.createElement('template');
-    TemplateConverter.innerHTML = convertedHTML;
-    // New node for the daemon
-    let NewNodes: Node[] = [];
+    // Add filler element to ignore, add filler element's special handling operation
+    useEffect(() => {
+        if (SyntaxElementRef.current) {
+            daemonHandle.AddToIgnore(SyntaxElementRef.current, "any");
+            if (MainElementRef.current) {
+                const ReplacementElement = document.createElement('p') as HTMLElement;
+                // ReplacementElement.innerHTML = ExtraRealChild(children);
+                
+                daemonHandle.AddToBindOperations(SyntaxElementRef.current, "remove", {
+                    type: "REPLACE",
+                    targetNode: MainElementRef.current,
+                    newNode: ReplacementElement
+                });
+            }
+        }
+    });
     
-    // Normal case where the P tag was added by the converter serving as a simple wrapper.
-    if (TemplateConverter.content.children.length === 1 && TemplateConverter.content.children[0].tagName.toLowerCase() === 'p') {
-        
-        let WrapperTag = TemplateConverter.content.children[0];
-        NewNodes = [...WrapperTag.children];
-        
-        if (!NewNodes.length) return null;
-        
-        return NewNodes;
-    }
-    
-    // if there're multiple element as top level result. (Not likely as of yet)
-    if (TemplateConverter.content.children.length > 1) {
-        NewNodes = [...TemplateConverter.content.children];
-        console.warn("TextNodeProcessor: Multiple top level nodes.");
-        return NewNodes;
-    }
-    
-    // Outter-most element is the like of "Blockquote"/"UL"/"CODE"
-    NewNodes = [...TemplateConverter.content.children];
-    return NewNodes;
-}
+    return React.createElement(tagName, {
+        ...otherProps,
+        ref: MainElementRef,
+    }, [
+        React.createElement('span', {
+            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
+            key: 'HeaderSyntaxLead',
+            ref: SyntaxElementRef,
+            contentEditable: false,
+            className: ` ${isEditing ? '' : 'Hide-It'}`
+        }, "> "),
+        ...(Array.isArray(children) ? children : [children]),
+    ]);
+};
 
 // TODO
 function SpecialLink(props: any) {
@@ -645,20 +490,7 @@ function SpecialLink(props: any) {
     return React.createElement(tagName, otherProps, children);
 }
 
-function ExtraRealChild(children: React.ReactNode[] | React.ReactNode) {
-    let ActualChildren;
-    if (Array.isArray(children)) {
-        ActualChildren = [...children];
-    } else {
-        ActualChildren = [children];
-    }
-    const ElementStrings = ActualChildren.map(element =>
-        renderToString(element));
-    
-    return ElementStrings.join('');
-}
-
-// Modified helper function to find domfiber
+// Editor Spec Utils
 function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     if (DomNode.nodeType === Node.TEXT_NODE) {
         if (DomNode.parentNode)
@@ -695,7 +527,6 @@ function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     // return compFiber.stateNode; // if dealing with class component, in that case "setState" can be called from this directly.
     return compFiber;
 }
-
 
 function FindNearestParagraph(node: Node, tagTest?: RegExp): HTMLElement | null {
     
