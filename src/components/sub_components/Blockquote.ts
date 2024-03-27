@@ -24,7 +24,7 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     useEffect(() => {
         if (!children || React.Children.count(children) === 1) {
             if (String(children).trim() === '' && ContainerRef.current) {
-                
+                console.log(ContainerRef.current?.tagName, "is empty, self destruct.")
                 daemonHandle.AddToOperations({
                     type: "REMOVE",
                     targetNode: ContainerRef.current
@@ -70,6 +70,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
                 const newParagraph = document.createElement('p') as HTMLElement;
                 newParagraph.innerHTML = ExtraRealChild(children);
                 
+                // Move the p tag to the "outside", remove the one in the blockquote
                 daemonHandle.AddToBindOperations(QuoteSyntaxFiller.current, "remove", [
                     {
                         type: "REMOVE",

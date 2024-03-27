@@ -5,7 +5,8 @@ function AddSyntaxAttrTransformer(ast: object) {
     
     function Visitor(node: any, index: any, parent: any) {
         
-        const NodeProps = node.properties || (node.properties = {})
+        const NodeProps = node.properties || (node.properties = {});
+        // const NodeProps = node.properties && (node.properties = {})
         const tagName = node.tagName.toLowerCase();
         
         // special cases, when element is a part of a "composite" element
@@ -67,8 +68,6 @@ function AddSyntaxAttrTransformer(ast: object) {
                 NodeProps['data-md-container'] = "true";
                 break;
             case 'ul':
-            case 'ol':
-            case 'li':
                 NodeProps['data-md-syntax'] = "-";
                 NodeProps['data-md-list'] = "true";
                 NodeProps['data-md-container'] = 'true';

@@ -5,7 +5,7 @@ import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
 
-// Utils
+// helper
 import {TextNodeProcessor} from "./Helpers";
 // Editor Components
 import Paragraph from './sub_components/Paragraph';
@@ -143,21 +143,13 @@ export default function Editor(
     
     // Replacement logic for when user pressed enter key in the editor
     function EnterKeyHandler(): void {
-        const CurrentSelection = window.getSelection();
-        if (CurrentSelection === null) return;
+        
+        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        if (!CurrentSelection || !CurrentAnchorNode) return;
         
         const Range = CurrentSelection.getRangeAt(0);
         
-        let CurrentAnchorNode = window.getSelection()?.anchorNode;
-        if (!CurrentAnchorNode) return;
-        
-        let textContent: string | null = CurrentAnchorNode.textContent;
-        if (textContent === null) return;
-        
-        const RemainingText: string = textContent.substring(Range.startOffset, textContent.length);
-        const PrecedingText: string = textContent.substring(0, Range.startOffset);
-        
-        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode);
+        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
         
         let FollowingNodes: Node[] = [];
         // Check if caret at an empty line
@@ -290,6 +282,89 @@ export default function Editor(
         DaemonHandle.SyncNow();
     }
     
+    function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        if (!CurrentAnchorNode) return;
+        
+        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
+        // Run the normal key press
+        if (RemainingText !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode !== NearestContainer)) {
+            return;
+        }
+        
+        let nextSibling = NearestContainer?.nextSibling;
+        if (nextSibling?.textContent === '\n') {
+            nextSibling = nextSibling.nextSibling;
+        }
+        
+        // "Normal" joining lines
+        if (!nextSibling
+            || (nextSibling.nodeType !== Node.ELEMENT_NODE || !(nextSibling as HTMLElement)?.hasAttribute('data-md-container'))
+        ) {
+            return;
+        }
+        
+        // Dealing with container type of element
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        if (nextSibling.childNodes.length > 1)
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: (nextSibling as HTMLElement).firstElementChild!
+            });
+        
+        
+        if (nextSibling.childNodes.length < 1)
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: nextSibling
+            });
+        
+        DaemonHandle.SyncNow();
+    }
+    
+    function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        if (!CurrentAnchorNode) return;
+        
+        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
+        // Run the normal key press
+        if (PrecedingText !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode !== NearestContainer)) {
+            return;
+        }
+        
+        let PrvSibling = NearestContainer?.previousSibling;
+        if (PrvSibling?.textContent === '\n') {
+            PrvSibling = PrvSibling.previousSibling;
+        }
+        
+        if (!PrvSibling
+            || (PrvSibling.nodeType !== Node.ELEMENT_NODE || !(PrvSibling as HTMLElement)?.hasAttribute('data-md-container'))
+        ) {
+            return;
+        }
+        
+        // backspacing into a container type
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        if (PrvSibling.childNodes.length > 1)
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: (PrvSibling as HTMLElement).lastElementChild!
+            });
+        
+        
+        if (PrvSibling.childNodes.length < 1)
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: PrvSibling
+            });
+        
+        DaemonHandle.SyncNow();
+    }
+    
     function SetActiveSubComponent(DOMNode: HTMLElement) {
         ActiveSubComponent.current = DOMNode;
     }
@@ -368,13 +443,19 @@ export default function Editor(
         
     }, [EditorRef.current, document]);
     
-    // Hijack the enter key
+    // Override keys
     useLayoutEffect(() => {
         function EditorKeydown(ev: HTMLElementEventMap['keydown']) {
             if (ev.key === "Enter") {
                 ev.preventDefault();
                 ev.stopPropagation();
                 EnterKeyHandler();
+            }
+            if (ev.key === 'Delete') {
+                DelKeyHandler(ev);
+            }
+            if (ev.key === 'Backspace') {
+                BackSpaceKeyHandler(ev);
             }
         }
         
@@ -459,14 +540,11 @@ function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     return compFiber;
 }
 
-function FindNearestParagraph(node: Node, tagTest?: RegExp): HTMLElement | null {
-    
-    let tagNames = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|section)$/i;
-    if (tagTest) tagNames = tagTest;
+function FindNearestParagraph(node: Node, Element: HTMLElement): HTMLElement | null {
     
     let current: Node | null = node;
     while (current) {
-        if (current.nodeName && tagNames.test(current.nodeName)) {
+        if (current.parentNode && current.parentNode === Element) {
             return current as HTMLElement;
         }
         current = current.parentNode;
@@ -505,4 +583,28 @@ function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAncho
     currentSelection.removeAllRanges();
     currentSelection.addRange(Range);
     return;
+}
+
+function GetCaretContext() {
+    const CurrentSelection = window.getSelection();
+    
+    let RemainingText = '';
+    let PrecedingText = '';
+    let CurrentAnchorNode = undefined;
+    
+    if (CurrentSelection) {
+        const Range = CurrentSelection.getRangeAt(0);
+        
+        CurrentAnchorNode = window.getSelection()?.anchorNode;
+        
+        let textContent: string | null = CurrentAnchorNode!.textContent;
+        
+        if (textContent) {
+            RemainingText = textContent.substring(Range.startOffset, textContent.length);
+            PrecedingText = textContent.substring(0, Range.startOffset);
+        }
+    }
+    
+    return {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText};
+    
 }
