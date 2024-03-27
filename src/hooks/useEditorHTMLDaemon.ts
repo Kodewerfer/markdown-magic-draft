@@ -147,6 +147,9 @@ export default function useEditorHTMLDaemon(
         // make sure no records are left behind
         DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords())
         
+        // console.log("Add:",...DaemonState.AdditionalOperation)
+        // console.log("MQueue:",...DaemonState.MutationQueue)
+        
         if (!DaemonState.MutationQueue.length && !DaemonState.AdditionalOperation.length) {
             if (DaemonOptions.ShouldLog)
                 console.log("MutationQueue and AdditionalOperation empty, sync aborted.");
@@ -199,14 +202,15 @@ export default function useEditorHTMLDaemon(
                     
                     const callbackResult = DaemonOptions.TextNodeCallback(OldTextNode);
                     
-                    if (DaemonOptions.ShouldLog)
-                        console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
-                    
-                    if (!callbackResult) {
+                    if (!callbackResult || !callbackResult.length) {
+                        console.log("Text Handler: Result is empty");
                         if (OldTextNode.textContent !== '')
                             console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode);
                         continue;
                     }
+                    
+                    if (DaemonOptions.ShouldLog)
+                        console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
                     
                     /**
                      * The following code is to deal with the "scope" of the replacement,

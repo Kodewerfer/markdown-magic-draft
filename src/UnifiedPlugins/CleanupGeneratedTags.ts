@@ -7,10 +7,10 @@ function TagsCleanupTransformer(ast: object) {
     function Visitor(node: any, index: any, parent: any) {
         
         const NodeProps = node.properties || (node.properties = {});
-        // const NodeProps = node.properties && (node.properties = {})
         
         if (NodeProps['dataIsGenerated']) {
-            return remove(node);
+            remove(parent, node);
+            return;
         }
         
         return node;

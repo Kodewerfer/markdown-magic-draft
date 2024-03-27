@@ -2,10 +2,9 @@ import React, {useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {TextNodeProcessor} from "../Helpers";
 
-export default function Links({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
+export default function Links({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
-    parentSetActivation: (DOMNode: HTMLElement) => void;
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
@@ -30,8 +29,12 @@ export default function Links({children, tagName, parentSetActivation, daemonHan
                 daemonHandle.SyncNow();
             }
             setIsEditing(state);
-            if (LinkElementRef.current)
-                parentSetActivation(LinkElementRef.current);
+            
+            return {
+                "enter": (ev: Event) => {
+                    //TODO
+                }
+            }
         }
     }); // the Meta state, called by parent via dom fiber
     

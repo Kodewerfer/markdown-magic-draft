@@ -6,7 +6,7 @@ import "./Editor.css";
 import _ from 'lodash';
 
 // helper
-import {TextNodeProcessor} from "./Helpers";
+import {TextNodeProcessor, FindNearestParagraph, GetCaretContext} from "./Helpers";
 // Editor Components
 import Paragraph from './sub_components/Paragraph';
 import PlainSyntax from "./sub_components/PlainSyntax";
@@ -15,6 +15,12 @@ import {Blockquote, QuoteItem} from "./sub_components/Blockquote";
 
 type TEditorProps = {
     SourceData?: string | undefined
+};
+
+type TActivationReturn = {
+    'enter'?: (ev: Event) => void,
+    'del'?: (ev: Event) => void,
+    'backspace'?: (ev: Event) => void
 };
 
 export default function Editor(
@@ -31,8 +37,10 @@ export default function Editor(
     const EditorHTMLString = useRef('');
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
+    // The very first state of the component under caret, needs to be a function
     const ActiveComponentSwitchStack = useRef<((arg: boolean) => void)[]>([]);
-    const ActiveSubComponent = useRef<HTMLElement | null>(null);
+    // the return of the above function
+    const ActivationReturnRef = useRef<TActivationReturn | undefined>(undefined);
     const LastActivationCache = useRef<Node | null>(null);
     
     // Subsequence reload
@@ -40,6 +48,7 @@ export default function Editor(
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
         if (!bodyElement) return;
+        bodyElement.normalize();
         EditorHTMLString.current = String(bodyElement!.innerHTML);
         setEditorComponent(ConfigAndConvertToReact(EditorHTMLString.current));
     }
@@ -60,14 +69,12 @@ export default function Editor(
                         //Containers
                         //Simple syntax
                         return <PlainSyntax {...props}
-                                            parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
                                             daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
                     }
                     // Links
                     if (props['data-md-link']) {
                         return <Links {...props}
-                                      parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
                                       daemonHandle={DaemonHandle}
                                       tagName={tagName}/>;
                     }
@@ -141,9 +148,54 @@ export default function Editor(
         console.log(String(ConvertedMarkdown));
     }
     
-    // Replacement logic for when user pressed enter key in the editor
-    function EnterKeyHandler(): void {
+    // Editor level selection status monitor
+    const DebouncedSelectionMonitor = _.debounce(() => {
+        const selection: Selection | null = window.getSelection();
+        if (!selection) return;
+        // Must be an editor element
+        if (!EditorRef.current?.contains(selection?.anchorNode)) return;
+        // Must not contains multiple elements
+        if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
         
+        if (LastActivationCache.current === selection.anchorNode) return;
+        // refresh the cache
+        LastActivationCache.current = selection.anchorNode;
+        
+        // retrieve the component, set the editing state
+        const ActiveComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
+        
+        // FIXME: This is VERY VERY VERY HACKY
+        // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
+        // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
+        if (ActiveComponent) {
+            // Switch off the last
+            let LastestActive;
+            while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
+                LastestActive(false);
+                ActivationReturnRef.current = undefined;
+            }
+            // Switch on the current, add to cache
+            if (ActiveComponent.memoizedState && typeof ActiveComponent.memoizedState.memoizedState === "function") {
+                ActiveComponentSwitchStack.current.push(ActiveComponent.memoizedState.memoizedState);
+                ActivationReturnRef.current = ActiveComponent.memoizedState.memoizedState(true);
+            }
+        }
+        
+    }, 200);
+    
+    /**
+     * Following are the logics to handle key presses
+     * The idea is that these are the "generic" logic handling line breaking/joining, sometimes using only vanilla content editable logic.
+     * if sub-components need to have their own logic on these keys, they are injected via state function return and stored in "ActivationReturnRef.current"
+     * when no special logic is present, the "generic" logic would run.
+     */
+    function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.enter === 'function') {
+            return ActivationReturnRef.current?.enter(ev);
+        }
+        
+        // Normal logic
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentSelection || !CurrentAnchorNode) return;
         
@@ -151,7 +203,6 @@ export default function Editor(
         
         let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
         
-        let FollowingNodes: Node[] = [];
         // Check if caret at an empty line
         const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
         
@@ -159,14 +210,16 @@ export default function Editor(
         if (bEmptyLine && NearestContainer!.firstChild)
             CurrentAnchorNode = NearestContainer!.firstChild;
         
+        let CurrentElementNode: Node;
         // Check if it was a text node under P tag or under other tags such as strong
         if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer) {
             // When caret is in the text node of a, for example, strong tag within a p tag
-            FollowingNodes = GetNextSiblings(CurrentAnchorNode.parentNode);
-            CurrentAnchorNode = CurrentAnchorNode.parentNode;
+            CurrentElementNode = CurrentAnchorNode.parentNode;
         } else {
-            FollowingNodes = GetNextSiblings(CurrentAnchorNode)
+            CurrentElementNode = CurrentAnchorNode;
         }
+        
+        let FollowingNodes = GetNextSiblings(CurrentElementNode)
         
         let NewLine = document.createElement("p");  // The new line
         
@@ -189,7 +242,7 @@ export default function Editor(
         }
         
         // Breaking at the very beginning of the line
-        if ((!CurrentAnchorNode.previousSibling || ((CurrentAnchorNode.previousSibling as HTMLElement).contentEditable !== 'true') && !CurrentAnchorNode.previousSibling.previousSibling)
+        if ((!CurrentElementNode.previousSibling || ((CurrentElementNode.previousSibling as HTMLElement).contentEditable !== 'true') && !CurrentElementNode.previousSibling.previousSibling)
             && Range.startOffset === 0
         ) {
             console.log('Breaking - First element');
@@ -204,24 +257,12 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
-            if (CurrentAnchorNode === ActiveSubComponent.current) {
-                MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
-                return;
-            }
             DaemonHandle.SyncNow();
             return;
         }
         
         // Breaking anywhere in the middle of the line
-        if (RemainingText !== '' || FollowingNodes.length) {
-            
-            // "Sub elements", those that have their own editing rules
-            // Try to move the caret to the next elment
-            if (CurrentAnchorNode === ActiveSubComponent.current) {
-                MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
-                return;
-            }
-            
+        if (RemainingText !== '' || FollowingNodes.length > 1 || (FollowingNodes.length === 1 && FollowingNodes[0].textContent !== '\n')) {
             console.log("Breaking - Mid line");
             
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
@@ -231,7 +272,6 @@ export default function Editor(
             if (FollowingNodes.length) {
                 for (let Node of FollowingNodes) {
                     NewLine.appendChild(Node.cloneNode(true));
-                    
                     DaemonHandle.AddToOperations({
                         type: "REMOVE",
                         targetNode: Node,
@@ -274,99 +314,85 @@ export default function Editor(
             parentXP: "//body"
         });
         
-        if (CurrentAnchorNode === ActiveSubComponent.current) {
-            MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
-            return;
-        }
         DaemonHandle.SetCaretOverride("nextline");
         DaemonHandle.SyncNow();
     }
     
     function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
-        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
-        // Run the normal key press
-        if (RemainingText !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode !== NearestContainer)) {
-            return;
-        }
+        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        if (!NearestContainer) return;
         
-        let nextSibling = NearestContainer?.nextSibling;
-        if (nextSibling?.textContent === '\n') {
-            nextSibling = nextSibling.nextSibling;
-        }
+        // Run the normal key press on in-line editing
+        if (RemainingText.trim() !== '') return;
         
-        // "Normal" joining lines
-        if (!nextSibling
-            || (nextSibling.nodeType !== Node.ELEMENT_NODE || !(nextSibling as HTMLElement)?.hasAttribute('data-md-container'))
-        ) {
-            return;
-        }
+        let nextSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
+        if (!nextSibling) return; //No more lines following
         
-        // Dealing with container type of element
+        // deleting empty lines
+        if (nextSibling?.childNodes.length === 1 && nextSibling?.firstChild?.nodeName.toLowerCase() === 'br') return;
+        
+        // line joining
         ev.preventDefault();
         ev.stopPropagation();
         
-        if (nextSibling.childNodes.length > 1)
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.del === 'function') {
+            return ActivationReturnRef.current?.del(ev);
+        }
+        
+        // Dealing with container type of element
+        if (nextSibling.nodeType === Node.ELEMENT_NODE && (nextSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            if (nextSibling.childNodes.length > 1)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: (nextSibling as HTMLElement).firstElementChild!
+                });
+            
+            if (!nextSibling.firstElementChild)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: nextSibling
+                });
+            
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // self is empty line
+        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
-                targetNode: (nextSibling as HTMLElement).firstElementChild!
+                targetNode: NearestContainer
             });
+            DaemonHandle.SyncNow();
+            return;
+        }
         
+        // "Normal" joining lines
+        let CurrentLineClone = NearestContainer.cloneNode(true);
         
-        if (nextSibling.childNodes.length < 1)
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: nextSibling
-            });
+        nextSibling.childNodes.forEach((ChildNode) => {
+            CurrentLineClone.appendChild(ChildNode.cloneNode(true));
+        })
         
+        DaemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: NearestContainer,
+            newNode: CurrentLineClone.cloneNode(true)
+        });
+        
+        DaemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: nextSibling,
+        });
         DaemonHandle.SyncNow();
     }
     
     function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
-        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
-        if (!CurrentAnchorNode) return;
-        
-        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
-        // Run the normal key press
-        if (PrecedingText !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode !== NearestContainer)) {
-            return;
-        }
-        
-        let PrvSibling = NearestContainer?.previousSibling;
-        if (PrvSibling?.textContent === '\n') {
-            PrvSibling = PrvSibling.previousSibling;
-        }
-        
-        if (!PrvSibling
-            || (PrvSibling.nodeType !== Node.ELEMENT_NODE || !(PrvSibling as HTMLElement)?.hasAttribute('data-md-container'))
-        ) {
-            return;
-        }
-        
-        // backspacing into a container type
-        ev.preventDefault();
-        ev.stopPropagation();
-        
-        if (PrvSibling.childNodes.length > 1)
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: (PrvSibling as HTMLElement).lastElementChild!
-            });
-        
-        
-        if (PrvSibling.childNodes.length < 1)
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: PrvSibling
-            });
-        
-        DaemonHandle.SyncNow();
-    }
-    
-    function SetActiveSubComponent(DOMNode: HTMLElement) {
-        ActiveSubComponent.current = DOMNode;
     }
     
     // First time loading
@@ -376,7 +402,7 @@ export default function Editor(
             const convertedHTML: string = String(await MD2HTML(sourceMD));
             
             // Save a copy of HTML
-            const HTMLParser = new DOMParser()
+            const HTMLParser = new DOMParser();
             EditorSourceRef.current = HTMLParser.parseFromString(convertedHTML, "text/html");
             
             // save a text copy
@@ -398,40 +424,8 @@ export default function Editor(
     
     // Editor level selection status monitor
     useLayoutEffect(() => {
-        const debouncedSelectionMonitor = _.debounce(() => {
-            const selection: Selection | null = window.getSelection();
-            if (!selection) return;
-            // Must be an editor element
-            if (!EditorRef.current?.contains(selection?.anchorNode)) return;
-            // Must not contains multiple elements
-            if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
-            
-            if (LastActivationCache.current === selection.anchorNode) return;
-            // refresh the cache
-            LastActivationCache.current = selection.anchorNode;
-            
-            // retrieve the component, set the editing state
-            const ActiveComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
-            
-            // FIXME: This is VERY VERY VERY HACKY
-            // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
-            // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
-            if (ActiveComponent) {
-                // Switch off the last
-                let LastestActive;
-                while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
-                    LastestActive(false);
-                }
-                // Switch on the current, add to cache
-                if (ActiveComponent.memoizedState && typeof ActiveComponent.memoizedState.memoizedState === "function") {
-                    ActiveComponentSwitchStack.current.push(ActiveComponent.memoizedState.memoizedState);
-                    ActiveComponent.memoizedState.memoizedState(true);
-                }
-            }
-            
-        }, 200);
-        const OnSelectionChange = () => debouncedSelectionMonitor();
-        const OnSelectStart = () => debouncedSelectionMonitor();
+        const OnSelectionChange = () => DebouncedSelectionMonitor();
+        const OnSelectStart = () => DebouncedSelectionMonitor();
         
         document.addEventListener("selectstart", OnSelectStart);
         document.addEventListener("selectionchange", OnSelectionChange);
@@ -445,17 +439,21 @@ export default function Editor(
     
     // Override keys
     useLayoutEffect(() => {
+        
         function EditorKeydown(ev: HTMLElementEventMap['keydown']) {
             if (ev.key === "Enter") {
                 ev.preventDefault();
                 ev.stopPropagation();
-                EnterKeyHandler();
+                EnterKeyHandler(ev);
+                return;
             }
             if (ev.key === 'Delete') {
                 DelKeyHandler(ev);
+                return
             }
             if (ev.key === 'Backspace') {
                 BackSpaceKeyHandler(ev);
+                return;
             }
         }
         
@@ -540,18 +538,6 @@ function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     return compFiber;
 }
 
-function FindNearestParagraph(node: Node, Element: HTMLElement): HTMLElement | null {
-    
-    let current: Node | null = node;
-    while (current) {
-        if (current.parentNode && current.parentNode === Element) {
-            return current as HTMLElement;
-        }
-        current = current.parentNode;
-    }
-    return null;
-}
-
 function GetNextSiblings(node: Node): Node[] {
     let current: Node | null = node;
     const siblings: Node[] = [];
@@ -564,7 +550,7 @@ function GetNextSiblings(node: Node): Node[] {
         }
     }
     return siblings;
-};
+}
 
 function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAnchorNode: Node, NearestContainer: Node) {
     let NextNode = CurrentAnchorNode.nextSibling as Node;
@@ -585,26 +571,3 @@ function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAncho
     return;
 }
 
-function GetCaretContext() {
-    const CurrentSelection = window.getSelection();
-    
-    let RemainingText = '';
-    let PrecedingText = '';
-    let CurrentAnchorNode = undefined;
-    
-    if (CurrentSelection) {
-        const Range = CurrentSelection.getRangeAt(0);
-        
-        CurrentAnchorNode = window.getSelection()?.anchorNode;
-        
-        let textContent: string | null = CurrentAnchorNode!.textContent;
-        
-        if (textContent) {
-            RemainingText = textContent.substring(Range.startOffset, textContent.length);
-            PrecedingText = textContent.substring(0, Range.startOffset);
-        }
-    }
-    
-    return {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText};
-    
-}

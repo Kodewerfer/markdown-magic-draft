@@ -60,3 +60,56 @@ export function ExtraRealChild(children: React.ReactNode[] | React.ReactNode) {
     
     return ElementStrings.join('');
 }
+
+/**
+ * Get the Nearest "Paragraph" under the 'Element' arg, usually a p tag, but can also be ul/pre etc.
+ * @param node - the child node
+ * @param Element - the containers that contains the child node and the "Paragraph"
+ */
+export function FindNearestParagraph(node: Node, Element: HTMLElement): HTMLElement | null {
+    
+    let current: Node | null = node;
+    while (current) {
+        if (current.parentNode && current.parentNode === Element) {
+            return current as HTMLElement;
+        }
+        current = current.parentNode;
+    }
+    return null;
+}
+
+/**
+ * Retrieves the context of the caret within the current selection.
+ *
+ * @return {Object} - An object containing the current selection, the anchor node,
+ *                   the remaining text from the caret position to the end of the node,
+ *                   and the preceding text from the start of the node to the caret position.
+ */
+export function GetCaretContext(): {
+    RemainingText: string;
+    PrecedingText: string;
+    CurrentSelection: Selection | null;
+    CurrentAnchorNode: any
+} {
+    const CurrentSelection = window.getSelection();
+    
+    let RemainingText = '';
+    let PrecedingText = '';
+    let CurrentAnchorNode = undefined;
+    
+    if (CurrentSelection) {
+        const Range = CurrentSelection.getRangeAt(0);
+        
+        CurrentAnchorNode = window.getSelection()?.anchorNode;
+        
+        let textContent: string | null = CurrentAnchorNode!.textContent;
+        
+        if (textContent) {
+            RemainingText = textContent.substring(Range.startOffset, textContent.length);
+            PrecedingText = textContent.substring(0, Range.startOffset);
+        }
+    }
+    
+    return {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText};
+    
+}

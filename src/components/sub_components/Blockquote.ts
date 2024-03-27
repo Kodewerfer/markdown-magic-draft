@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {ExtraRealChild} from "../Helpers";
+import {ExtraRealChild, GetCaretContext} from "../Helpers";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -9,15 +9,15 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            // setIsEditing((prev) => {
-            //     return !prev;
-            // });
-            setIsEditing(state);
-        }
-    }); // the Meta state, called by parent via dom fiber
-    const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
+    // const [SetActivation] = useState<(state: boolean) => void>(() => {
+    //     return (state: boolean) => {
+    //         // setIsEditing((prev) => {
+    //         //     return !prev;
+    //         // });
+    //         setIsEditing(state);
+    //     }
+    // }); // the Meta state, called by parent via dom fiber
+    // const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const ContainerRef = useRef<HTMLElement | null>(null);
     
     // Delete the whole blockquote if there were no items left.
@@ -54,12 +54,23 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
             setIsEditing(state);
+            return {
+                "del": (ev: Event) => {
+                    DelKeyHandler(ev);
+                    //TODO
+                },
+            }
         }
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const MainElementRef = useRef<HTMLElement | null>(null);
     
     const QuoteSyntaxFiller = useRef<HTMLElement>();  //filler element
+    
+    function DelKeyHandler(ev: Event) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+    }
     
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {
