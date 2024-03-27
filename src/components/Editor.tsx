@@ -6,7 +6,7 @@ import "./Editor.css";
 import _ from 'lodash';
 
 // helper
-import {TextNodeProcessor} from "./Helpers";
+import {TextNodeProcessor, FindNearestParagraph, GetCaretContext} from "./Helpers";
 // Editor Components
 import Paragraph from './sub_components/Paragraph';
 import PlainSyntax from "./sub_components/PlainSyntax";
@@ -15,6 +15,12 @@ import {Blockquote, QuoteItem} from "./sub_components/Blockquote";
 
 type TEditorProps = {
     SourceData?: string | undefined
+};
+
+type TActivationReturn = {
+    'enter'?: (ev: Event) => void,
+    'del'?: (ev: Event) => void,
+    'backspace'?: (ev: Event) => void
 };
 
 export default function Editor(
@@ -31,8 +37,10 @@ export default function Editor(
     const EditorHTMLString = useRef('');
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
+    // The very first state of the component under caret, needs to be a function
     const ActiveComponentSwitchStack = useRef<((arg: boolean) => void)[]>([]);
-    const ActiveSubComponent = useRef<HTMLElement | null>(null);
+    // the return of the above function
+    const ActivationReturnRef = useRef<TActivationReturn | undefined>(undefined);
     const LastActivationCache = useRef<Node | null>(null);
     
     // Subsequence reload
@@ -60,14 +68,12 @@ export default function Editor(
                         //Containers
                         //Simple syntax
                         return <PlainSyntax {...props}
-                                            parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
                                             daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
                     }
                     // Links
                     if (props['data-md-link']) {
                         return <Links {...props}
-                                      parentSetActivation={SetActiveSubComponent} //mark the component as "sub element" for enter key logic
                                       daemonHandle={DaemonHandle}
                                       tagName={tagName}/>;
                     }
@@ -141,9 +147,55 @@ export default function Editor(
         console.log(String(ConvertedMarkdown));
     }
     
-    // Replacement logic for when user pressed enter key in the editor
-    function EnterKeyHandler(): void {
+    // Editor level selection status monitor
+    const DebouncedSelectionMonitor = _.debounce(() => {
+        const selection: Selection | null = window.getSelection();
+        if (!selection) return;
+        // Must be an editor element
+        if (!EditorRef.current?.contains(selection?.anchorNode)) return;
+        // Must not contains multiple elements
+        if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
         
+        if (LastActivationCache.current === selection.anchorNode) return;
+        // refresh the cache
+        LastActivationCache.current = selection.anchorNode;
+        
+        // retrieve the component, set the editing state
+        const ActiveComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
+        
+        // FIXME: This is VERY VERY VERY HACKY
+        // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
+        // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
+        if (ActiveComponent) {
+            // Switch off the last
+            let LastestActive;
+            while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
+                LastestActive(false);
+                ActivationReturnRef.current = undefined;
+            }
+            // Switch on the current, add to cache
+            if (ActiveComponent.memoizedState && typeof ActiveComponent.memoizedState.memoizedState === "function") {
+                ActiveComponentSwitchStack.current.push(ActiveComponent.memoizedState.memoizedState);
+                ActivationReturnRef.current = ActiveComponent.memoizedState.memoizedState(true);
+            }
+        }
+        
+    }, 200);
+    
+    /**
+     * Following are the logics to handle key presses
+     * The idea is that these are the "generic" logic handling line breaking/joining, sometimes using only vanilla content editable logic.
+     * if sub-components need to have their own logic on these keys, they are injected via state function return and stored in "ActivationReturnRef.current"
+     * when no special logic is present, the "generic" logic would run.
+     */
+    function EnterKeyHandler(ev: Event): void {
+        
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.enter === 'function') {
+            return ActivationReturnRef.current?.enter(ev);
+        }
+        
+        // Normal logic
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentSelection || !CurrentAnchorNode) return;
         
@@ -204,24 +256,12 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
-            if (CurrentAnchorNode === ActiveSubComponent.current) {
-                MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
-                return;
-            }
             DaemonHandle.SyncNow();
             return;
         }
         
         // Breaking anywhere in the middle of the line
         if (RemainingText !== '' || FollowingNodes.length) {
-            
-            // "Sub elements", those that have their own editing rules
-            // Try to move the caret to the next elment
-            if (CurrentAnchorNode === ActiveSubComponent.current) {
-                MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
-                return;
-            }
-            
             console.log("Breaking - Mid line");
             
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
@@ -274,15 +314,17 @@ export default function Editor(
             parentXP: "//body"
         });
         
-        if (CurrentAnchorNode === ActiveSubComponent.current) {
-            MoveCaretToNext(CurrentSelection, Range, CurrentAnchorNode, NearestContainer!);
-            return;
-        }
         DaemonHandle.SetCaretOverride("nextline");
         DaemonHandle.SyncNow();
     }
     
-    function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+    function DelKeyHandler(ev: Event) {
+        
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.del === 'function') {
+            return ActivationReturnRef.current?.del(ev);
+        }
+        
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
@@ -324,7 +366,13 @@ export default function Editor(
         DaemonHandle.SyncNow();
     }
     
-    function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
+    function BackSpaceKeyHandler(ev: Event) {
+        
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.backspace === 'function') {
+            return ActivationReturnRef.current?.backspace(ev);
+        }
+        
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
@@ -365,10 +413,6 @@ export default function Editor(
         DaemonHandle.SyncNow();
     }
     
-    function SetActiveSubComponent(DOMNode: HTMLElement) {
-        ActiveSubComponent.current = DOMNode;
-    }
-    
     // First time loading
     useEffect(() => {
         ;(async () => {
@@ -376,7 +420,7 @@ export default function Editor(
             const convertedHTML: string = String(await MD2HTML(sourceMD));
             
             // Save a copy of HTML
-            const HTMLParser = new DOMParser()
+            const HTMLParser = new DOMParser();
             EditorSourceRef.current = HTMLParser.parseFromString(convertedHTML, "text/html");
             
             // save a text copy
@@ -398,40 +442,8 @@ export default function Editor(
     
     // Editor level selection status monitor
     useLayoutEffect(() => {
-        const debouncedSelectionMonitor = _.debounce(() => {
-            const selection: Selection | null = window.getSelection();
-            if (!selection) return;
-            // Must be an editor element
-            if (!EditorRef.current?.contains(selection?.anchorNode)) return;
-            // Must not contains multiple elements
-            if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
-            
-            if (LastActivationCache.current === selection.anchorNode) return;
-            // refresh the cache
-            LastActivationCache.current = selection.anchorNode;
-            
-            // retrieve the component, set the editing state
-            const ActiveComponent: any = FindActiveEditorComponent(selection.anchorNode! as HTMLElement);
-            
-            // FIXME: This is VERY VERY VERY HACKY
-            // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
-            // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
-            if (ActiveComponent) {
-                // Switch off the last
-                let LastestActive;
-                while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
-                    LastestActive(false);
-                }
-                // Switch on the current, add to cache
-                if (ActiveComponent.memoizedState && typeof ActiveComponent.memoizedState.memoizedState === "function") {
-                    ActiveComponentSwitchStack.current.push(ActiveComponent.memoizedState.memoizedState);
-                    ActiveComponent.memoizedState.memoizedState(true);
-                }
-            }
-            
-        }, 200);
-        const OnSelectionChange = () => debouncedSelectionMonitor();
-        const OnSelectStart = () => debouncedSelectionMonitor();
+        const OnSelectionChange = () => DebouncedSelectionMonitor();
+        const OnSelectStart = () => DebouncedSelectionMonitor();
         
         document.addEventListener("selectstart", OnSelectStart);
         document.addEventListener("selectionchange", OnSelectionChange);
@@ -449,7 +461,7 @@ export default function Editor(
             if (ev.key === "Enter") {
                 ev.preventDefault();
                 ev.stopPropagation();
-                EnterKeyHandler();
+                EnterKeyHandler(ev);
             }
             if (ev.key === 'Delete') {
                 DelKeyHandler(ev);
@@ -540,18 +552,6 @@ function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     return compFiber;
 }
 
-function FindNearestParagraph(node: Node, Element: HTMLElement): HTMLElement | null {
-    
-    let current: Node | null = node;
-    while (current) {
-        if (current.parentNode && current.parentNode === Element) {
-            return current as HTMLElement;
-        }
-        current = current.parentNode;
-    }
-    return null;
-}
-
 function GetNextSiblings(node: Node): Node[] {
     let current: Node | null = node;
     const siblings: Node[] = [];
@@ -564,7 +564,7 @@ function GetNextSiblings(node: Node): Node[] {
         }
     }
     return siblings;
-};
+}
 
 function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAnchorNode: Node, NearestContainer: Node) {
     let NextNode = CurrentAnchorNode.nextSibling as Node;
@@ -585,26 +585,3 @@ function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAncho
     return;
 }
 
-function GetCaretContext() {
-    const CurrentSelection = window.getSelection();
-    
-    let RemainingText = '';
-    let PrecedingText = '';
-    let CurrentAnchorNode = undefined;
-    
-    if (CurrentSelection) {
-        const Range = CurrentSelection.getRangeAt(0);
-        
-        CurrentAnchorNode = window.getSelection()?.anchorNode;
-        
-        let textContent: string | null = CurrentAnchorNode!.textContent;
-        
-        if (textContent) {
-            RemainingText = textContent.substring(Range.startOffset, textContent.length);
-            PrecedingText = textContent.substring(0, Range.startOffset);
-        }
-    }
-    
-    return {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText};
-    
-}

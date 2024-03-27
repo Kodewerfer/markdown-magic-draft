@@ -9,15 +9,15 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            // setIsEditing((prev) => {
-            //     return !prev;
-            // });
-            setIsEditing(state);
-        }
-    }); // the Meta state, called by parent via dom fiber
-    const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
+    // const [SetActivation] = useState<(state: boolean) => void>(() => {
+    //     return (state: boolean) => {
+    //         // setIsEditing((prev) => {
+    //         //     return !prev;
+    //         // });
+    //         setIsEditing(state);
+    //     }
+    // }); // the Meta state, called by parent via dom fiber
+    // const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const ContainerRef = useRef<HTMLElement | null>(null);
     
     // Delete the whole blockquote if there were no items left.
@@ -54,6 +54,18 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
             setIsEditing(state);
+            return {
+                "enter": (ev: Event) => {
+                    ev.preventDefault();
+                    ev.stopImmediatePropagation();
+                    //TODO
+                },
+                "del": (ev: Event) => {
+                    ev.preventDefault();
+                    ev.stopImmediatePropagation();
+                    //TODO
+                },
+            }
         }
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
