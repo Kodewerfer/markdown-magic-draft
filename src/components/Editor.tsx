@@ -236,7 +236,7 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
-            DaemonHandle.SetCaretOverride('nextline');
+            DaemonHandle.SetFutureCaret('nextline');
             DaemonHandle.SyncNow();
             return;
         }
@@ -292,7 +292,7 @@ export default function Editor(
                 siblingNode: NearestContainer?.nextSibling,
                 parentXP: "//body"
             });
-            DaemonHandle.SetCaretOverride('nextline');
+            DaemonHandle.SetFutureCaret('nextline');
             DaemonHandle.SyncNow();
             
             return;
@@ -314,7 +314,7 @@ export default function Editor(
             parentXP: "//body"
         });
         
-        DaemonHandle.SetCaretOverride("nextline");
+        DaemonHandle.SetFutureCaret("nextline");
         DaemonHandle.SyncNow();
     }
     
@@ -328,16 +328,35 @@ export default function Editor(
         
         // Run the normal key press on in-line editing
         if (RemainingText.trim() !== '') return;
+        const Selection = window.getSelection();
+        if (Selection && !Selection.isCollapsed) return;
+        
+        // line joining
+        ev.preventDefault();
+        ev.stopPropagation();
         
         let nextSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
         if (!nextSibling) return; //No more lines following
         
         // deleting empty lines
-        if (nextSibling?.childNodes.length === 1 && nextSibling?.firstChild?.nodeName.toLowerCase() === 'br') return;
+        if (nextSibling?.childNodes.length === 1 && nextSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: nextSibling
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
         
-        // line joining
-        ev.preventDefault();
-        ev.stopPropagation();
+        // self is empty line
+        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: NearestContainer
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
         
         // Run the component spec handler if present
         if (typeof ActivationReturnRef.current?.del === 'function') {
@@ -362,37 +381,111 @@ export default function Editor(
             return;
         }
         
+        // "Normal" joining lines
+        let NewLine = NearestContainer.cloneNode(true);
+        
+        nextSibling.childNodes.forEach((ChildNode) => {
+            NewLine.appendChild(ChildNode.cloneNode(true));
+        })
+        
+        DaemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: nextSibling,
+        });
+        
+        DaemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: NearestContainer,
+            newNode: NewLine
+        });
+        
+        DaemonHandle.SyncNow();
+    }
+    
+    function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        // basically a reverse of the "delete", but with key differences on "normal join line"
+        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        if (!CurrentAnchorNode) return;
+        
+        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        if (!NearestContainer) return;
+        
+        // Run the normal key press on in-line editing
+        if (PrecedingText.trim() !== '') return;
+        const Selection = window.getSelection();
+        if (Selection && !Selection.isCollapsed) return;
+        
+        // line joining
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        let previousElementSibling = NearestContainer?.previousElementSibling; //nextsibling could be a "\n"
+        if (!previousElementSibling) return; //No more lines following
+        
+        // deleting empty lines
+        if (previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: previousElementSibling
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
         // self is empty line
         if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: NearestContainer
             });
+            DaemonHandle.SetFutureCaret("prevlinelast");
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.del === 'function') {
+            return ActivationReturnRef.current?.del(ev);
+        }
+        
+        // Dealing with container type of element
+        if (previousElementSibling.nodeType === Node.ELEMENT_NODE && (previousElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            if (previousElementSibling.childNodes.length > 1)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: (previousElementSibling as HTMLElement).lastElementChild!
+                });
+            
+            if (!previousElementSibling.firstElementChild)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: previousElementSibling
+                });
+            DaemonHandle.SetFutureCaret('zero');
             DaemonHandle.SyncNow();
             return;
         }
         
         // "Normal" joining lines
-        let CurrentLineClone = NearestContainer.cloneNode(true);
+        let NewLine = previousElementSibling.cloneNode(true);
         
-        nextSibling.childNodes.forEach((ChildNode) => {
-            CurrentLineClone.appendChild(ChildNode.cloneNode(true));
+        NearestContainer.childNodes.forEach((ChildNode) => {
+            NewLine.appendChild(ChildNode.cloneNode(true));
         })
         
         DaemonHandle.AddToOperations({
-            type: "REPLACE",
+            type: "REMOVE",
             targetNode: NearestContainer,
-            newNode: CurrentLineClone.cloneNode(true)
         });
         
         DaemonHandle.AddToOperations({
-            type: "REMOVE",
-            targetNode: nextSibling,
+            type: "REPLACE",
+            targetNode: previousElementSibling,
+            newNode: NewLine
         });
+        
+        MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
         DaemonHandle.SyncNow();
-    }
-    
-    function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
     }
     
     // First time loading
@@ -571,3 +664,40 @@ function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAncho
     return;
 }
 
+function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement: HTMLElement) {
+    if (!currentSelection) return;
+    let CurrentAnchor = currentSelection.anchorNode;
+    if (!CurrentAnchor) return;
+    
+    const NearestParagraph = FindNearestParagraph(CurrentAnchor, ContainerElement);
+    
+    let currentPrevSibling = NearestParagraph?.previousElementSibling;
+    while (currentPrevSibling) {
+        if (currentPrevSibling.childNodes.length)
+            break
+        
+        currentPrevSibling = currentPrevSibling.previousElementSibling;
+    }
+    let ValidLandingPoint;
+    for (let i = currentPrevSibling!.childNodes.length - 1; i >= 0; i--) {
+        let LastEOLElement = currentPrevSibling!.childNodes[i];
+        if (LastEOLElement.nodeType === Node.TEXT_NODE && LastEOLElement.parentNode && (LastEOLElement.parentNode as HTMLElement).contentEditable !== 'false') {
+            ValidLandingPoint = LastEOLElement;
+            break;
+        }
+        
+        if (LastEOLElement.nodeType === Node.ELEMENT_NODE && (LastEOLElement as HTMLElement).contentEditable !== 'false') {
+            ValidLandingPoint = LastEOLElement;
+            break;
+        }
+    }
+    if (!ValidLandingPoint || !ValidLandingPoint.textContent) return;
+    
+    const range = document.createRange();
+    range.setStart(ValidLandingPoint, ValidLandingPoint.textContent.length);
+    range.collapse(true);
+    
+    currentSelection.removeAllRanges();
+    currentSelection.addRange(range);
+    return;
+}

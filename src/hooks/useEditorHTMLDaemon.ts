@@ -50,7 +50,7 @@ type TDaemonState = {
     IgnoreMap: TIgnoreMap
     BindOperationMap: TElementOperation
     AdditionalOperation: TSyncOperation[]
-    CaretOverrideToken: 'nextline' | null // for now, enter key logic only, move the caret to the beginning of the next line if need be.
+    CaretOverrideToken: TCaretToken // for now, enter key logic only, move the caret to the beginning of the next line if need be.
     UndoStack: [Document] | null
     RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null
@@ -67,9 +67,11 @@ type THookOptions = {
     ParagraphTags: RegExp //
 }
 
+type TCaretToken = 'zero' | 'nextline' | 'prevlinelast' | null;
+
 export type TDaemonReturn = {
     SyncNow: () => void;
-    SetCaretOverride: (token: 'nextline' | null) => void;
+    SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
     AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
     AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
@@ -458,7 +460,7 @@ export default function useEditorHTMLDaemon(
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
         if (DaemonState.AdditionalOperation.length) {
             const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation);
-            OperationLogs.push(...syncOpsBuilt);
+            OperationLogs.unshift(...syncOpsBuilt);
         }
         return OperationLogs;
     }
@@ -791,7 +793,7 @@ export default function useEditorHTMLDaemon(
         return {CaretPosition, SelectionExtent, AnchorNodeType, AnchorNodeXPath,};
     }
     
-    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus, OverrideToken?: null | string) {
+    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
         
         const CurrentSelection = window.getSelection();
         if (!CurrentSelection) return;
@@ -810,12 +812,17 @@ export default function useEditorHTMLDaemon(
         let AnchorNode;
         let CharsToCaretPosition = SavedState.CaretPosition;
         const NodeOverflowBreakCharBreak = -5;
+        const NodeContextArray: Node[] = []; //last being the lastest line.
         
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
             
             if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
                 CharsToCaretPosition -= AnchorNode!.textContent.length;
+            }
+            
+            if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName.toLowerCase()) && AnchorNode.childNodes.length) {
+                NodeContextArray.push(AnchorNode);
             }
             
             // the anchor AnchorNode found.
@@ -854,23 +861,19 @@ export default function useEditorHTMLDaemon(
             if (StartingOffset < 0) StartingOffset = 0;
         }
         
-        // Overrides
-        if (OverrideToken) {
-            if (OverrideToken.toLowerCase() === 'nextline') {
-                StartingOffset = 0;
-                while (AnchorNode = Walker.nextNode()) {
-                    if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName) || AnchorNode.textContent === '\n')
-                        break;
-                }
-            }
-        }
-        
         // Type narrowing
         if (!AnchorNode) return;
         
+        ({
+            AnchorNode,
+            StartingOffset
+        } = HandleSelectionToken(DaemonState.CaretOverrideToken, Walker, NodeContextArray, AnchorNode, StartingOffset));
+        
+        // console.log(AnchorNode, "at", StartingOffset);
+        
         try {
-            RangeCached.setStart(AnchorNode, StartingOffset);
-            RangeCached.setEnd(AnchorNode, StartingOffset + SavedState.SelectionExtent);
+            RangeCached.setStart(AnchorNode!, StartingOffset);
+            RangeCached.setEnd(AnchorNode!, StartingOffset + SavedState.SelectionExtent);
             
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
@@ -880,6 +883,57 @@ export default function useEditorHTMLDaemon(
             console.warn("AnchorNode:", AnchorNode, "Starting offset:", StartingOffset);
             console.warn("Saved State:", SavedState);
         }
+        
+    }
+    
+    function HandleSelectionToken(OverrideToken: null | string, Walker: TreeWalker, NodeContextArray: Node[], CurrentAnchorNode: Node, CurrentStartingOffset: number) {
+        
+        if (!OverrideToken) return {AnchorNode: CurrentAnchorNode, StartingOffset: CurrentStartingOffset};
+        
+        let AnchorNode: Node | null = CurrentAnchorNode;
+        let StartingOffset = 0;
+        
+        const Token = OverrideToken.toLowerCase();
+        switch (Token) {
+            case 'zero':
+                StartingOffset = 0;
+                break;
+            case 'nextline':
+                while (AnchorNode = Walker.nextNode()) {
+                    if (AnchorNode.parentNode && AnchorNode.parentNode === WatchElementRef.current && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false')
+                        break;
+                }
+                break;
+            
+            case 'prevlinelast':
+                let lastParagraph = NodeContextArray?.[NodeContextArray.length - 2];
+                if (!lastParagraph) break;
+                
+                // Getting the last child that is valid
+                for (let i = lastParagraph.childNodes.length - 1; i >= 0; i--) {
+                    let childNode = lastParagraph.childNodes[i];
+                    
+                    if (childNode.nodeType === Node.TEXT_NODE && childNode.parentNode && (childNode.parentNode as HTMLElement).contentEditable !== 'false') {
+                        AnchorNode = childNode;
+                        break;
+                    }
+                    
+                    if (childNode.nodeType === Node.ELEMENT_NODE && (childNode as HTMLElement).contentEditable !== 'false') {
+                        AnchorNode = childNode;
+                        break;
+                    }
+                }
+                StartingOffset = AnchorNode?.textContent?.length ?? 0;
+                break;
+            
+        }
+        
+        if (!AnchorNode) {
+            AnchorNode = Walker.previousNode();
+            StartingOffset = 0;
+        }
+        
+        return {AnchorNode, StartingOffset};
     }
     
     const debounceSelectionStatus = _.debounce(() => {
@@ -916,7 +970,7 @@ export default function useEditorHTMLDaemon(
         
         if (DaemonState.SelectionStatusCache) {
             // consume the saved status
-            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache, DaemonState.CaretOverrideToken);
+            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
             DaemonState.SelectionStatusCache = null;
             DaemonState.CaretOverrideToken = null;
         }
@@ -1059,7 +1113,7 @@ export default function useEditorHTMLDaemon(
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        SetCaretOverride: (token: 'nextline' | null) => {
+        SetFutureCaret: (token: TCaretToken) => {
             DaemonState.CaretOverrideToken = token;
         },
         AddToIgnore: (Element: Node, Type: TDOMTrigger) => {
