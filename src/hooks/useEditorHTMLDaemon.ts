@@ -67,7 +67,7 @@ type THookOptions = {
     ParagraphTags: RegExp //
 }
 
-type TCaretToken = 'zero' | 'nextline' | 'prevlinelast' | null;
+type TCaretToken = 'zero' | 'nextline' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => void;
@@ -904,28 +904,6 @@ export default function useEditorHTMLDaemon(
                         break;
                 }
                 break;
-            
-            case 'prevlinelast':
-                let lastParagraph = NodeContextArray?.[NodeContextArray.length - 2];
-                if (!lastParagraph) break;
-                
-                // Getting the last child that is valid
-                for (let i = lastParagraph.childNodes.length - 1; i >= 0; i--) {
-                    let childNode = lastParagraph.childNodes[i];
-                    
-                    if (childNode.nodeType === Node.TEXT_NODE && childNode.parentNode && (childNode.parentNode as HTMLElement).contentEditable !== 'false') {
-                        AnchorNode = childNode;
-                        break;
-                    }
-                    
-                    if (childNode.nodeType === Node.ELEMENT_NODE && (childNode as HTMLElement).contentEditable !== 'false') {
-                        AnchorNode = childNode;
-                        break;
-                    }
-                }
-                StartingOffset = AnchorNode?.textContent?.length ?? 0;
-                break;
-            
         }
         
         if (!AnchorNode) {

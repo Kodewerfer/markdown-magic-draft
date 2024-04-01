@@ -8,7 +8,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
             // send whatever within the text node before re-rendering to the processor

@@ -438,7 +438,7 @@ export default function Editor(
                 type: "REMOVE",
                 targetNode: NearestContainer
             });
-            DaemonHandle.SetFutureCaret("prevlinelast");
+            MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
             DaemonHandle.SyncNow();
             return;
         }
