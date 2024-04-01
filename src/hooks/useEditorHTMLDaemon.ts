@@ -691,11 +691,16 @@ export default function useEditorHTMLDaemon(
         'Text': (NodeXpath: string, Text: string | null) => {
             
             if (!NodeXpath) {
-                throw "UpdateMirrorDocument.Text: Invalid Parameter";
+                console.warn("UpdateMirrorDocument.Text: Invalid Parameter");
+                return;
             }
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
-            if (!targetNode || targetNode.nodeType !== Node.TEXT_NODE) throw "UpdateMirrorDocument.Text: invalid target text node";
+            
+            if (!targetNode || targetNode.nodeType !== Node.TEXT_NODE) {
+                console.warn("UpdateMirrorDocument.Text: invalid target text node");
+                return
+            }
             
             if (!Text) Text = "";
             
@@ -703,11 +708,15 @@ export default function useEditorHTMLDaemon(
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
             if (!XPathParent || !XPathSelf) {
-                throw "UpdateMirrorDocument.Remove: Invalid Parameter";
+                console.warn("UpdateMirrorDocument.Remove: Invalid Parameter");
+                return;
             }
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
-            if (!parentNode) throw "UpdateMirrorDocument.Remove: No parentNode";
+            if (!parentNode) {
+                console.warn("UpdateMirrorDocument.Remove: No parentNode");
+                return;
+            }
             
             const regexp = /\/node\(\)\[\d+\]$/;
             if (regexp.test(XPathParent) && DaemonOptions.ShouldLog)
@@ -715,7 +724,10 @@ export default function useEditorHTMLDaemon(
             
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
-            if (!targetNode) throw "UpdateMirrorDocument.Remove: Cannot find targetNode";
+            if (!targetNode) {
+                console.warn("UpdateMirrorDocument.Remove: Cannot find targetNode");
+                return;
+            }
             
             if (regexp.test(XPathSelf) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node target:", targetNode);
@@ -726,7 +738,8 @@ export default function useEditorHTMLDaemon(
         'Add': (XPathParent: string, NewNode: Node | (() => Node), XPathSibling: string | null) => {
             
             if (!XPathParent || !NewNode) {
-                throw "UpdateMirrorDocument.Add: Invalid Parameter";
+                console.warn("UpdateMirrorDocument.Add: Invalid Parameter");
+                return;
             }
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
@@ -738,7 +751,10 @@ export default function useEditorHTMLDaemon(
             
             let targetNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
             
-            if (!targetNode) throw "UpdateMirrorDocument.Add: No targetNode";
+            if (!targetNode) {
+                console.warn("UpdateMirrorDocument.Add: No targetNode");
+                return;
+            }
             
             let SiblingNode = null
             if (XPathSibling) {
@@ -758,11 +774,15 @@ export default function useEditorHTMLDaemon(
         'Replace': (NodeXpath: string, NewNode: Node | (() => Node)) => {
             
             if (!NodeXpath || !NewNode) {
-                throw 'UpdateMirrorDocument.Replace Invalid Parameter';
+                console.warn('UpdateMirrorDocument.Replace Invalid Parameter');
+                return;
             }
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
-            if (!targetNode) return;
+            if (!targetNode) {
+                console.warn('UpdateMirrorDocument.Replace No TargetNode');
+                return;
+            }
             
             const ReplacementNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
             
