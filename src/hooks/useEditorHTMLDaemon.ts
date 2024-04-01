@@ -159,10 +159,10 @@ export default function useEditorHTMLDaemon(
             return;
         }
         
-        let onRollback: any;
+        let onRollbackReturn: any; // the cleanup function, if present
         // Rollback mask
         if (typeof DaemonOptions.OnRollback === 'function')
-            onRollback = DaemonOptions.OnRollback();
+            onRollbackReturn = DaemonOptions.OnRollback();
         
         toggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
@@ -170,8 +170,10 @@ export default function useEditorHTMLDaemon(
         // Rollback Changes
         let mutation: MutationRecord | void;
         let lastMutation: MutationRecord | null = null;
-        let OperationLogs: TSyncOperation[] = []
+        let OperationLogs: TSyncOperation[] = [];
+        let BindOperationLogs: TSyncOperation[] = [];
         
+        // THE MAIN LOGIC BLOCK
         while ((mutation = DaemonState.MutationQueue.pop())) {
             
             /**
@@ -356,11 +358,7 @@ export default function useEditorHTMLDaemon(
                     let removedNode = mutation.removedNodes[i] as HTMLElement;
                     
                     // Check if the element had bind operations
-                    const OperationItem = DaemonState.BindOperationMap.get(removedNode);
-                    if (OperationItem && (OperationItem.Trigger === 'remove' || OperationItem.Trigger === 'any')) {
-                        const AdditionalOperations = BuildOperations(OperationItem.Operations)
-                        OperationLogs.push(...AdditionalOperations);
-                    }
+                    HandleBindOperations(removedNode, 'remove', BindOperationLogs);
                     
                     // Check Ignore map
                     if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
@@ -391,11 +389,7 @@ export default function useEditorHTMLDaemon(
                     const addedNode = mutation.addedNodes[i] as HTMLElement;
                     
                     // Check if the element had bind operations
-                    const OperationItem = DaemonState.BindOperationMap.get(addedNode);
-                    if (OperationItem && (OperationItem.Trigger === 'add' || OperationItem.Trigger === 'any')) {
-                        const AdditionalOperations = BuildOperations(OperationItem.Operations);
-                        OperationLogs.push(...AdditionalOperations);
-                    }
+                    HandleBindOperations(addedNode, 'add', BindOperationLogs);
                     
                     // Check Ignore map
                     if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
@@ -423,7 +417,16 @@ export default function useEditorHTMLDaemon(
             lastMutation = mutation;
         }
         
-        // Append ops sent direcly from components
+        /**
+         * The order of execution for the operations is:
+         * 1. user initiated operations(on-page editing);
+         * 2. "bind" operations, eg: those that are triggered by removing a syntax span
+         * 3. "additional" operations, usually sent directly from a component
+         */
+        // Append Bind Ops
+        OperationLogs.unshift(...BindOperationLogs);
+        
+        // Append Ops sent directly from components
         const newOperations: TSyncOperation[] = AppendAdditionalOperations(OperationLogs);
         DaemonState.AdditionalOperation = []
         
@@ -436,10 +439,10 @@ export default function useEditorHTMLDaemon(
             toggleObserve(true);
             WatchElementRef.current!.contentEditable = 'true';
             
-            if (typeof onRollback === "function")
-                // Run the cleanup/revert function that is the return of the onRollback handler.
+            if (typeof onRollbackReturn === "function")
+                // Run the cleanup/revert function that is the return of the onRollbackReturn handler.
                 // right now it's just unmasking.
-                onRollback();
+                onRollbackReturn();
             
             RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
             return;
@@ -456,6 +459,16 @@ export default function useEditorHTMLDaemon(
         
         // Notify parent
         FinalizeChanges();
+    }
+    
+    const HandleBindOperations = (Node: HTMLElement | Node, BindTrigger: string, LogStack: TSyncOperation[]) => {
+        const OperationItem = DaemonState.BindOperationMap.get(Node);
+        
+        if (OperationItem && (OperationItem.Trigger === BindTrigger || OperationItem.Trigger === 'any')) {
+            const AdditionalOperations = BuildOperations(OperationItem.Operations);
+            LogStack.push(...AdditionalOperations);
+        }
+        
     }
     
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
