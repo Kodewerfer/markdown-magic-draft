@@ -16,7 +16,7 @@ export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre
 type TSyncOperation = {
     type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE',
     fromTextHandler?: boolean,  //indicate if it was a replacement node resulting from text node callback
-    newNode?: Node,
+    newNode?: Node | (() => Node),
     targetNode?: Node, //Alternative to XP
     targetNodeXP?: string,
     nodeText?: string | null,
@@ -723,7 +723,7 @@ export default function useEditorHTMLDaemon(
             
             parentNode.removeChild(targetNode);
         },
-        'Add': (XPathParent: string, NewNode: Node, XPathSibling: string | null) => {
+        'Add': (XPathParent: string, NewNode: Node | (() => Node), XPathSibling: string | null) => {
             
             if (!XPathParent || !NewNode) {
                 throw "UpdateMirrorDocument.Add: Invalid Parameter";
@@ -736,7 +736,8 @@ export default function useEditorHTMLDaemon(
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
             
-            const targetNode = NewNode;
+            let targetNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
+            
             if (!targetNode) throw "UpdateMirrorDocument.Add: No targetNode";
             
             let SiblingNode = null
@@ -754,16 +755,18 @@ export default function useEditorHTMLDaemon(
             
             parentNode.insertBefore(targetNode, SiblingNode);
         },
-        'Replace': (NodeXpath: string, Node: Node) => {
+        'Replace': (NodeXpath: string, NewNode: Node | (() => Node)) => {
             
-            if (!NodeXpath || !Node) {
+            if (!NodeXpath || !NewNode) {
                 throw 'UpdateMirrorDocument.Replace Invalid Parameter';
             }
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
             if (!targetNode) return;
             
-            (targetNode as HTMLElement).replaceWith(Node);
+            const ReplacementNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
+            
+            (targetNode as HTMLElement).replaceWith(ReplacementNode);
         },
     }
     

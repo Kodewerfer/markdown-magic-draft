@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {ExtraRealChild} from '../Helpers'
+import {ExtraRealChild, GetChildNodesAsHTMLString} from '../Helpers'
 
 export default function Paragraph({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -24,13 +24,15 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         if (isHeader && SyntaxElementRef.current) {
             daemonHandle.AddToIgnore(SyntaxElementRef.current, "any");
             if (MainElementRef.current) {
-                const ReplacementElement = document.createElement('p') as HTMLElement;
-                ReplacementElement.innerHTML = ExtraRealChild(children);
                 
                 daemonHandle.AddToBindOperations(SyntaxElementRef.current, "remove", {
                     type: "REPLACE",
                     targetNode: MainElementRef.current,
-                    newNode: ReplacementElement
+                    newNode: () => {
+                        const ReplacementElement = document.createElement('p') as HTMLElement;
+                        ReplacementElement.innerHTML = GetChildNodesAsHTMLString(MainElementRef.current?.childNodes);
+                        return ReplacementElement;
+                    }
                 });
             }
         }
