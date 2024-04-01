@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
-import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
+import useEditorHTMLDaemon, {ParagraphTest} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
@@ -212,7 +212,7 @@ export default function Editor(
         
         let CurrentElementNode: Node;
         // Check if it was a text node under P tag or under other tags such as strong
-        if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer) {
+        if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer && !ParagraphTest.test(CurrentAnchorNode.parentNode.nodeName)) {
             // When caret is in the text node of a, for example, strong tag within a p tag
             CurrentElementNode = CurrentAnchorNode.parentNode;
         } else {
@@ -268,6 +268,9 @@ export default function Editor(
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
             if (anchorNodeClone.textContent !== null) anchorNodeClone.textContent = RemainingText;
             NewLine.appendChild(anchorNodeClone);
+            
+            console.log(FollowingNodes)
+            console.log(NearestContainer);
             
             if (FollowingNodes.length) {
                 for (let Node of FollowingNodes) {

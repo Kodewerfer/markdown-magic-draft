@@ -11,6 +11,7 @@
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
+export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section)$/i;
 // Instructions for DOM manipulations on the mirror document
 type TSyncOperation = {
     type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE',
@@ -91,7 +92,7 @@ export default function useEditorHTMLDaemon(
         ShouldObserve: true,
         ShouldLog: true,
         IsEditable: true,
-        ParagraphTags: /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|ul|section)$/i,   // Determined whether to use "replacement" logic or just change the text node.
+        ParagraphTags: ParagraphTest,   // Determined whether to use "replacement" logic or just change the text node.
         ...Options
     };
     
