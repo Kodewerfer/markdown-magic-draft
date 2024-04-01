@@ -327,7 +327,7 @@ export default function Editor(
         if (!NearestContainer) return;
         
         // Run the normal key press on in-line editing
-        if (RemainingText.trim() !== '') return;
+        if (RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n')) return;
         const Selection = window.getSelection();
         if (Selection && !Selection.isCollapsed) return;
         
@@ -411,7 +411,7 @@ export default function Editor(
         if (!NearestContainer) return;
         
         // Run the normal key press on in-line editing
-        if (PrecedingText.trim() !== '') return;
+        if (PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n')) return;
         const Selection = window.getSelection();
         if (Selection && !Selection.isCollapsed) return;
         
