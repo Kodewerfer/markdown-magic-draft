@@ -10,20 +10,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
 }) {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
-            // send whatever within the text node before re-rendering to the processor
-            if (!state) {
-                if (WholeElementRef.current && WholeElementRef.current.firstChild) {
-                    const textNodeResult = TextNodeProcessor(WholeElementRef.current.firstChild);
-                    if (textNodeResult) {
-                        daemonHandle.AddToOperations({
-                            type: "REPLACE",
-                            targetNode: WholeElementRef.current,
-                            newNode: textNodeResult[0] //first result node only
-                        });
-                        daemonHandle.SyncNow();
-                    }
-                }
-            }
             if (state) {
                 daemonHandle.SyncNow();
             }
@@ -41,31 +27,56 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     
     const propSyntaxData: any = otherProps['data-md-syntax'];
     const propShouldWrap: any = otherProps['data-md-wrapped'];
-    // Show when actively editing
-    const [childrenWithSyntax] = useState<String>(() => {
-        
-        let result = String(children);
-        
-        if (propSyntaxData && !String(children).startsWith(propSyntaxData))
-            result = propSyntaxData + String(children);
-        
-        if (propShouldWrap === 'true' && !String(children).endsWith(propShouldWrap))
-            result += propSyntaxData;
-        
-        return result;
-    });
+    
+    const SyntaxElementRefFront = useRef<HTMLElement | null>(null);
+    const SyntaxElementRefRear = useRef<HTMLElement | null>(null);
+    
     // the element tag
     const WholeElementRef = useRef<HTMLElement | null>(null);
     
     useLayoutEffect(() => {
-        // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
-        if (WholeElementRef.current && WholeElementRef.current?.firstChild)
-            daemonHandle.AddToIgnore(WholeElementRef.current?.firstChild, "any");
+        
+        if (SyntaxElementRefFront.current) {
+            daemonHandle.AddToIgnore(SyntaxElementRefFront.current, "any");
+            daemonHandle.AddToBindOperations(SyntaxElementRefFront.current, "remove", {
+                type: "REPLACE",
+                targetNode: WholeElementRef.current!,
+                newNode: document.createTextNode(String(children))
+            });
+        }
+        if (SyntaxElementRefRear.current) {
+            daemonHandle.AddToIgnore(SyntaxElementRefRear.current, "any");
+            daemonHandle.AddToBindOperations(SyntaxElementRefRear.current, "remove", {
+                type: "REPLACE",
+                targetNode: WholeElementRef.current!,
+                newNode: document.createTextNode(String(children))
+            });
+        }
     });
     
     return React.createElement(tagName, {
         ...otherProps,
         ref: WholeElementRef,
-    }, isEditing ? childrenWithSyntax : children);
+    }, [
+        
+        React.createElement('span', {
+            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
+            key: 'SyntaxFront',
+            ref: SyntaxElementRefFront,
+            contentEditable: false,
+            className: ` ${isEditing ? '' : 'Hide-It'}`
+        }, propSyntaxData),
+        
+        ...(Array.isArray(children) ? children : [children]),
+        
+        propShouldWrap && React.createElement('span', {
+            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
+            key: 'SyntaxRear',
+            ref: SyntaxElementRefRear,
+            contentEditable: false,
+            className: ` ${isEditing ? '' : 'Hide-It'}`
+        }, propSyntaxData)
+    
+    ]);
     
 }
