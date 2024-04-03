@@ -11,11 +11,12 @@
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
+export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section)$/i;
 // Instructions for DOM manipulations on the mirror document
 type TSyncOperation = {
     type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE',
     fromTextHandler?: boolean,  //indicate if it was a replacement node resulting from text node callback
-    newNode?: Node,
+    newNode?: Node | (() => Node),
     targetNode?: Node, //Alternative to XP
     targetNodeXP?: string,
     nodeText?: string | null,
@@ -50,7 +51,7 @@ type TDaemonState = {
     IgnoreMap: TIgnoreMap
     BindOperationMap: TElementOperation
     AdditionalOperation: TSyncOperation[]
-    CaretOverrideToken: 'nextline' | null // for now, enter key logic only, move the caret to the beginning of the next line if need be.
+    CaretOverrideToken: TCaretToken // for now, enter key logic only, move the caret to the beginning of the next line if need be.
     UndoStack: [Document] | null
     RedoStack: [Document] | null
     SelectionStatusCache: TSelectionStatus | null
@@ -67,9 +68,11 @@ type THookOptions = {
     ParagraphTags: RegExp //
 }
 
+type TCaretToken = 'zero' | 'nextline' | null;
+
 export type TDaemonReturn = {
     SyncNow: () => void;
-    SetCaretOverride: (token: 'nextline' | null) => void;
+    SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
     AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
     AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
@@ -89,7 +92,7 @@ export default function useEditorHTMLDaemon(
         ShouldObserve: true,
         ShouldLog: true,
         IsEditable: true,
-        ParagraphTags: /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|ul|section)$/i,   // Determined whether to use "replacement" logic or just change the text node.
+        ParagraphTags: ParagraphTest,   // Determined whether to use "replacement" logic or just change the text node.
         ...Options
     };
     
@@ -147,16 +150,19 @@ export default function useEditorHTMLDaemon(
         // make sure no records are left behind
         DaemonState.MutationQueue.push(...DaemonState.Observer.takeRecords())
         
+        // console.log("Add:",...DaemonState.AdditionalOperation)
+        // console.log("MQueue:",...DaemonState.MutationQueue)
+        
         if (!DaemonState.MutationQueue.length && !DaemonState.AdditionalOperation.length) {
             if (DaemonOptions.ShouldLog)
                 console.log("MutationQueue and AdditionalOperation empty, sync aborted.");
             return;
         }
         
-        let onRollback: any;
+        let onRollbackReturn: any; // the cleanup function, if present
         // Rollback mask
         if (typeof DaemonOptions.OnRollback === 'function')
-            onRollback = DaemonOptions.OnRollback();
+            onRollbackReturn = DaemonOptions.OnRollback();
         
         toggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
@@ -164,8 +170,10 @@ export default function useEditorHTMLDaemon(
         // Rollback Changes
         let mutation: MutationRecord | void;
         let lastMutation: MutationRecord | null = null;
-        let OperationLogs: TSyncOperation[] = []
+        let OperationLogs: TSyncOperation[] = [];
+        let BindOperationLogs: TSyncOperation[] = [];
         
+        // THE MAIN LOGIC BLOCK
         while ((mutation = DaemonState.MutationQueue.pop())) {
             
             /**
@@ -199,14 +207,15 @@ export default function useEditorHTMLDaemon(
                     
                     const callbackResult = DaemonOptions.TextNodeCallback(OldTextNode);
                     
-                    if (DaemonOptions.ShouldLog)
-                        console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
-                    
-                    if (!callbackResult) {
+                    if (!callbackResult || !callbackResult.length) {
+                        console.log("Text Handler: Result is empty");
                         if (OldTextNode.textContent !== '')
                             console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode);
                         continue;
                     }
+                    
+                    if (DaemonOptions.ShouldLog)
+                        console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
                     
                     /**
                      * The following code is to deal with the "scope" of the replacement,
@@ -349,11 +358,7 @@ export default function useEditorHTMLDaemon(
                     let removedNode = mutation.removedNodes[i] as HTMLElement;
                     
                     // Check if the element had bind operations
-                    const OperationItem = DaemonState.BindOperationMap.get(removedNode);
-                    if (OperationItem && (OperationItem.Trigger === 'remove' || OperationItem.Trigger === 'any')) {
-                        const AdditionalOperations = BuildOperations(OperationItem.Operations)
-                        OperationLogs.push(...AdditionalOperations);
-                    }
+                    HandleBindOperations(removedNode, 'remove', BindOperationLogs);
                     
                     // Check Ignore map
                     if (DaemonState.IgnoreMap.get(removedNode) === 'remove' || DaemonState.IgnoreMap.get(removedNode) === 'any')
@@ -384,11 +389,7 @@ export default function useEditorHTMLDaemon(
                     const addedNode = mutation.addedNodes[i] as HTMLElement;
                     
                     // Check if the element had bind operations
-                    const OperationItem = DaemonState.BindOperationMap.get(addedNode);
-                    if (OperationItem && (OperationItem.Trigger === 'add' || OperationItem.Trigger === 'any')) {
-                        const AdditionalOperations = BuildOperations(OperationItem.Operations);
-                        OperationLogs.push(...AdditionalOperations);
-                    }
+                    HandleBindOperations(addedNode, 'add', BindOperationLogs);
                     
                     // Check Ignore map
                     if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
@@ -416,7 +417,16 @@ export default function useEditorHTMLDaemon(
             lastMutation = mutation;
         }
         
-        // Append ops sent direcly from components
+        /**
+         * The order of execution for the operations is:
+         * 1. user initiated operations(on-page editing);
+         * 2. "bind" operations, eg: those that are triggered by removing a syntax span
+         * 3. "additional" operations, usually sent directly from a component
+         */
+        // Append Bind Ops
+        OperationLogs.unshift(...BindOperationLogs);
+        
+        // Append Ops sent directly from components
         const newOperations: TSyncOperation[] = AppendAdditionalOperations(OperationLogs);
         DaemonState.AdditionalOperation = []
         
@@ -429,10 +439,10 @@ export default function useEditorHTMLDaemon(
             toggleObserve(true);
             WatchElementRef.current!.contentEditable = 'true';
             
-            if (typeof onRollback === "function")
-                // Run the cleanup/revert function that is the return of the onRollback handler.
+            if (typeof onRollbackReturn === "function")
+                // Run the cleanup/revert function that is the return of the onRollbackReturn handler.
                 // right now it's just unmasking.
-                onRollback();
+                onRollbackReturn();
             
             RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
             return;
@@ -451,10 +461,20 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
+    const HandleBindOperations = (Node: HTMLElement | Node, BindTrigger: string, LogStack: TSyncOperation[]) => {
+        const OperationItem = DaemonState.BindOperationMap.get(Node);
+        
+        if (OperationItem && (OperationItem.Trigger === BindTrigger || OperationItem.Trigger === 'any')) {
+            const AdditionalOperations = BuildOperations(OperationItem.Operations);
+            LogStack.push(...AdditionalOperations);
+        }
+        
+    }
+    
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
         if (DaemonState.AdditionalOperation.length) {
             const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation);
-            OperationLogs.push(...syncOpsBuilt);
+            OperationLogs.unshift(...syncOpsBuilt);
         }
         return OperationLogs;
     }
@@ -684,11 +704,16 @@ export default function useEditorHTMLDaemon(
         'Text': (NodeXpath: string, Text: string | null) => {
             
             if (!NodeXpath) {
-                throw "UpdateMirrorDocument.Text: Invalid Parameter";
+                console.warn("UpdateMirrorDocument.Text: Invalid Parameter");
+                return;
             }
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
-            if (!targetNode || targetNode.nodeType !== Node.TEXT_NODE) throw "UpdateMirrorDocument.Text: invalid target text node";
+            
+            if (!targetNode || targetNode.nodeType !== Node.TEXT_NODE) {
+                console.warn("UpdateMirrorDocument.Text: invalid target text node");
+                return
+            }
             
             if (!Text) Text = "";
             
@@ -696,11 +721,15 @@ export default function useEditorHTMLDaemon(
         },
         'Remove': (XPathParent: string, XPathSelf: string) => {
             if (!XPathParent || !XPathSelf) {
-                throw "UpdateMirrorDocument.Remove: Invalid Parameter";
+                console.warn("UpdateMirrorDocument.Remove: Invalid Parameter");
+                return;
             }
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
-            if (!parentNode) throw "UpdateMirrorDocument.Remove: No parentNode";
+            if (!parentNode) {
+                console.warn("UpdateMirrorDocument.Remove: No parentNode");
+                return;
+            }
             
             const regexp = /\/node\(\)\[\d+\]$/;
             if (regexp.test(XPathParent) && DaemonOptions.ShouldLog)
@@ -708,7 +737,10 @@ export default function useEditorHTMLDaemon(
             
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathSelf);
-            if (!targetNode) throw "UpdateMirrorDocument.Remove: Cannot find targetNode";
+            if (!targetNode) {
+                console.warn("UpdateMirrorDocument.Remove: Cannot find targetNode");
+                return;
+            }
             
             if (regexp.test(XPathSelf) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node target:", targetNode);
@@ -716,10 +748,11 @@ export default function useEditorHTMLDaemon(
             
             parentNode.removeChild(targetNode);
         },
-        'Add': (XPathParent: string, NewNode: Node, XPathSibling: string | null) => {
+        'Add': (XPathParent: string, NewNode: Node | (() => Node), XPathSibling: string | null) => {
             
             if (!XPathParent || !NewNode) {
-                throw "UpdateMirrorDocument.Add: Invalid Parameter";
+                console.warn("UpdateMirrorDocument.Add: Invalid Parameter");
+                return;
             }
             
             const parentNode = GetNodeFromXPath(MirrorDocumentRef.current!, XPathParent);
@@ -729,8 +762,12 @@ export default function useEditorHTMLDaemon(
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
             
-            const targetNode = NewNode;
-            if (!targetNode) throw "UpdateMirrorDocument.Add: No targetNode";
+            let targetNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
+            
+            if (!targetNode) {
+                console.warn("UpdateMirrorDocument.Add: No targetNode");
+                return;
+            }
             
             let SiblingNode = null
             if (XPathSibling) {
@@ -747,16 +784,22 @@ export default function useEditorHTMLDaemon(
             
             parentNode.insertBefore(targetNode, SiblingNode);
         },
-        'Replace': (NodeXpath: string, Node: Node) => {
+        'Replace': (NodeXpath: string, NewNode: Node | (() => Node)) => {
             
-            if (!NodeXpath || !Node) {
-                throw 'UpdateMirrorDocument.Replace Invalid Parameter';
+            if (!NodeXpath || !NewNode) {
+                console.warn('UpdateMirrorDocument.Replace Invalid Parameter');
+                return;
             }
             
             const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
-            if (!targetNode) return;
+            if (!targetNode) {
+                console.warn('UpdateMirrorDocument.Replace No TargetNode');
+                return;
+            }
             
-            (targetNode as HTMLElement).replaceWith(Node);
+            const ReplacementNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
+            
+            (targetNode as HTMLElement).replaceWith(ReplacementNode);
         },
     }
     
@@ -787,7 +830,7 @@ export default function useEditorHTMLDaemon(
         return {CaretPosition, SelectionExtent, AnchorNodeType, AnchorNodeXPath,};
     }
     
-    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus, OverrideToken?: null | string) {
+    function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
         
         const CurrentSelection = window.getSelection();
         if (!CurrentSelection) return;
@@ -806,12 +849,17 @@ export default function useEditorHTMLDaemon(
         let AnchorNode;
         let CharsToCaretPosition = SavedState.CaretPosition;
         const NodeOverflowBreakCharBreak = -5;
+        const NodeContextArray: Node[] = []; //last being the lastest line.
         
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
             
             if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
                 CharsToCaretPosition -= AnchorNode!.textContent.length;
+            }
+            
+            if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName.toLowerCase()) && AnchorNode.childNodes.length) {
+                NodeContextArray.push(AnchorNode);
             }
             
             // the anchor AnchorNode found.
@@ -850,23 +898,19 @@ export default function useEditorHTMLDaemon(
             if (StartingOffset < 0) StartingOffset = 0;
         }
         
-        // Overrides
-        if (OverrideToken) {
-            if (OverrideToken.toLowerCase() === 'nextline') {
-                StartingOffset = 0;
-                while (AnchorNode = Walker.nextNode()) {
-                    if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName) || AnchorNode.textContent === '\n')
-                        break;
-                }
-            }
-        }
-        
         // Type narrowing
         if (!AnchorNode) return;
         
+        ({
+            AnchorNode,
+            StartingOffset
+        } = HandleSelectionToken(DaemonState.CaretOverrideToken, Walker, NodeContextArray, AnchorNode, StartingOffset));
+        
+        // console.log(AnchorNode, "at", StartingOffset);
+        
         try {
-            RangeCached.setStart(AnchorNode, StartingOffset);
-            RangeCached.setEnd(AnchorNode, StartingOffset + SavedState.SelectionExtent);
+            RangeCached.setStart(AnchorNode!, StartingOffset);
+            RangeCached.setEnd(AnchorNode!, StartingOffset + SavedState.SelectionExtent);
             
             // Replace the current CurrentSelection.
             CurrentSelection.removeAllRanges();
@@ -876,6 +920,35 @@ export default function useEditorHTMLDaemon(
             console.warn("AnchorNode:", AnchorNode, "Starting offset:", StartingOffset);
             console.warn("Saved State:", SavedState);
         }
+        
+    }
+    
+    function HandleSelectionToken(OverrideToken: null | string, Walker: TreeWalker, NodeContextArray: Node[], CurrentAnchorNode: Node, CurrentStartingOffset: number) {
+        
+        if (!OverrideToken) return {AnchorNode: CurrentAnchorNode, StartingOffset: CurrentStartingOffset};
+        
+        let AnchorNode: Node | null = CurrentAnchorNode;
+        let StartingOffset = 0;
+        
+        const Token = OverrideToken.toLowerCase();
+        switch (Token) {
+            case 'zero':
+                StartingOffset = 0;
+                break;
+            case 'nextline':
+                while (AnchorNode = Walker.nextNode()) {
+                    if (AnchorNode.parentNode && AnchorNode.parentNode === WatchElementRef.current && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false')
+                        break;
+                }
+                break;
+        }
+        
+        if (!AnchorNode) {
+            AnchorNode = Walker.previousNode();
+            StartingOffset = 0;
+        }
+        
+        return {AnchorNode, StartingOffset};
     }
     
     const debounceSelectionStatus = _.debounce(() => {
@@ -912,7 +985,7 @@ export default function useEditorHTMLDaemon(
         
         if (DaemonState.SelectionStatusCache) {
             // consume the saved status
-            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache, DaemonState.CaretOverrideToken);
+            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
             DaemonState.SelectionStatusCache = null;
             DaemonState.CaretOverrideToken = null;
         }
@@ -1055,7 +1128,7 @@ export default function useEditorHTMLDaemon(
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        SetCaretOverride: (token: 'nextline' | null) => {
+        SetFutureCaret: (token: TCaretToken) => {
             DaemonState.CaretOverrideToken = token;
         },
         AddToIgnore: (Element: Node, Type: TDOMTrigger) => {

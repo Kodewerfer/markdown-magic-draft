@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, MD2HTML, MD2HTMLSync} from "../Utils/Conversion";
-import useEditorHTMLDaemon, {TDaemonReturn} from "../hooks/useEditorHTMLDaemon";
+import useEditorHTMLDaemon, {ParagraphTest} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 import _ from 'lodash';
@@ -48,6 +48,7 @@ export default function Editor(
         if (!EditorSourceRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
         if (!bodyElement) return;
+        bodyElement.normalize();
         EditorHTMLString.current = String(bodyElement!.innerHTML);
         setEditorComponent(ConfigAndConvertToReact(EditorHTMLString.current));
     }
@@ -188,8 +189,7 @@ export default function Editor(
      * if sub-components need to have their own logic on these keys, they are injected via state function return and stored in "ActivationReturnRef.current"
      * when no special logic is present, the "generic" logic would run.
      */
-    function EnterKeyHandler(ev: Event): void {
-        
+    function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
         // Run the component spec handler if present
         if (typeof ActivationReturnRef.current?.enter === 'function') {
             return ActivationReturnRef.current?.enter(ev);
@@ -203,7 +203,6 @@ export default function Editor(
         
         let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
         
-        let FollowingNodes: Node[] = [];
         // Check if caret at an empty line
         const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
         
@@ -211,14 +210,16 @@ export default function Editor(
         if (bEmptyLine && NearestContainer!.firstChild)
             CurrentAnchorNode = NearestContainer!.firstChild;
         
+        let CurrentElementNode: Node;
         // Check if it was a text node under P tag or under other tags such as strong
-        if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer) {
+        if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer && !ParagraphTest.test(CurrentAnchorNode.parentNode.nodeName)) {
             // When caret is in the text node of a, for example, strong tag within a p tag
-            FollowingNodes = GetNextSiblings(CurrentAnchorNode.parentNode);
-            CurrentAnchorNode = CurrentAnchorNode.parentNode;
+            CurrentElementNode = CurrentAnchorNode.parentNode;
         } else {
-            FollowingNodes = GetNextSiblings(CurrentAnchorNode)
+            CurrentElementNode = CurrentAnchorNode;
         }
+        
+        let FollowingNodes = GetNextSiblings(CurrentElementNode)
         
         let NewLine = document.createElement("p");  // The new line
         
@@ -235,13 +236,13 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
-            DaemonHandle.SetCaretOverride('nextline');
+            DaemonHandle.SetFutureCaret('nextline');
             DaemonHandle.SyncNow();
             return;
         }
         
         // Breaking at the very beginning of the line
-        if ((!CurrentAnchorNode.previousSibling || ((CurrentAnchorNode.previousSibling as HTMLElement).contentEditable !== 'true') && !CurrentAnchorNode.previousSibling.previousSibling)
+        if ((!CurrentElementNode.previousSibling || ((CurrentElementNode.previousSibling as HTMLElement).contentEditable !== 'true') && !CurrentElementNode.previousSibling.previousSibling)
             && Range.startOffset === 0
         ) {
             console.log('Breaking - First element');
@@ -261,17 +262,19 @@ export default function Editor(
         }
         
         // Breaking anywhere in the middle of the line
-        if (RemainingText !== '' || FollowingNodes.length) {
+        if (RemainingText !== '' || FollowingNodes.length > 1 || (FollowingNodes.length === 1 && FollowingNodes[0].textContent !== '\n')) {
             console.log("Breaking - Mid line");
             
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
             if (anchorNodeClone.textContent !== null) anchorNodeClone.textContent = RemainingText;
             NewLine.appendChild(anchorNodeClone);
             
+            console.log(FollowingNodes)
+            console.log(NearestContainer);
+            
             if (FollowingNodes.length) {
                 for (let Node of FollowingNodes) {
                     NewLine.appendChild(Node.cloneNode(true));
-                    
                     DaemonHandle.AddToOperations({
                         type: "REMOVE",
                         targetNode: Node,
@@ -292,7 +295,7 @@ export default function Editor(
                 siblingNode: NearestContainer?.nextSibling,
                 parentXP: "//body"
             });
-            DaemonHandle.SetCaretOverride('nextline');
+            DaemonHandle.SetFutureCaret('nextline');
             DaemonHandle.SyncNow();
             
             return;
@@ -314,102 +317,177 @@ export default function Editor(
             parentXP: "//body"
         });
         
-        DaemonHandle.SetCaretOverride("nextline");
+        DaemonHandle.SetFutureCaret("nextline");
         DaemonHandle.SyncNow();
     }
     
-    function DelKeyHandler(ev: Event) {
+    function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        
+        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        if (!CurrentAnchorNode) return;
+        
+        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        if (!NearestContainer) return;
+        
+        // Run the normal key press on in-line editing
+        if (RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n')) return;
+        const Selection = window.getSelection();
+        if (Selection && !Selection.isCollapsed) return;
+        
+        // line joining
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        let nextSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
+        if (!nextSibling) return; //No more lines following
+        
+        // deleting empty lines
+        if (nextSibling?.childNodes.length === 1 && nextSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: nextSibling
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // self is empty line
+        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: NearestContainer
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
         
         // Run the component spec handler if present
         if (typeof ActivationReturnRef.current?.del === 'function') {
             return ActivationReturnRef.current?.del(ev);
         }
         
-        let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
-        if (!CurrentAnchorNode) return;
-        
-        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
-        // Run the normal key press
-        if (RemainingText !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode !== NearestContainer)) {
+        // Dealing with container type of element
+        if (nextSibling.nodeType === Node.ELEMENT_NODE && (nextSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            if (nextSibling.childNodes.length > 1)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: (nextSibling as HTMLElement).firstElementChild!
+                });
+            
+            if (!nextSibling.firstElementChild)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: nextSibling
+                });
+            
+            DaemonHandle.SyncNow();
             return;
-        }
-        
-        let nextSibling = NearestContainer?.nextSibling;
-        if (nextSibling?.textContent === '\n') {
-            nextSibling = nextSibling.nextSibling;
         }
         
         // "Normal" joining lines
-        if (!nextSibling
-            || (nextSibling.nodeType !== Node.ELEMENT_NODE || !(nextSibling as HTMLElement)?.hasAttribute('data-md-container'))
-        ) {
-            return;
-        }
+        let NewLine = NearestContainer.cloneNode(true);
         
-        // Dealing with container type of element
-        ev.preventDefault();
-        ev.stopPropagation();
+        nextSibling.childNodes.forEach((ChildNode) => {
+            NewLine.appendChild(ChildNode.cloneNode(true));
+        })
         
-        if (nextSibling.childNodes.length > 1)
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: (nextSibling as HTMLElement).firstElementChild!
-            });
+        DaemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: nextSibling,
+        });
         
-        
-        if (nextSibling.childNodes.length < 1)
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: nextSibling
-            });
+        DaemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: NearestContainer,
+            newNode: NewLine
+        });
         
         DaemonHandle.SyncNow();
     }
     
-    function BackSpaceKeyHandler(ev: Event) {
-        
-        // Run the component spec handler if present
-        if (typeof ActivationReturnRef.current?.backspace === 'function') {
-            return ActivationReturnRef.current?.backspace(ev);
-        }
-        
+    function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        // basically a reverse of the "delete", but with key differences on "normal join line"
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
-        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
-        // Run the normal key press
-        if (PrecedingText !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode !== NearestContainer)) {
-            return;
-        }
+        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        if (!NearestContainer) return;
         
-        let PrvSibling = NearestContainer?.previousSibling;
-        if (PrvSibling?.textContent === '\n') {
-            PrvSibling = PrvSibling.previousSibling;
-        }
+        // Run the normal key press on in-line editing
+        if (PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n')) return;
+        const Selection = window.getSelection();
+        if (Selection && !Selection.isCollapsed) return;
         
-        if (!PrvSibling
-            || (PrvSibling.nodeType !== Node.ELEMENT_NODE || !(PrvSibling as HTMLElement)?.hasAttribute('data-md-container'))
-        ) {
-            return;
-        }
-        
-        // backspacing into a container type
+        // line joining
         ev.preventDefault();
         ev.stopPropagation();
         
-        if (PrvSibling.childNodes.length > 1)
+        let previousElementSibling = NearestContainer?.previousElementSibling; //nextsibling could be a "\n"
+        if (!previousElementSibling) return; //No more lines following
+        
+        // deleting empty lines
+        if (previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
-                targetNode: (PrvSibling as HTMLElement).lastElementChild!
+                targetNode: previousElementSibling
             });
+            DaemonHandle.SyncNow();
+            return;
+        }
         
-        
-        if (PrvSibling.childNodes.length < 1)
+        // self is empty line
+        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
-                targetNode: PrvSibling
+                targetNode: NearestContainer
             });
+            MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
+            DaemonHandle.SyncNow();
+            return;
+        }
         
+        // Run the component spec handler if present
+        if (typeof ActivationReturnRef.current?.del === 'function') {
+            return ActivationReturnRef.current?.del(ev);
+        }
+        
+        // Dealing with container type of element
+        if (previousElementSibling.nodeType === Node.ELEMENT_NODE && (previousElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            if (previousElementSibling.childNodes.length > 1)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: (previousElementSibling as HTMLElement).lastElementChild!
+                });
+            
+            if (!previousElementSibling.firstElementChild)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: previousElementSibling
+                });
+            DaemonHandle.SetFutureCaret('zero');
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // "Normal" joining lines
+        let NewLine = previousElementSibling.cloneNode(true);
+        
+        NearestContainer.childNodes.forEach((ChildNode) => {
+            NewLine.appendChild(ChildNode.cloneNode(true));
+        })
+        
+        DaemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: NearestContainer,
+        });
+        
+        DaemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: previousElementSibling,
+            newNode: NewLine
+        });
+        
+        MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
         DaemonHandle.SyncNow();
     }
     
@@ -457,17 +535,21 @@ export default function Editor(
     
     // Override keys
     useLayoutEffect(() => {
+        
         function EditorKeydown(ev: HTMLElementEventMap['keydown']) {
             if (ev.key === "Enter") {
                 ev.preventDefault();
                 ev.stopPropagation();
                 EnterKeyHandler(ev);
+                return;
             }
             if (ev.key === 'Delete') {
                 DelKeyHandler(ev);
+                return
             }
             if (ev.key === 'Backspace') {
                 BackSpaceKeyHandler(ev);
+                return;
             }
         }
         
@@ -585,3 +667,40 @@ function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAncho
     return;
 }
 
+function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement: HTMLElement) {
+    if (!currentSelection) return;
+    let CurrentAnchor = currentSelection.anchorNode;
+    if (!CurrentAnchor) return;
+    
+    const NearestParagraph = FindNearestParagraph(CurrentAnchor, ContainerElement);
+    
+    let currentPrevSibling = NearestParagraph?.previousElementSibling;
+    while (currentPrevSibling) {
+        if (currentPrevSibling.childNodes.length)
+            break
+        
+        currentPrevSibling = currentPrevSibling.previousElementSibling;
+    }
+    let ValidLandingPoint;
+    for (let i = currentPrevSibling!.childNodes.length - 1; i >= 0; i--) {
+        let LastEOLElement = currentPrevSibling!.childNodes[i];
+        if (LastEOLElement.nodeType === Node.TEXT_NODE && LastEOLElement.parentNode && (LastEOLElement.parentNode as HTMLElement).contentEditable !== 'false') {
+            ValidLandingPoint = LastEOLElement;
+            break;
+        }
+        
+        if (LastEOLElement.nodeType === Node.ELEMENT_NODE && (LastEOLElement as HTMLElement).contentEditable !== 'false') {
+            ValidLandingPoint = LastEOLElement;
+            break;
+        }
+    }
+    if (!ValidLandingPoint || !ValidLandingPoint.textContent) return;
+    
+    const range = document.createRange();
+    range.setStart(ValidLandingPoint, ValidLandingPoint.textContent.length);
+    range.collapse(true);
+    
+    currentSelection.removeAllRanges();
+    currentSelection.addRange(range);
+    return;
+}

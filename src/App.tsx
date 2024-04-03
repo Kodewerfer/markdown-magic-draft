@@ -6,25 +6,34 @@ import Editor from "./components/Editor";
 const MarkdownFakeDate = `
 # Title!
 
+Normal text test one
+
+Normal text test two
+
+Normal text test three
+
+:br
+
 Hi! I'm ~~your~~ Markdown file in Editor**.
 
-**custom** link **syntax**: :LinkTo[CCC] AHHHHHHHHH
+**custom** link **syntax**
+
+Normal text test
 
 :br
 
-## Test with composite :LinkTo[AAA, A1A]{aaa}
-
-:br
-
-Test with no sibling
+## Test with h2 title
 
 :br
 
 > back quote test
 
+
+Normal text testNormal text testNormal text testNormal text test
+
 :br
 
-[Link test](google.com)
+[Link test](google.com) normal text
 
 :br
 
@@ -32,6 +41,7 @@ Test with no sibling
 * list2
 * list3
 
+normal textnormal textnormal text
 :br
 
 * [x] List with items
@@ -42,6 +52,10 @@ Test with no sibling
 var s = "JavaScript syntax highlighting";
 alert(s);
 \`\`\`
+
+Special links:
+
+:LinkTo[AAA, A1A]{aaa}
 
 `
 

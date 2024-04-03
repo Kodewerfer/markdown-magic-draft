@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {ExtraRealChild} from "../Helpers";
+import {ExtraRealChild, GetCaretContext} from "../Helpers";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -55,14 +55,8 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         return (state: boolean) => {
             setIsEditing(state);
             return {
-                "enter": (ev: Event) => {
-                    ev.preventDefault();
-                    ev.stopImmediatePropagation();
-                    //TODO
-                },
                 "del": (ev: Event) => {
-                    ev.preventDefault();
-                    ev.stopImmediatePropagation();
+                    DelKeyHandler(ev);
                     //TODO
                 },
             }
@@ -72,6 +66,11 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     const MainElementRef = useRef<HTMLElement | null>(null);
     
     const QuoteSyntaxFiller = useRef<HTMLElement>();  //filler element
+    
+    function DelKeyHandler(ev: Event) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+    }
     
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {

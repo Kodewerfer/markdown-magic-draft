@@ -7,7 +7,11 @@ import {MD2HTMLSync} from "../Utils/Conversion";
  * Used in the editor as well as plainSyntax component.
  * @param textNode - the node to be processed
  */
-export function TextNodeProcessor(textNode: Node) {
+export function TextNodeProcessor(textNode: Node | string) {
+    
+    if (typeof textNode === 'string')
+        textNode = document.createTextNode(textNode);
+    
     if (textNode.textContent === null) {
         console.warn(textNode, " Not a text node.");
         return
@@ -59,6 +63,56 @@ export function ExtraRealChild(children: React.ReactNode[] | React.ReactNode) {
         renderToString(element));
     
     return ElementStrings.join('');
+}
+
+/**
+ * Retrieves the HTML string representation of child nodes.
+ *
+ * @param {NodeListOf<ChildNode> | undefined} ChildNodes - The child nodes to be converted to HTML string.
+ * @returns {string} - The HTML string representation of the child nodes.
+ */
+export function GetChildNodesAsHTMLString(ChildNodes: NodeListOf<ChildNode> | undefined): string {
+    let htmlString = '';
+    
+    if (!ChildNodes)
+        return htmlString;
+    
+    ChildNodes.forEach((node: ChildNode) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            let element = node as HTMLElement;
+            if (!element.hasAttribute('data-is-generated'))
+                htmlString += element.outerHTML;
+        } else if (node.nodeType === Node.TEXT_NODE) {
+            htmlString += node.textContent;
+        }
+    });
+    
+    return htmlString;
+}
+
+/**
+ * Returns the concatenated text content of the child nodes.
+ *
+ * @param {NodeListOf<ChildNode> | undefined} ChildNodes - The child nodes to extract the text content from.
+ * @returns {string} The concatenated text content.
+ */
+export function GetChildNodesTextContent(ChildNodes: NodeListOf<ChildNode> | undefined): string {
+    let textContent = '';
+    
+    if (!ChildNodes)
+        return textContent;
+    
+    ChildNodes.forEach((node: ChildNode) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            let element = node as HTMLElement;
+            if (!element.hasAttribute('data-is-generated'))
+                textContent += element.textContent;
+        } else if (node.nodeType === Node.TEXT_NODE) {
+            textContent += node.textContent;
+        }
+    });
+    
+    return textContent;
 }
 
 /**
