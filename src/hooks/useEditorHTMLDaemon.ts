@@ -217,21 +217,13 @@ export default function useEditorHTMLDaemon(
                     if (DaemonOptions.ShouldLog)
                         console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
                     
-                    /**
-                     * The following code is to deal with the "scope" of the replacement,
-                     * when user make an edit on page, they can only operate on the text node, which may be a part of a Strong tag,
-                     * so when the result from that text node comes back, and it is not just a simple text editing,
-                     * it only makes sense to replace the whole Strong tag, therefore Parent node should be Parent of Parent.
-                     * but the text node may be directly under a P tag, in that case, add handler result in the p tag, delete only the text node
-                     * unless the result contains at least one paragraph leve tag(h1/div etc).
-                     */
-                    
+                    // The scope of operation
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
                     const ParentParentXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
                     
                     // Determined if parent of the text is paragraph level (p/div etc.) then choose candidate, !! may be overwritten later.
                     const ParentTagsTest = DaemonOptions.ParagraphTags
-                    let LogParentXP = ParentTagsTest.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
+                    let LogParentXP = ParentXPath;
                     
                     let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
                     let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
@@ -239,11 +231,8 @@ export default function useEditorHTMLDaemon(
                     /**
                      *  Result in only one text node
                      */
-                    if (LogParentXP === ParentXPath && callbackResult.length === 1 && callbackResult[0].nodeType === Node.TEXT_NODE && callbackResult[0].textContent !== null) {
+                    if (callbackResult.length === 1 && callbackResult[0].nodeType === Node.TEXT_NODE && callbackResult[0].textContent !== null) {
                         const RestoredText = whiteSpaceStart[0] + callbackResult[0].textContent.trim() + whiteSpaceEnd[0];
-                        
-                        if (DaemonOptions.ShouldLog)
-                            console.log("Case 1:Text Handler results in one text node");
                         
                         OperationLogs.push({
                             type: "TEXT",
@@ -262,16 +251,16 @@ export default function useEditorHTMLDaemon(
                      *  Result in multiple nodes
                      *  or only one node but no longer a text node.
                      */
-                    if (DaemonOptions.ShouldLog)
-                        console.log("Case 2:Text Handler multi returns / Changed Type");
-                    
                     let LogNodeXP = GetXPathNthChild(OldTextNode);
                     let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
+                    // at this point, the text node can either be under a sub-level element(strong,del etc) or a paragraph-level tag
+                    // if it was the former case, override; otherwise, leave the nodes where they're (unless they themselves have a paragraph-level tag)
+                    LogParentXP = DaemonOptions.ParagraphTags.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
                     
                     // Add the new node/nodes in a doc frag.It's "toReversed()", because the later operation uses pop()
                     // Also check if contains any paragraph level tags.
                     const NewFragment: DocumentFragment = document.createDocumentFragment();
-                    let shouldOverrideParent: boolean = false; //flag
+                    let shouldOverrideParent: boolean = false; //flag, true if resulting nodes have at least one paragraph-level tag
                     callbackResult.toReversed().forEach((node, index, array) => {
                         // Check to set the flag
                         if (node.nodeType === Node.ELEMENT_NODE) {
