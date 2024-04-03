@@ -91,6 +91,31 @@ export function GetChildNodesAsHTMLString(ChildNodes: NodeListOf<ChildNode> | un
 }
 
 /**
+ * Returns the concatenated text content of the child nodes.
+ *
+ * @param {NodeListOf<ChildNode> | undefined} ChildNodes - The child nodes to extract the text content from.
+ * @returns {string} The concatenated text content.
+ */
+export function GetChildNodesTextContent(ChildNodes: NodeListOf<ChildNode> | undefined): string {
+    let textContent = '';
+    
+    if (!ChildNodes)
+        return textContent;
+    
+    ChildNodes.forEach((node: ChildNode) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            let element = node as HTMLElement;
+            if (!element.hasAttribute('data-is-generated'))
+                textContent += element.textContent;
+        } else if (node.nodeType === Node.TEXT_NODE) {
+            textContent += node.textContent;
+        }
+    });
+    
+    return textContent;
+}
+
+/**
  * Get the Nearest "Paragraph" under the 'Element' arg, usually a p tag, but can also be ul/pre etc.
  * @param node - the child node
  * @param Element - the containers that contains the child node and the "Paragraph"
