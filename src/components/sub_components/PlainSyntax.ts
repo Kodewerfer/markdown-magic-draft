@@ -1,6 +1,6 @@
 import React, {useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {TextNodeProcessor} from '../Helpers'
+import {GetChildNodesTextContent} from '../Helpers'
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -10,8 +10,20 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
 }) {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
+            if (!state) {
+                ElementOBRef.current?.takeRecords();
+                ElementOBRef.current?.disconnect();
+                ElementOBRef.current = null;
+            }
             if (state) {
                 daemonHandle.SyncNow();
+                
+                if (typeof MutationObserver) {
+                    ElementOBRef.current = new MutationObserver(ObserverHandler);
+                    WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
+                        childList: true
+                    });
+                }
             }
             setIsEditing(state);
             
@@ -34,31 +46,40 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     // the element tag
     const WholeElementRef = useRef<HTMLElement | null>(null);
     
+    const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    function ObserverHandler(mutationList: MutationRecord[]) {
+        mutationList.forEach((Record) => {
+            
+            if (!Record.removedNodes.length) return;
+            
+            Record.removedNodes.forEach((Node) => {
+                if (Node === SyntaxElementRefFront.current || Node === SyntaxElementRefRear.current) {
+                    
+                    daemonHandle.AddToOperations({
+                        type: "REPLACE",
+                        targetNode: WholeElementRef.current!,
+                        newNode: document.createTextNode(GetChildNodesTextContent(WholeElementRef.current?.childNodes))
+                    });
+                    daemonHandle.SyncNow();
+                }
+            })
+        })
+    }
+    
     useLayoutEffect(() => {
-        
-        if (SyntaxElementRefFront.current) {
+        if (SyntaxElementRefFront.current)
             daemonHandle.AddToIgnore(SyntaxElementRefFront.current, "any");
-            daemonHandle.AddToBindOperations(SyntaxElementRefFront.current, "remove", {
-                type: "REPLACE",
-                targetNode: WholeElementRef.current!,
-                newNode: document.createTextNode(String(children))
-            });
-        }
-        if (SyntaxElementRefRear.current) {
+        
+        if (SyntaxElementRefRear.current)
             daemonHandle.AddToIgnore(SyntaxElementRefRear.current, "any");
-            daemonHandle.AddToBindOperations(SyntaxElementRefRear.current, "remove", {
-                type: "REPLACE",
-                targetNode: WholeElementRef.current!,
-                newNode: document.createTextNode(String(children))
-            });
-        }
+        
     });
     
     return React.createElement(tagName, {
         ...otherProps,
         ref: WholeElementRef,
     }, [
-        
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxFront',
@@ -76,7 +97,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             contentEditable: false,
             className: ` ${isEditing ? '' : 'Hide-It'}`
         }, propSyntaxData)
-    
     ]);
     
 }
