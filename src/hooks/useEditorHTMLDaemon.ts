@@ -74,7 +74,7 @@ export type TDaemonReturn = {
     SyncNow: () => void;
     SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
-    AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void;
+    AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void; //DEPRECATED
     AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
 }
 
@@ -413,7 +413,7 @@ export default function useEditorHTMLDaemon(
          * 3. "additional" operations, usually sent directly from a component
          */
         // Append Bind Ops
-        OperationLogs.unshift(...BindOperationLogs);
+        OperationLogs.unshift(...BindOperationLogs); //DEPRECATED
         
         // Append Ops sent directly from components
         const newOperations: TSyncOperation[] = AppendAdditionalOperations(OperationLogs);
@@ -450,6 +450,7 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
+    //DEPRECATED
     const HandleBindOperations = (Node: HTMLElement | Node, BindTrigger: string, LogStack: TSyncOperation[]) => {
         const OperationItem = DaemonState.BindOperationMap.get(Node);
         
@@ -1124,6 +1125,7 @@ export default function useEditorHTMLDaemon(
             DaemonState.IgnoreMap.set(Element, Type);
         },
         AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
+            //TODO: DEPRECATED
             DaemonState.BindOperationMap.set(Element, {
                 Trigger: Trigger,
                 Operations: Operation

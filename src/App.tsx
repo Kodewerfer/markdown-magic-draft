@@ -26,7 +26,7 @@ Normal text test
 
 :br
 
-> back quote test
+> back quote test ~~del~~
 
 
 Normal text testNormal text testNormal text testNormal text test

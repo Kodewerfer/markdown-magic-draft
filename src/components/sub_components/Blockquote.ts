@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {ExtraRealChild, GetCaretContext} from "../Helpers";
+import {ExtraRealChild, GetCaretContext, GetChildNodesAsHTMLString, GetChildNodesTextContent} from "../Helpers";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -9,15 +9,6 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    // const [SetActivation] = useState<(state: boolean) => void>(() => {
-    //     return (state: boolean) => {
-    //         // setIsEditing((prev) => {
-    //         //     return !prev;
-    //         // });
-    //         setIsEditing(state);
-    //     }
-    // }); // the Meta state, called by parent via dom fiber
-    // const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     const ContainerRef = useRef<HTMLElement | null>(null);
     
     // Delete the whole blockquote if there were no items left.
@@ -53,6 +44,23 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
 }) {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
+            
+            if (!state) {
+                ElementOBRef.current?.takeRecords();
+                ElementOBRef.current?.disconnect();
+                ElementOBRef.current = null;
+            }
+            if (state) {
+                daemonHandle.SyncNow();
+                
+                if (typeof MutationObserver) {
+                    ElementOBRef.current = new MutationObserver(ObserverHandler);
+                    WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
+                        childList: true
+                    });
+                }
+            }
+            
             setIsEditing(state);
             return {
                 "del": (ev: Event) => {
@@ -63,9 +71,43 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         }
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
-    const MainElementRef = useRef<HTMLElement | null>(null);
     
+    const WholeElementRef = useRef<HTMLElement | null>(null);
     const QuoteSyntaxFiller = useRef<HTMLElement>();  //filler element
+    
+    const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    function ObserverHandler(mutationList: MutationRecord[]) {
+        mutationList.forEach((Record) => {
+            
+            if (!Record.removedNodes.length) return;
+            
+            Record.removedNodes.forEach((Node) => {
+                if (Node === QuoteSyntaxFiller.current) {
+                    
+                    daemonHandle.AddToOperations([
+                        {
+                            type: "REMOVE",
+                            targetNode: WholeElementRef.current!,
+                        },
+                        {
+                            type: "ADD",
+                            newNode: () => {
+                                const ReplacementElement = document.createElement('p') as HTMLElement;
+                                ReplacementElement.innerHTML = GetChildNodesAsHTMLString(WholeElementRef.current?.childNodes);
+                                return ReplacementElement;
+                            },
+                            parentXP: "//body",
+                            siblingNode: WholeElementRef.current?.parentNode?.nextSibling
+                        }]);
+                    
+                    daemonHandle.SyncNow();
+                    
+                }
+            })
+        })
+    }
+    
     
     function DelKeyHandler(ev: Event) {
         ev.preventDefault();
@@ -76,30 +118,12 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     useEffect(() => {
         if (QuoteSyntaxFiller.current) {
             daemonHandle.AddToIgnore(QuoteSyntaxFiller.current, "any");
-            if (MainElementRef.current) {
-                
-                const newParagraph = document.createElement('p') as HTMLElement;
-                newParagraph.innerHTML = ExtraRealChild(children);
-                
-                // Move the p tag to the "outside", remove the one in the blockquote
-                daemonHandle.AddToBindOperations(QuoteSyntaxFiller.current, "remove", [
-                    {
-                        type: "REMOVE",
-                        targetNode: MainElementRef.current,
-                    },
-                    {
-                        type: "ADD",
-                        newNode: newParagraph,
-                        parentXP: "//body",
-                        siblingNode: MainElementRef.current?.parentNode?.nextSibling
-                    }]);
-            }
         }
     });
     
     return React.createElement(tagName, {
         ...otherProps,
-        ref: MainElementRef,
+        ref: WholeElementRef,
     }, [
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
