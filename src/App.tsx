@@ -22,7 +22,7 @@ Normal text test
 
 :br
 
-## Test with h2 title
+## Test with h2 **title**
 
 :br
 
