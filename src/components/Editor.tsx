@@ -40,7 +40,7 @@ export default function Editor(
     // The very first state of the component under caret, needs to be a function
     const ActiveComponentSwitchStack = useRef<((arg: boolean) => void)[]>([]);
     // the return of the above function
-    const ActivationReturnRef = useRef<TActivationReturn | undefined>(undefined);
+    const ActivationCallbacksRef = useRef<TActivationReturn | undefined>(undefined);
     const LastActivationCache = useRef<Node | null>(null);
     
     // Subsequence reload
@@ -155,8 +155,22 @@ export default function Editor(
         // Must be an editor element
         if (!EditorRef.current?.contains(selection?.anchorNode)) return;
         // Must not contains multiple elements
-        if (!selection.isCollapsed && selection.anchorNode !== selection.focusNode) return;
-        
+        if (!selection.isCollapsed) {
+            if (selection.anchorNode === selection.focusNode)
+                return;
+            
+            const LastActivation = ActiveComponentSwitchStack.current[0];
+            if (typeof LastActivation !== 'function') return;
+            
+            // Switch off last activation if drag selection passed the last element
+            const ActiveComponentEndPoint: any = FindActiveEditorComponent(selection.focusNode! as HTMLElement);
+            if (ActiveComponentEndPoint && ActiveComponentEndPoint !== LastActivation) {
+                LastActivation(false);
+                ActiveComponentSwitchStack.current.shift();
+                LastActivationCache.current = null;
+            }
+            return;
+        }
         if (LastActivationCache.current === selection.anchorNode) return;
         // refresh the cache
         LastActivationCache.current = selection.anchorNode;
@@ -172,12 +186,12 @@ export default function Editor(
             let LastestActive;
             while (LastestActive = ActiveComponentSwitchStack.current.shift()) {
                 LastestActive(false);
-                ActivationReturnRef.current = undefined;
+                ActivationCallbacksRef.current = undefined;
             }
             // Switch on the current, add to cache
             if (ActiveComponent.memoizedState && typeof ActiveComponent.memoizedState.memoizedState === "function") {
                 ActiveComponentSwitchStack.current.push(ActiveComponent.memoizedState.memoizedState);
-                ActivationReturnRef.current = ActiveComponent.memoizedState.memoizedState(true);
+                ActivationCallbacksRef.current = ActiveComponent.memoizedState.memoizedState(true);
             }
         }
         
@@ -186,13 +200,13 @@ export default function Editor(
     /**
      * Following are the logics to handle key presses
      * The idea is that these are the "generic" logic handling line breaking/joining, sometimes using only vanilla content editable logic.
-     * if sub-components need to have their own logic on these keys, they are injected via state function return and stored in "ActivationReturnRef.current"
+     * if sub-components need to have their own logic on these keys, they are injected via state function return and stored in "ActivationCallbacksRef.current"
      * when no special logic is present, the "generic" logic would run.
      */
     function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
         // Run the component spec handler if present
-        if (typeof ActivationReturnRef.current?.enter === 'function') {
-            return ActivationReturnRef.current?.enter(ev);
+        if (typeof ActivationCallbacksRef.current?.enter === 'function') {
+            return ActivationCallbacksRef.current?.enter(ev);
         }
         
         // Normal logic
@@ -362,8 +376,8 @@ export default function Editor(
         }
         
         // Run the component spec handler if present
-        if (typeof ActivationReturnRef.current?.del === 'function') {
-            return ActivationReturnRef.current?.del(ev);
+        if (typeof ActivationCallbacksRef.current?.del === 'function') {
+            return ActivationCallbacksRef.current?.del(ev);
         }
         
         // Dealing with container type of element
@@ -447,8 +461,8 @@ export default function Editor(
         }
         
         // Run the component spec handler if present
-        if (typeof ActivationReturnRef.current?.del === 'function') {
-            return ActivationReturnRef.current?.del(ev);
+        if (typeof ActivationCallbacksRef.current?.del === 'function') {
+            return ActivationCallbacksRef.current?.del(ev);
         }
         
         // Dealing with container type of element
