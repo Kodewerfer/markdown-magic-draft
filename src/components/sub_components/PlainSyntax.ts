@@ -26,12 +26,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
                 }
             }
             setIsEditing(state);
-            
-            return {
-                "enter": (ev: Event) => {
-                    //TODO
-                }
-            }
         }
     }); // the Meta state, called by parent via dom fiber
     
@@ -59,7 +53,9 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
                     daemonHandle.AddToOperations({
                         type: "REPLACE",
                         targetNode: WholeElementRef.current!,
-                        newNode: document.createTextNode(GetChildNodesTextContent(WholeElementRef.current?.childNodes))
+                        newNode: () => {
+                            return document.createTextNode(GetChildNodesTextContent(WholeElementRef.current?.childNodes))
+                        }
                     });
                     daemonHandle.SyncNow();
                 }
