@@ -17,7 +17,7 @@ import remarkDirective from "remark-directive";
 
 import HandleCustomDirectives from "../UnifiedPlugins/HandleCustomDirectives";
 import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
-import {CleanupGeneratedTags} from "../UnifiedPlugins/CleanupGeneratedTags";
+import {CleanupExtraTags} from "../UnifiedPlugins/CleanupExtraTags";
 
 let SanitizSchema = Object.assign({}, defaultSchema);
 SanitizSchema!.attributes!['*'] = SanitizSchema!.attributes!['*'].concat(['data*'])
@@ -53,7 +53,7 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Rec
     return await unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
-        .use(CleanupGeneratedTags)
+        .use(CleanupExtraTags)
         .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
             ...jsxElementConfig,
@@ -67,7 +67,7 @@ export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Recor
     return unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
-        .use(CleanupGeneratedTags)
+        .use(CleanupExtraTags)
         .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
             ...jsxElementConfig,
