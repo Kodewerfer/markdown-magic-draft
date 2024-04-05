@@ -19,6 +19,9 @@ Hi! I'm ~~your~~ Markdown file in Editor**.
 **custom** link **syntax**
 
 Normal text test
+:br
+
+**custom**
 
 :br
 
@@ -26,7 +29,7 @@ Normal text test
 
 :br
 
-> back quote test ~~del~~
+> back quote test
 
 
 Normal text testNormal text testNormal text testNormal text test
