@@ -6,7 +6,7 @@ import "./Editor.css";
 import _ from 'lodash';
 
 // helper
-import {TextNodeProcessor, FindNearestParagraph, GetCaretContext} from "./Helpers";
+import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretToNode} from "./Helpers";
 // Editor Components
 import Paragraph from './sub_components/Paragraph';
 import PlainSyntax from "./sub_components/PlainSyntax";
@@ -18,9 +18,9 @@ type TEditorProps = {
 };
 
 type TActivationReturn = {
-    'enter'?: (ev: Event) => void,
-    'del'?: (ev: Event) => void,
-    'backspace'?: (ev: Event) => void
+    'enter'?: (ev: Event) => void | boolean,
+    'del'?: (ev: Event) => void | boolean,
+    'backspace'?: (ev: Event) => void | boolean
 };
 
 export default function Editor(
@@ -195,7 +195,7 @@ export default function Editor(
             }
         }
         
-    }, 200);
+    }, 100);
     
     /**
      * Following are the logics to handle key presses
@@ -205,26 +205,35 @@ export default function Editor(
      */
     function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
         // Run the component spec handler if present
+        // If the callback returns 'true', continue the editor's logic
         if (typeof ActivationCallbacksRef.current?.enter === 'function') {
-            return ActivationCallbacksRef.current?.enter(ev);
+            const CallbackReturn = ActivationCallbacksRef.current?.enter(ev);
+            
+            if (CallbackReturn !== true)
+                return
         }
         
         // Normal logic
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentSelection || !CurrentAnchorNode) return;
-        
-        const Range = CurrentSelection.getRangeAt(0);
+        if ((CurrentAnchorNode as HTMLElement)?.contentEditable === 'false' || (CurrentAnchorNode.parentNode as HTMLElement)?.contentEditable === 'false') return
         
         let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
         
         // Check if caret at an empty line
         const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
         
-        // Empty line when caret landed on the p tag itself. the NearestContainer would be the p tag
-        if (bEmptyLine && NearestContainer!.firstChild)
-            CurrentAnchorNode = NearestContainer!.firstChild;
+        console.log(CurrentAnchorNode);
         
-        let CurrentElementNode: Node;
+        // Empty line when caret landed on the p tag itself. the NearestContainer would be the p tag
+        if (bEmptyLine && NearestContainer!.firstChild) {
+            RemainingText = '';
+            PrecedingText = '';
+            CurrentAnchorNode = NearestContainer!.firstChild;
+        }
+        
+        // Caret usually land on a text node, get the wrapping element
+        let CurrentElementNode: HTMLElement;
         // Check if it was a text node under P tag or under other tags such as strong
         if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer && !ParagraphTest.test(CurrentAnchorNode.parentNode.nodeName)) {
             // When caret is in the text node of a, for example, strong tag within a p tag
@@ -233,14 +242,16 @@ export default function Editor(
             CurrentElementNode = CurrentAnchorNode;
         }
         
+        // if landed on a non-editble content, do nothing
+        if (CurrentElementNode.contentEditable === 'false') return;
+        
         let FollowingNodes = GetNextSiblings(CurrentElementNode)
         
-        let NewLine = document.createElement("p");  // The new line
-        
-        // console.log("Editor anchor:", CurrentAnchorNode)
-        if (bEmptyLine) {
+        // Breaking in an empty line
+        if (bEmptyLine && CurrentAnchorNode.nodeName.toLowerCase() === 'br') {
             console.log('Breaking - Empty line');
             
+            const NewLine = document.createElement("p");  // The new line
             const lineBreakElement: HTMLBRElement = document.createElement("br");
             NewLine.appendChild(lineBreakElement);
             
@@ -255,14 +266,18 @@ export default function Editor(
             return;
         }
         
+        const Range = CurrentSelection.getRangeAt(0);
+        const bNoValidPreSiblings =
+            !CurrentElementNode.previousSibling
+            || (CurrentElementNode.previousSibling as HTMLElement).contentEditable === 'false' && !CurrentElementNode.previousSibling.previousSibling;
+        
         // Breaking at the very beginning of the line
-        if ((!CurrentElementNode.previousSibling || ((CurrentElementNode.previousSibling as HTMLElement).contentEditable !== 'true') && !CurrentElementNode.previousSibling.previousSibling)
-            && Range.startOffset === 0
-        ) {
+        if (bNoValidPreSiblings && Range.startOffset === 0) {
             console.log('Breaking - First element');
             
             // A new line with only a br
             const lineBreakElement: HTMLBRElement = document.createElement("br");
+            const NewLine = document.createElement("p");  // The new line
             NewLine.appendChild(lineBreakElement);
             
             DaemonHandle.AddToOperations({
@@ -274,17 +289,20 @@ export default function Editor(
             DaemonHandle.SyncNow();
             return;
         }
-        
         // Breaking anywhere in the middle of the line
         if (RemainingText !== '' || FollowingNodes.length > 1 || (FollowingNodes.length === 1 && FollowingNodes[0].textContent !== '\n')) {
             console.log("Breaking - Mid line");
+            // Exception, when caret is on the element tag itself, and didn't fit the previous cases (happens on PlainSyntax primarily)
+            // FIXME: May be a better solution
+            if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) {
+                console.warn("Enter Key Exception")
+                return;
+            }
             
             let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
             if (anchorNodeClone.textContent !== null) anchorNodeClone.textContent = RemainingText;
+            const NewLine = document.createElement("p");  // The new line
             NewLine.appendChild(anchorNodeClone);
-            
-            console.log(FollowingNodes)
-            console.log(NearestContainer);
             
             if (FollowingNodes.length) {
                 for (let Node of FollowingNodes) {
@@ -315,14 +333,13 @@ export default function Editor(
             return;
         }
         
+        
         // Breaking at the very end of the line
-        // Fallback logic
         console.log("Breaking - End of line");
         
         const lineBreakElement: HTMLBRElement = document.createElement("br");
+        const NewLine = document.createElement("p");
         NewLine.appendChild(lineBreakElement);
-        
-        EditorRef.current?.insertBefore(NewLine, NearestContainer!.nextSibling);
         
         DaemonHandle.AddToOperations({
             type: "ADD",
@@ -343,8 +360,13 @@ export default function Editor(
         let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
         if (!NearestContainer) return;
         
+        const bCaretOnContainer = CurrentAnchorNode === NearestContainer;
+        const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
+        const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
+        
         // Run the normal key press on in-line editing
-        if (RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n')) return;
+        if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;
+        
         const Selection = window.getSelection();
         if (Selection && !Selection.isCollapsed) return;
         
@@ -352,11 +374,13 @@ export default function Editor(
         ev.preventDefault();
         ev.stopPropagation();
         
+        
         let nextSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
         if (!nextSibling) return; //No more lines following
         
         // deleting empty lines
         if (nextSibling?.childNodes.length === 1 && nextSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+            console.log("Delete Empty Line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: nextSibling
@@ -367,6 +391,7 @@ export default function Editor(
         
         // self is empty line
         if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
+            console.log("Self is Empty Line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: NearestContainer
@@ -377,11 +402,13 @@ export default function Editor(
         
         // Run the component spec handler if present
         if (typeof ActivationCallbacksRef.current?.del === 'function') {
+            console.log("Component Spec Deleting");
             return ActivationCallbacksRef.current?.del(ev);
         }
         
         // Dealing with container type of element
         if (nextSibling.nodeType === Node.ELEMENT_NODE && (nextSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            console.log("Delete into container");
             if (nextSibling.childNodes.length > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
@@ -398,7 +425,9 @@ export default function Editor(
             return;
         }
         
+        
         // "Normal" joining lines
+        console.log("Line joining");
         let NewLine = NearestContainer.cloneNode(true);
         
         nextSibling.childNodes.forEach((ChildNode) => {
@@ -424,11 +453,18 @@ export default function Editor(
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
-        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        const NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
         if (!NearestContainer) return;
         
+        if (NearestContainer === CurrentAnchorNode) {
+            MoveCaretToNode(NearestContainer.firstChild, 0);
+        }
+        
+        const bPrecedingValid = PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n');
+        const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
+        
         // Run the normal key press on in-line editing
-        if (PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n')) return;
+        if (bPrecedingValid && bAnchorIsTextNode) return;
         const Selection = window.getSelection();
         if (Selection && !Selection.isCollapsed) return;
         
@@ -441,6 +477,7 @@ export default function Editor(
         
         // deleting empty lines
         if (previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+            console.log("Backspace on empty line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: previousElementSibling
@@ -451,6 +488,7 @@ export default function Editor(
         
         // self is empty line
         if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
+            console.log("Backspace on self empty line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: NearestContainer
@@ -462,11 +500,13 @@ export default function Editor(
         
         // Run the component spec handler if present
         if (typeof ActivationCallbacksRef.current?.del === 'function') {
+            console.log("Backspace component logic");
             return ActivationCallbacksRef.current?.del(ev);
         }
         
         // Dealing with container type of element
         if (previousElementSibling.nodeType === Node.ELEMENT_NODE && (previousElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            console.log("Backspace into container");
             if (previousElementSibling.childNodes.length > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
@@ -484,6 +524,7 @@ export default function Editor(
         }
         
         // "Normal" joining lines
+        console.log("Backspace line joning");
         let NewLine = previousElementSibling.cloneNode(true);
         
         NearestContainer.childNodes.forEach((ChildNode) => {
@@ -662,25 +703,6 @@ function GetNextSiblings(node: Node): Node[] {
     return siblings;
 }
 
-function MoveCaretToNext(currentSelection: Selection, Range: Range, CurrentAnchorNode: Node, NearestContainer: Node) {
-    let NextNode = CurrentAnchorNode.nextSibling as Node;
-    
-    // No sibling, move to the first element of the next line
-    if (!NextNode && NearestContainer?.nextSibling)
-        NextNode = NearestContainer.nextSibling as Node;
-    // fallback
-    if (!NextNode) {
-        NextNode = CurrentAnchorNode;
-    }
-    console.log(NextNode);
-    Range.setStart(NextNode, 0);
-    Range.collapse(true);
-    
-    currentSelection.removeAllRanges();
-    currentSelection.addRange(Range);
-    return;
-}
-
 function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement: HTMLElement) {
     if (!currentSelection) return;
     let CurrentAnchor = currentSelection.anchorNode;
@@ -711,10 +733,13 @@ function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement
     if (!ValidLandingPoint || !ValidLandingPoint.textContent) return;
     
     const range = document.createRange();
-    range.setStart(ValidLandingPoint, ValidLandingPoint.textContent.length);
-    range.collapse(true);
-    
-    currentSelection.removeAllRanges();
-    currentSelection.addRange(range);
+    try {
+        range.collapse(true);
+        range.setStart(ValidLandingPoint, ValidLandingPoint.textContent.length);
+        currentSelection.removeAllRanges();
+        currentSelection.addRange(range);
+    } catch (e: any) {
+        console.warn(e.message);
+    }
     return;
 }
