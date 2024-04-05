@@ -167,3 +167,22 @@ export function GetCaretContext(): {
     return {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText};
     
 }
+
+export function MoveCaretToNode(TargetNode: Node | null | undefined, Offset = 0) {
+    
+    if (!TargetNode) return;
+    const currentSelection = window.getSelection();
+    if (!currentSelection) return;
+    
+    
+    const range = document.createRange();
+    try {
+        range.setStart(TargetNode, Offset);
+        range.collapse(true);
+        currentSelection.removeAllRanges();
+        currentSelection.addRange(range);
+    } catch (e: any) {
+        console.warn("MoveCaretToNode: ", e.message);
+    }
+    
+}
