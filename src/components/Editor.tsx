@@ -223,8 +223,6 @@ export default function Editor(
         // Check if caret at an empty line
         const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
         
-        console.log(CurrentAnchorNode);
-        
         // Empty line when caret landed on the p tag itself. the NearestContainer would be the p tag
         if (bEmptyLine && NearestContainer!.firstChild) {
             RemainingText = '';
@@ -366,9 +364,7 @@ export default function Editor(
         
         // Run the normal key press on in-line editing
         if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;
-        
-        const Selection = window.getSelection();
-        if (Selection && !Selection.isCollapsed) return;
+        if (CurrentSelection && !CurrentSelection.isCollapsed) return;
         
         // line joining
         ev.preventDefault();
@@ -457,7 +453,10 @@ export default function Editor(
         if (!NearestContainer) return;
         
         if (NearestContainer === CurrentAnchorNode) {
+            ev.preventDefault();
+            ev.stopPropagation();
             MoveCaretToNode(NearestContainer.firstChild, 0);
+            return;
         }
         
         const bPrecedingValid = PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n');
@@ -465,8 +464,7 @@ export default function Editor(
         
         // Run the normal key press on in-line editing
         if (bPrecedingValid && bAnchorIsTextNode) return;
-        const Selection = window.getSelection();
-        if (Selection && !Selection.isCollapsed) return;
+        if (CurrentSelection && !CurrentSelection.isCollapsed) return;
         
         // line joining
         ev.preventDefault();
