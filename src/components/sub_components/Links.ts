@@ -1,6 +1,6 @@
 import React, {useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {TextNodeProcessor} from "../Helpers";
+import {GetCaretContext, TextNodeProcessor} from "../Helpers";
 
 export default function Links({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -32,7 +32,13 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
             
             return {
                 "enter": (ev: Event) => {
-                    //TODO
+                    const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
+                    if (!CurrentSelection || !CurrentAnchorNode) return;
+                    
+                    const range = CurrentSelection.getRangeAt(0);
+                    
+                    if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
+                    if (RemainingText.trim() === '') return true;
                 }
             }
         }
