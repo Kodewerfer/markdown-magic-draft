@@ -19,9 +19,6 @@ import HandleCustomDirectives from "../UnifiedPlugins/HandleCustomDirectives";
 import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
 import {CleanupExtraTags} from "../UnifiedPlugins/CleanupExtraTags";
 
-let SanitizSchema = Object.assign({}, defaultSchema);
-SanitizSchema!.attributes!['*'] = SanitizSchema!.attributes!['*'].concat(['data*'])
-
 function MDProcess() {
     return unified()
         .use(remarkParse)
@@ -29,7 +26,7 @@ function MDProcess() {
         .use(remarkDirective)
         .use(HandleCustomDirectives)
         .use(remarkRehype)
-        .use(rehypeSanitize, SanitizSchema)
+        .use(rehypeSanitize, GetSanitizeSchema())
         .use(AddSyntaxInAttribute)
         .use(rehypeStringify);
 }
@@ -52,7 +49,7 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Rec
     
     return await unified()
         .use(rehypeParse, {fragment: true})
-        .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
+        .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
         .use(CleanupExtraTags)
         .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
@@ -66,7 +63,7 @@ export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Recor
     
     return unified()
         .use(rehypeParse, {fragment: true})
-        .use(rehypeSanitize, SanitizSchema) //this plug remove some attrs/aspects that may be important.
+        .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
         .use(CleanupExtraTags)
         .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
@@ -128,4 +125,13 @@ function GetRehyperRemarkHandlers() {
             return result;
         }
     };
+}
+
+/**
+ * Returns a sanitized schema by cloning the default schema and adding an additional attribute.
+ */
+function GetSanitizeSchema() {
+    let SanitizeSchema = Object.assign({}, defaultSchema);
+    SanitizeSchema!.attributes!['*'] = SanitizeSchema!.attributes!['*'].concat(['data*'])
+    return SanitizeSchema;
 }
