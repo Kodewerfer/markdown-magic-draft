@@ -1,4 +1,4 @@
-import React, {useLayoutEffect, useRef, useState} from "react";
+import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {GetCaretContext, TextNodeProcessor} from "../Helpers";
 
@@ -31,14 +31,17 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
             setIsEditing(state);
             
             return {
+                "del": (ev: Event) => {
+                    //Del line merge
+                    return HandleLineJoining();
+                },
+                "backspace": (ev: Event) => {
+                    //Del line merge
+                    
+                    return HandleLineJoining();
+                },
                 "enter": (ev: Event) => {
-                    const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
-                    if (!CurrentSelection || !CurrentAnchorNode) return;
-                    
-                    const range = CurrentSelection.getRangeAt(0);
-                    
-                    if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
-                    if (RemainingText.trim() === '') return true;
+                    return HandleEnter();
                 }
             }
         }
@@ -46,19 +49,49 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     
     const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
     
-    const LinkText: string = String(children);
-    const LinkTarget: string = otherProps['href'] || '';
-    
-    // Show when actively editing
-    const [EditingStateChild] = useState<String>(() => {
-        return `[${LinkText}](${LinkTarget})`;
-    });
-    
     // the element tag
     const LinkElementRef = useRef<HTMLElement | null>(null);
     
+    // Show when actively editing
+    const [GetEditingStateChild] = useState(() => {
+        return () => {
+            const textContent = LinkElementRef.current?.firstChild?.textContent;
+            const LinkText: string = String(textContent ?? " ");
+            const LinkTarget: string = otherProps['href'] || '';
+            const EditingStateContent = `[${LinkText}](${LinkTarget})`;
+            
+            return textContent === EditingStateContent ? textContent : EditingStateContent;
+        };
+    });
+    
+    function HandleLineJoining() {
+        // This is a somewhat band-aid solution aim to solve incorrect text content after joining line with del or backspace
+        // TODO:
+        if (!LinkElementRef.current || !LinkElementRef.current.firstChild) return false;
+        if (typeof children !== 'string') return false;
+        
+        LinkElementRef.current.firstChild.textContent = children;
+        
+        return true;
+    }
+    
+    function HandleEnter() {
+        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
+        if (!CurrentSelection || !CurrentAnchorNode) return;
+        
+        const range = CurrentSelection.getRangeAt(0);
+        
+        if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
+        if (RemainingText.trim() === '') return true;
+        
+        //TODO: Turn off activation state
+    }
+    
     // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
     useLayoutEffect(() => {
+        
+        if (typeof children === 'string') children = children.trim();
+        
         if (LinkElementRef.current && LinkElementRef.current?.firstChild)
             daemonHandle.AddToIgnore(LinkElementRef.current?.firstChild, "any");
     });
@@ -66,6 +99,6 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     return React.createElement(tagName, {
         ...otherProps,
         ref: LinkElementRef,
-    }, isEditing ? EditingStateChild : children);
+    }, isEditing ? GetEditingStateChild() : " " + children + " ");
     
 }
