@@ -6,7 +6,7 @@ import "./Editor.css";
 import _ from 'lodash';
 
 // helper
-import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretToNode} from "./Helpers";
+import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretIntoNode} from "./Helpers";
 // Editor Components
 import Paragraph from './sub_components/Paragraph';
 import PlainSyntax from "./sub_components/PlainSyntax";
@@ -370,16 +370,22 @@ export default function Editor(
         ev.preventDefault();
         ev.stopPropagation();
         
+        let nextElementSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
+        if (!nextElementSibling) return; //No more lines following
         
-        let nextSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
-        if (!nextSibling) return; //No more lines following
+        // same as back space, when there is still content that could be deleted, but caret lands on the wrong element
+        // FIXME: may be buggy
+        if (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling !== nextElementSibling) {
+            MoveCaretIntoNode(CurrentAnchorNode);
+            return;
+        }
         
         // deleting empty lines
-        if (nextSibling?.childNodes.length === 1 && nextSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+        if (nextElementSibling?.childNodes.length === 1 && nextElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
             console.log("Delete Empty Line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
-                targetNode: nextSibling
+                targetNode: nextElementSibling
             });
             DaemonHandle.SyncNow();
             return;
@@ -399,22 +405,24 @@ export default function Editor(
         // Run the component spec handler if present
         if (typeof ActivationCallbacksRef.current?.del === 'function') {
             console.log("Component Spec Deleting");
-            return ActivationCallbacksRef.current?.del(ev);
+            
+            if (ActivationCallbacksRef.current?.del(ev) !== true)
+                return
         }
         
         // Dealing with container type of element
-        if (nextSibling.nodeType === Node.ELEMENT_NODE && (nextSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+        if (nextElementSibling.nodeType === Node.ELEMENT_NODE && (nextElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
             console.log("Delete into container");
-            if (nextSibling.childNodes.length > 1)
+            if (nextElementSibling.childNodes.length > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
-                    targetNode: (nextSibling as HTMLElement).firstElementChild!
+                    targetNode: (nextElementSibling as HTMLElement).firstElementChild!
                 });
             
-            if (!nextSibling.firstElementChild)
+            if (!nextElementSibling.firstElementChild)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
-                    targetNode: nextSibling
+                    targetNode: nextElementSibling
                 });
             
             DaemonHandle.SyncNow();
@@ -424,15 +432,19 @@ export default function Editor(
         
         // "Normal" joining lines
         console.log("Line joining");
+        
         let NewLine = NearestContainer.cloneNode(true);
         
-        nextSibling.childNodes.forEach((ChildNode) => {
+        console.log(NewLine.childNodes[0].textContent)
+        
+        nextElementSibling.childNodes.forEach((ChildNode) => {
             NewLine.appendChild(ChildNode.cloneNode(true));
         })
         
+        
         DaemonHandle.AddToOperations({
             type: "REMOVE",
-            targetNode: nextSibling,
+            targetNode: nextElementSibling,
         });
         
         DaemonHandle.AddToOperations({
@@ -453,10 +465,17 @@ export default function Editor(
         if (!NearestContainer) return;
         
         if (NearestContainer === CurrentAnchorNode) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            MoveCaretToNode(NearestContainer.firstChild, 0);
-            return;
+            CurrentAnchorNode = NearestContainer.firstChild
+            if (!CurrentAnchorNode) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+            }
+            // This method is less responsive
+            // ev.preventDefault();
+            // ev.stopPropagation();
+            // MoveCaretToNode(NearestContainer.firstChild, 0);
+            // return;
         }
         
         const bPrecedingValid = PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n');
@@ -472,6 +491,15 @@ export default function Editor(
         
         let previousElementSibling = NearestContainer?.previousElementSibling; //nextsibling could be a "\n"
         if (!previousElementSibling) return; //No more lines following
+        
+        console.log(CurrentAnchorNode);
+        
+        // when there is still content that could be deleted, but caret lands on the wrong element
+        // FIXME: may be buggy
+        if (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling !== previousElementSibling) {
+            MoveCaretIntoNode(CurrentAnchorNode);
+            return
+        }
         
         // deleting empty lines
         if (previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
@@ -497,9 +525,10 @@ export default function Editor(
         }
         
         // Run the component spec handler if present
-        if (typeof ActivationCallbacksRef.current?.del === 'function') {
+        if (typeof ActivationCallbacksRef.current?.backspace === 'function') {
             console.log("Backspace component logic");
-            return ActivationCallbacksRef.current?.del(ev);
+            if (ActivationCallbacksRef.current?.backspace(ev) !== true)
+                return;
         }
         
         // Dealing with container type of element

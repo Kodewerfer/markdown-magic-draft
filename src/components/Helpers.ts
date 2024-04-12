@@ -168,6 +168,16 @@ export function GetCaretContext(): {
     
 }
 
+/**
+ * Moves the caret to the specified target node at the given offset.
+ * When used in Key handling functions, that key may require a second key-press to "work properly", making it seemingly less responsive
+ * it is for this reason that this func is deprecated for now, saving for future reference.
+ *
+ * @param {Node | null | undefined} TargetNode - The target node to move the caret to.
+ * @param {number} [Offset=0] - The offset within the target node to move the caret to. Default is 0.
+ *
+ * @returns {void}
+ */
 export function MoveCaretToNode(TargetNode: Node | null | undefined, Offset = 0) {
     
     if (!TargetNode) return;
@@ -185,4 +195,47 @@ export function MoveCaretToNode(TargetNode: Node | null | undefined, Offset = 0)
         console.warn("MoveCaretToNode: ", e.message);
     }
     
+}
+
+/**
+ * A Modified version of above function,Moves the caret into a specified node at a given offset.
+ * Aimed to deal with the situation where caret is focused on a container node itself, instead of the actual elements within
+ * Used primarily in dealing with editing bugs in del and backspace functionality.
+ *
+ * @param {Node | null | undefined} ContainerNode - The container node in which to move the caret.
+ * @param {number} [Offset=0] - The offset at which to place the caret in the container node. Default is 0.
+ *
+ * @returns {void}
+ */
+export function MoveCaretIntoNode(ContainerNode: Node | null | undefined, Offset = 0) {
+    
+    if (!ContainerNode || !ContainerNode.childNodes.length) return;
+    
+    let ValidNode: Node | null = null;
+    for (let ChildNode of ContainerNode.childNodes) {
+        if (ChildNode.nodeType === Node.TEXT_NODE && ChildNode.parentNode && (ChildNode.parentNode as HTMLElement).contentEditable !== 'false') {
+            ValidNode = ChildNode;
+            break;
+        }
+        if (ChildNode.nodeType === Node.ELEMENT_NODE && (ChildNode as HTMLElement).contentEditable !== 'false') {
+            ValidNode = ChildNode;
+            break;
+        }
+    }
+    
+    if (!ValidNode) return;
+    
+    const currentSelection = window.getSelection();
+    if (!currentSelection) return;
+    
+    
+    const range = document.createRange();
+    try {
+        range.setStart(ValidNode, Offset);
+        range.collapse(true);
+        currentSelection.removeAllRanges();
+        currentSelection.addRange(range);
+    } catch (e: any) {
+        console.warn("MoveCaretIntoNode: ", e.message);
+    }
 }
