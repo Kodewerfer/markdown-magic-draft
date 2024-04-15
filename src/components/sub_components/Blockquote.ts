@@ -1,6 +1,10 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {ExtraRealChild, GetCaretContext, GetChildNodesAsHTMLString, GetChildNodesTextContent} from "../Helpers";
+import {
+    GetCaretContext,
+    GetChildNodesAsHTMLString,
+    MoveCaretToNode
+} from "../Helpers";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -63,10 +67,8 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
             
             setIsEditing(state);
             return {
-                "del": (ev: Event) => {
-                    DelKeyHandler(ev);
-                    //TODO
-                },
+                "enter": EnterKeyHandler,
+                "del": DelKeyHandler,
             }
         }
     }); // the Meta state, called by parent via dom fiber
@@ -108,10 +110,37 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         })
     }
     
-    
     function DelKeyHandler(ev: Event) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
+    }
+    
+    function EnterKeyHandler(ev: Event) {
+        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
+        if (!CurrentSelection || !CurrentAnchorNode) return;
+        
+        const range = CurrentSelection.getRangeAt(0);
+        
+        if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
+        if (RemainingText.trim() === '') return true;
+        
+        // mid-line enter key
+        if (!WholeElementRef.current) return;
+        if (!WholeElementRef.current.childNodes || !WholeElementRef.current.childNodes.length) return;
+        
+        // Move caret to the end of the last text node.
+        let TargetNode: Node | null = null;
+        for (let childNode of WholeElementRef.current.childNodes) {
+            if (childNode.nodeType === Node.TEXT_NODE) {
+                TargetNode = childNode;
+            }
+        }
+        
+        if (!TargetNode || !TargetNode.textContent) return;
+        
+        MoveCaretToNode(TargetNode, TargetNode.textContent.length);
+        
+        return;
     }
     
     // Add filler element to ignore, add filler element's special handling operation
