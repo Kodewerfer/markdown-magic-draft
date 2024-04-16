@@ -423,17 +423,17 @@ export default function Editor(
         // Dealing with container type of element
         if (nextElementSibling.nodeType === Node.ELEMENT_NODE && (nextElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
             console.log("Delete into container");
-            if (nextElementSibling.childNodes.length > 1)
+            if (nextElementSibling.childElementCount > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
                     targetNode: (nextElementSibling as HTMLElement).firstElementChild!
                 });
             
-            if (!nextElementSibling.firstElementChild)
-                DaemonHandle.AddToOperations({
-                    type: "REMOVE",
-                    targetNode: nextElementSibling
-                });
+            // Only one sub element, delete the whole thing
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: nextElementSibling
+            });
             
             DaemonHandle.SyncNow();
             return;
@@ -544,17 +544,16 @@ export default function Editor(
         // Dealing with container type of element
         if (previousElementSibling.nodeType === Node.ELEMENT_NODE && (previousElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
             console.log("Backspace into container");
-            if (previousElementSibling.childNodes.length > 1)
+            if (previousElementSibling.childElementCount > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
                     targetNode: (previousElementSibling as HTMLElement).lastElementChild!
                 });
             
-            if (!previousElementSibling.firstElementChild)
-                DaemonHandle.AddToOperations({
-                    type: "REMOVE",
-                    targetNode: previousElementSibling
-                });
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: previousElementSibling
+            });
             DaemonHandle.SetFutureCaret('zero');
             DaemonHandle.SyncNow();
             return;
