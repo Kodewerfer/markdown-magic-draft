@@ -12,6 +12,7 @@ function AddSyntaxAttrTransformer(ast: object) {
         // special cases, when element is a part of a "composite" element
         let parentTagName: string = parent.tagName?.toLowerCase();
         switch (parentTagName) {
+            // Switch on parent tag names
             case 'blockquote':
                 NodeProps['data-md-quote-item'] = "true";
                 return;

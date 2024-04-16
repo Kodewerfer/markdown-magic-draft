@@ -12,6 +12,7 @@ import Paragraph from './sub_components/Paragraph';
 import PlainSyntax from "./sub_components/PlainSyntax";
 import Links from "./sub_components/Links";
 import {Blockquote, QuoteItem} from "./sub_components/Blockquote";
+import {ListContainer, ListItem} from "./sub_components/List";
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -107,6 +108,15 @@ export default function Editor(
                     }
                     // TODO:list component
                     if (props['data-md-list'] === 'true') {
+                        return <ListContainer {...props}
+                                              daemonHandle={DaemonHandle}
+                                              tagName={tagName}/>
+                    }
+                    
+                    if (props['data-md-list-item'] === 'true') {
+                        return <ListItem {...props}
+                                         daemonHandle={DaemonHandle}
+                                         tagName={tagName}/>
                     }
                     
                     // FIXME:Placeholder
