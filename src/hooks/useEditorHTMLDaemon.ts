@@ -66,12 +66,15 @@ type THookOptions = {
     IsEditable: boolean
     ShouldFocus: boolean
     ParagraphTags: RegExp //
+    HistoryLength: number
+    
 }
 
 type TCaretToken = 'zero' | 'nextline' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => void;
+    DiscardHistory: (DiscardCount: number) => void;
     SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
     AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void; //DEPRECATED
@@ -93,6 +96,7 @@ export default function useEditorHTMLDaemon(
         ShouldLog: true,
         IsEditable: true,
         ParagraphTags: ParagraphTest,   // Determined whether to use "replacement" logic or just change the text node.
+        HistoryLength: 10,
         ...Options
     };
     
@@ -248,8 +252,7 @@ export default function useEditorHTMLDaemon(
                     }
                     
                     /**
-                     *  Result in multiple nodes
-                     *  or only one node but no longer a text node.
+                     *  Result in multiple nodes or only one node but no longer a text node.
                      */
                     let LogNodeXP = GetXPathNthChild(OldTextNode);
                     let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
@@ -272,19 +275,20 @@ export default function useEditorHTMLDaemon(
                         // Add trailing whitespace
                         if (index === 0) {
                             // the last element,because it is flipped,
-                            if (node.textContent) {
+                            if (node.textContent && node.nodeType === Node.TEXT_NODE) {
                                 node.textContent = node.textContent.trim() + whiteSpaceEnd[0];
                             }
                         }
                         // Add starting whitespace
                         if (index === array.length - 1) {
                             // the first element,because it is flipped,
-                            if (node.textContent) {
+                            if (node.textContent && node.nodeType === Node.TEXT_NODE) {
                                 node.textContent = whiteSpaceStart[0] + node.textContent.trim()
                             }
                         }
+                        
                         // if there is a non text node in between, add whitespace to surrounding textnodes.
-                        if (node.textContent && node.textContent !== ' ') {
+                        if (node.nodeType === Node.TEXT_NODE && node.textContent && node.textContent !== ' ') {
                             if (!node.textContent.endsWith(' ') && array[index - 1] && array[index - 1].nodeType !== Node.TEXT_NODE) {
                                 node.textContent = node.textContent.trimEnd() + ' ';
                             }
@@ -292,6 +296,7 @@ export default function useEditorHTMLDaemon(
                                 node.textContent = ' ' + node.textContent.trimStart();
                             }
                         }
+                        
                         
                         // Frag to make sure elements are in correct order
                         NewFragment.prepend(node);
@@ -474,6 +479,8 @@ export default function useEditorHTMLDaemon(
             return;
         }
         
+        const HistoryLength = DaemonOptions.HistoryLength;
+        
         const CurrentDoc = (MirrorDocumentRef.current.cloneNode(true)) as Document;
         
         if (DaemonState.UndoStack === null)
@@ -481,11 +488,12 @@ export default function useEditorHTMLDaemon(
         else
             DaemonState.UndoStack.push(CurrentDoc);
         // Save up to ten history logs
-        if (DaemonState.UndoStack.length > 10)
+        if (DaemonState.UndoStack.length > HistoryLength)
             DaemonState.UndoStack.shift();
         
     }
     
+    // Use content from Undo stack to override the page, save it to Redo Stack
     const undoAndSync = () => {
         // FIXME: expensive operation, but to revert the OpLogs brings too many problems
         console.log("Undo, stack length:", DaemonState.UndoStack?.length);
@@ -1114,6 +1122,19 @@ export default function useEditorHTMLDaemon(
     // Hook's public interface
     // Used by the already existing components in the editor
     return {
+        DiscardHistory(DiscardCount: number): void {
+            if (DiscardCount === 0) return;
+            if (!DaemonState.UndoStack) return;
+            if (DiscardCount > DaemonState.UndoStack.length) {
+                DiscardCount = DaemonState.UndoStack.length
+            }
+            while (DiscardCount) {
+                DaemonState.UndoStack.pop();
+                DiscardCount -= 1;
+            }
+            if (DaemonOptions.ShouldLog)
+                console.log("DiscardHistory: ", DiscardCount, " Removed")
+        },
         SyncNow: () => {
             throttledSelectionStatus();
             throttledRollbackAndSync();
