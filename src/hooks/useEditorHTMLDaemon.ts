@@ -14,24 +14,25 @@ import _ from 'lodash';
 export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section)$/i;
 // Instructions for DOM manipulations on the mirror document
 type TSyncOperation = {
-    type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE',
-    fromTextHandler?: boolean,  //indicate if it was a replacement node resulting from text node callback
-    newNode?: Node | (() => Node),
-    targetNode?: Node, //Alternative to XP
-    targetNodeXP?: string,
-    nodeText?: string | null,
-    nodeTextOld?: string | null, //used in redo
-    parentXP?: string | null,
-    siblingXP?: string | null,
+    type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE'
+    fromTextHandler?: boolean  //indicate if it was a replacement node resulting from text node callback
+    newNode?: Node | (() => Node)
+    targetNode?: Node //Alternative to XP
+    targetNodeXP?: string
+    nodeText?: string | null
+    nodeTextOld?: string | null //used in redo
+    parentXP?: string | null
+    parentNode?: Node //Alternative to XP, when adding
+    siblingXP?: string | null
     siblingNode?: Node | undefined | null
 }
 
 // For storing selection before parent re-rendering
 type TSelectionStatus = {
-    CaretPosition: number,
-    SelectionExtent: number,
-    AnchorNodeType: number,
-    AnchorNodeXPath: string,
+    CaretPosition: number
+    SelectionExtent: number
+    AnchorNodeType: number
+    AnchorNodeXPath: string
 }
 
 type TDOMTrigger = 'add' | 'remove' | 'text' | 'any';
@@ -648,6 +649,13 @@ export default function useEditorHTMLDaemon(
                     targetNodeXP: GetXPathFromNode(OPItem.targetNode)
                 })
             }
+            // adding
+            if (!OPItem.parentXP && OPItem.parentNode) {
+                Object.assign(OPItem, {
+                    parentXP: GetXPathFromNode(OPItem.parentNode)
+                })
+            }
+            // remove,replace
             if (!OPItem.parentXP && OPItem.targetNode && OPItem.targetNode.parentNode) {
                 Object.assign(OPItem, {
                     parentXP: GetXPathFromNode(OPItem.targetNode.parentNode)
