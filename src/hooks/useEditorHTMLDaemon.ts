@@ -13,7 +13,7 @@ import _ from 'lodash';
 
 export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section)$/i;
 // Instructions for DOM manipulations on the mirror document
-type TSyncOperation = {
+export type TSyncOperation = {
     type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE'
     fromTextHandler?: boolean  //indicate if it was a replacement node resulting from text node callback
     newNode?: Node | (() => Node)
@@ -470,7 +470,7 @@ export default function useEditorHTMLDaemon(
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
         if (DaemonState.AdditionalOperation.length) {
             const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation);
-            OperationLogs.unshift(...syncOpsBuilt);
+            OperationLogs.unshift(...syncOpsBuilt.reverse());
         }
         return OperationLogs;
     }
