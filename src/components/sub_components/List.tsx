@@ -1,5 +1,5 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
-import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
+import React, {useEffect, Children, useRef, useState, useLayoutEffect} from "react";
+import {TDaemonReturn, TSyncOperation} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
     GetChildNodesAsHTMLString,
@@ -13,27 +13,85 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    const ContainerRef = useRef<HTMLElement | null>(null);
+    const ListContainerRef = useRef<HTMLElement | null>(null);
+    const bCheckedForMerge = useRef(false);
     
-    // Delete the whole blockquote if there were no items left.
-    useEffect(() => {
-        if (!children || React.Children.count(children) === 1) {
-            if (String(children).trim() === '' && ContainerRef.current) {
-                console.log(ContainerRef.current?.tagName, "is empty, self destruct.")
+    // Merge to the prev or next ul if applicable, also manipulate history stack
+    useLayoutEffect(() => {
+        
+        if (!ListContainerRef.current) return;
+        if (!ListContainerRef.current!.children.length) return;
+        if (ListContainerRef.current?.hasAttribute("data-being-merged")) return;
+        
+        const ListPrevSibling = ListContainerRef.current?.previousElementSibling;
+        const bPreviousSiblingIsUL = ListPrevSibling?.tagName.toLowerCase() === 'ul';
+        
+        // Add to last ul element if there is no space in-between, higher priority
+        if (bPreviousSiblingIsUL && ListPrevSibling.hasAttribute("data-list-merge-valid")) {
+            
+            for (let ChildLi of ListContainerRef.current.children) {
                 daemonHandle.AddToOperations({
+                    type: "ADD",
+                    parentNode: ListPrevSibling,
+                    newNode: ChildLi.cloneNode(true)
+                })
+            }
+            daemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: ListContainerRef.current,
+            });
+            
+            ListContainerRef.current = null;
+            daemonHandle.SyncNow();
+            daemonHandle.DiscardHistory(1);
+        }
+        
+        // Add to the next ul element if there is no space in-between
+        const ListNextSibling = ListContainerRef.current?.nextElementSibling;
+        const bNextSiblingIsUL = ListNextSibling?.tagName.toLowerCase() === 'ul';
+        
+        if (!bPreviousSiblingIsUL && bNextSiblingIsUL && ListContainerRef.current && ListNextSibling.hasAttribute("data-list-merge-valid")) {
+            
+            for (let ChildLi of ListContainerRef.current.children) {
+                daemonHandle.AddToOperations({
+                    type: "ADD",
+                    parentNode: ListNextSibling,
+                    newNode: ChildLi.cloneNode(true),
+                    siblingNode: ListNextSibling.firstElementChild
+                })
+            }
+            
+            daemonHandle.AddToOperations(
+                {
                     type: "REMOVE",
-                    targetNode: ContainerRef.current
+                    targetNode: ListContainerRef.current!,
+                }
+            );
+            
+            ListContainerRef.current = null;
+            daemonHandle.SyncNow();
+            daemonHandle.DiscardHistory(1);
+        }
+        
+        if (!bPreviousSiblingIsUL && !bNextSiblingIsUL && !bCheckedForMerge.current) {
+            
+            bCheckedForMerge.current = true;
+            
+            if (!ListContainerRef.current?.hasAttribute('data-list-merge-valid')) {
+                daemonHandle.AddToOperations({
+                    type: "ATTR",
+                    targetNode: ListContainerRef.current!,
+                    attribute: {name: "data-list-merge-valid", value: "true"}
                 });
-                
                 daemonHandle.SyncNow();
-                // set it to null so the syncing won't run more than once(in strict mode especially)
-                ContainerRef.current = null;
+                daemonHandle.DiscardHistory(1);
             }
         }
+        
     });
     
     return React.createElement(tagName, {
-        ref: ContainerRef,
+        ref: ListContainerRef,
         ...otherProps
     }, children);
 }
@@ -86,7 +144,6 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             
             Record.removedNodes.forEach((Node) => {
                 if (Node === QuoteSyntaxFiller.current) {
-                    
                     daemonHandle.AddToOperations([
                         {
                             type: "REMOVE",
@@ -102,9 +159,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
                             parentXP: "//body",
                             siblingNode: WholeElementRef.current?.parentNode?.nextSibling
                         }]);
-                    
                     daemonHandle.SyncNow();
-                    
                 }
             })
         })
@@ -161,7 +216,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             ref: QuoteSyntaxFiller,
             contentEditable: false,
             className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, "> "),
+        }, "- "),
         ...(Array.isArray(children) ? children : [children]),
     ]);
 }
