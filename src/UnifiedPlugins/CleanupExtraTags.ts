@@ -8,9 +8,9 @@ function TagsCleanupTransformer(ast: object) {
     
     visit<any, any>(ast, 'element', Visitor);
     
-    if (GeneratedCount + BRCount > 0) {
-        console.log("Cleanup Plugin: tags removed:", GeneratedCount + BRCount, "Generated:", GeneratedCount, "Extra Br:", BRCount)
-    }
+    // if (GeneratedCount + BRCount > 0) {
+    //     console.log("Cleanup Plugin: tags removed:", GeneratedCount + BRCount, "Generated:", GeneratedCount, "Extra Br:", BRCount)
+    // }
     
     function Visitor(node: any, index: any, parent: any) {
         
