@@ -14,7 +14,7 @@ import _ from 'lodash';
 export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section)$/i;
 // Instructions for DOM manipulations on the mirror document
 export type TSyncOperation = {
-    type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE'
+    type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE' | 'ATTR'
     fromTextHandler?: boolean  //indicate if it was a replacement node resulting from text node callback
     newNode?: Node | (() => Node)
     targetNode?: Node //Alternative to XP
@@ -25,6 +25,7 @@ export type TSyncOperation = {
     parentNode?: Node //Alternative to XP, when adding
     siblingXP?: string | null
     siblingNode?: Node | undefined | null
+    attribute?: { name: string; value: string }
 }
 
 // For storing selection before parent re-rendering
@@ -681,10 +682,16 @@ export default function useEditorHTMLDaemon(
         if (!Operations.length) return false;
         let operation: TSyncOperation | void;
         while ((operation = Operations.pop())) {
-            const {type, newNode, targetNodeXP, nodeText, parentXP, siblingXP} = operation;
+            const {
+                type, newNode, targetNodeXP,
+                nodeText, parentXP, siblingXP, attribute
+            } = operation;
+            
             if (DaemonOptions.ShouldLog)
                 console.log("OP Log:", operation);
+            
             try {
+                // switch (type):
                 if (type === "TEXT") {
                     UpdateMirrorDocument.Text(targetNodeXP!, nodeText!);
                 }
@@ -696,6 +703,9 @@ export default function useEditorHTMLDaemon(
                 }
                 if (type === "REPLACE") {
                     UpdateMirrorDocument.Replace(targetNodeXP!, newNode!);
+                }
+                if (type === "ATTR") {
+                    UpdateMirrorDocument.Attribute(targetNodeXP!, attribute!);
                 }
             } catch (e) {
                 console.error("Error When Syncing:", e);
@@ -806,6 +816,21 @@ export default function useEditorHTMLDaemon(
             const ReplacementNode = (typeof NewNode === 'function') ? NewNode() : NewNode;
             
             (targetNode as HTMLElement).replaceWith(ReplacementNode);
+        },
+        'Attribute': (NodeXpath: string, NewAttribute: { name: string; value: string }) => {
+            
+            if (!NodeXpath || !NewAttribute.name || !NewAttribute.value) {
+                console.warn('UpdateMirrorDocument.Attribute Invalid Parameter');
+                return;
+            }
+            
+            const targetNode = GetNodeFromXPath(MirrorDocumentRef.current!, NodeXpath);
+            if (!targetNode) {
+                console.warn('UpdateMirrorDocument.Replace No TargetNode');
+                return;
+            }
+            
+            (targetNode as HTMLElement).setAttribute(NewAttribute.name, NewAttribute.value);
         },
     }
     
