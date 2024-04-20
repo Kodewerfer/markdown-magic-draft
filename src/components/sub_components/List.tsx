@@ -117,7 +117,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
                 
                 if (typeof MutationObserver) {
                     ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
+                    ListItemRef.current && ElementOBRef.current?.observe(ListItemRef.current, {
                         childList: true
                     });
                 }
@@ -132,7 +132,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     
-    const WholeElementRef = useRef<HTMLElement | null>(null);
+    const ListItemRef = useRef<HTMLElement | null>(null);
     const QuoteSyntaxFiller = useRef<HTMLElement>();  //filler element
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
@@ -147,17 +147,17 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
                     daemonHandle.AddToOperations([
                         {
                             type: "REMOVE",
-                            targetNode: WholeElementRef.current!,
+                            targetNode: ListItemRef.current!,
                         },
                         {
                             type: "ADD",
                             newNode: () => {
                                 const ReplacementElement = document.createElement('p') as HTMLElement;
-                                ReplacementElement.innerHTML = GetChildNodesAsHTMLString(WholeElementRef.current?.childNodes);
+                                ReplacementElement.innerHTML = GetChildNodesAsHTMLString(ListItemRef.current?.childNodes);
                                 return ReplacementElement;
                             },
                             parentXP: "//body",
-                            siblingNode: WholeElementRef.current?.parentNode?.nextSibling
+                            siblingNode: ListItemRef.current?.parentNode?.nextSibling
                         }]);
                     daemonHandle.SyncNow();
                 }
@@ -176,16 +176,41 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         
         const range = CurrentSelection.getRangeAt(0);
         
-        if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
-        if (RemainingText.trim() === '') return true;
+        // Beginning of the line, Only add empty line before container if first element of the first item list
+        if (PrecedingText.trim() === '' && range.startOffset === 0) {
+            const ListContainer = ListItemRef.current?.parentNode;
+            if (ListContainer && ListContainer.firstElementChild === ListItemRef.current)
+                return true;
+        }
+        // End of the line, Only add empty line after container if first element of the first item list
+        if (RemainingText.trim() === '') {
+            const ListContainer = ListItemRef.current?.parentNode;
+            if (ListContainer && ListContainer.lastElementChild === ListItemRef.current)
+                return true;
+            //move caret to the next line
+            if (ListItemRef.current?.nextElementSibling && ListItemRef.current.nextElementSibling.childNodes.length) {
+                let TargetNode: Node | null = null;
+                for (let childNode of ListItemRef.current.nextElementSibling.childNodes) {
+                    if (childNode.nodeType === Node.TEXT_NODE) {
+                        TargetNode = childNode;
+                    }
+                }
+                
+                if (!TargetNode || !TargetNode.textContent) return;
+                
+                MoveCaretToNode(TargetNode, 0);
+                return;
+            }
+            
+        }
         
         // mid-line enter key
-        if (!WholeElementRef.current) return;
-        if (!WholeElementRef.current.childNodes || !WholeElementRef.current.childNodes.length) return;
+        if (!ListItemRef.current) return;
+        if (!ListItemRef.current.childNodes || !ListItemRef.current.childNodes.length) return;
         
         // Move caret to the end of the last text node.
         let TargetNode: Node | null = null;
-        for (let childNode of WholeElementRef.current.childNodes) {
+        for (let childNode of ListItemRef.current.childNodes) {
             if (childNode.nodeType === Node.TEXT_NODE) {
                 TargetNode = childNode;
             }
@@ -208,7 +233,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     
     return React.createElement(tagName, {
         ...otherProps,
-        ref: WholeElementRef,
+        ref: ListItemRef,
     }, [
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
