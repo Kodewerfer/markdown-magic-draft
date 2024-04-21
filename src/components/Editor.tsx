@@ -269,7 +269,7 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
-            DaemonHandle.SetFutureCaret('nextline');
+            DaemonHandle.SetFutureCaret('NextLine');
             DaemonHandle.SyncNow();
             return;
         }
@@ -335,7 +335,7 @@ export default function Editor(
                 siblingNode: NearestContainer?.nextSibling,
                 parentXP: "//body"
             });
-            DaemonHandle.SetFutureCaret('nextline');
+            DaemonHandle.SetFutureCaret('NextLine');
             DaemonHandle.SyncNow();
             
             return;
@@ -356,7 +356,7 @@ export default function Editor(
             parentXP: "//body"
         });
         
-        DaemonHandle.SetFutureCaret("nextline");
+        DaemonHandle.SetFutureCaret("NextLine");
         DaemonHandle.SyncNow();
     }
     

@@ -72,7 +72,7 @@ type THookOptions = {
     
 }
 
-type TCaretToken = 'zero' | 'nextline' | null;
+type TCaretToken = 'zero' | 'NextLine' | 'ElementNextSibling' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => void;
@@ -880,7 +880,7 @@ export default function useEditorHTMLDaemon(
         let AnchorNode;
         let CharsToCaretPosition = SavedState.CaretPosition;
         const NodeOverflowBreakCharBreak = -5;
-        const NodeContextArray: Node[] = []; //last being the lastest line.
+        const PastParagraphs: Node[] = []; //last being the lastest line.
         
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
@@ -890,7 +890,7 @@ export default function useEditorHTMLDaemon(
             }
             
             if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName.toLowerCase()) && AnchorNode.childNodes.length) {
-                NodeContextArray.push(AnchorNode);
+                PastParagraphs.push(AnchorNode);
             }
             
             // the anchor AnchorNode found.
@@ -935,7 +935,7 @@ export default function useEditorHTMLDaemon(
         ({
             AnchorNode,
             StartingOffset
-        } = HandleSelectionToken(DaemonState.CaretOverrideToken, Walker, NodeContextArray, AnchorNode, StartingOffset));
+        } = HandleSelectionToken(Walker, PastParagraphs, AnchorNode, StartingOffset));
         
         // console.log(AnchorNode, "at", StartingOffset);
         
@@ -954,23 +954,30 @@ export default function useEditorHTMLDaemon(
         
     }
     
-    function HandleSelectionToken(OverrideToken: null | string, Walker: TreeWalker, NodeContextArray: Node[], CurrentAnchorNode: Node, CurrentStartingOffset: number) {
-        
+    function HandleSelectionToken(Walker: TreeWalker, NodeContextArray: Node[], CurrentAnchorNode: Node, CurrentStartingOffset: number) {
+        const OverrideToken = DaemonState.CaretOverrideToken;
         if (!OverrideToken) return {AnchorNode: CurrentAnchorNode, StartingOffset: CurrentStartingOffset};
         
         let AnchorNode: Node | null = CurrentAnchorNode;
         let StartingOffset = 0;
         
-        const Token = OverrideToken.toLowerCase();
+        const Token = OverrideToken;
         switch (Token) {
             case 'zero':
                 StartingOffset = 0;
                 break;
-            case 'nextline':
+            case 'NextLine':
                 while (AnchorNode = Walker.nextNode()) {
                     if (AnchorNode.parentNode && AnchorNode.parentNode === WatchElementRef.current && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false')
                         break;
                 }
+                break;
+            case 'ElementNextSibling':
+                if (AnchorNode.nodeType === Node.TEXT_NODE) {
+                    AnchorNode = AnchorNode.parentNode;
+                }
+                AnchorNode = (AnchorNode as HTMLElement).nextElementSibling
+                StartingOffset = 0;
                 break;
         }
         
