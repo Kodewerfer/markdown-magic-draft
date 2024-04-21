@@ -2,7 +2,7 @@ import React, {useEffect, Children, useRef, useState, useLayoutEffect} from "rea
 import {TDaemonReturn, TSyncOperation} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
-    GetChildNodesAsHTMLString,
+    GetChildNodesAsHTMLString, GetNextSiblings,
     MoveCaretToNode
 } from "../Helpers";
 
@@ -117,7 +117,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
                 
                 if (typeof MutationObserver) {
                     ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    ListItemRef.current && ElementOBRef.current?.observe(ListItemRef.current, {
+                    CurrentListItemRef.current && ElementOBRef.current?.observe(CurrentListItemRef.current, {
                         childList: true
                     });
                 }
@@ -132,7 +132,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     
-    const ListItemRef = useRef<HTMLElement | null>(null);
+    const CurrentListItemRef = useRef<HTMLElement | null>(null);
     const QuoteSyntaxFiller = useRef<HTMLElement>();  //filler element
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
@@ -147,17 +147,17 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
                     daemonHandle.AddToOperations([
                         {
                             type: "REMOVE",
-                            targetNode: ListItemRef.current!,
+                            targetNode: CurrentListItemRef.current!,
                         },
                         {
                             type: "ADD",
                             newNode: () => {
                                 const ReplacementElement = document.createElement('p') as HTMLElement;
-                                ReplacementElement.innerHTML = GetChildNodesAsHTMLString(ListItemRef.current?.childNodes);
+                                ReplacementElement.innerHTML = GetChildNodesAsHTMLString(CurrentListItemRef.current?.childNodes);
                                 return ReplacementElement;
                             },
                             parentXP: "//body",
-                            siblingNode: ListItemRef.current?.parentNode?.nextSibling
+                            siblingNode: CurrentListItemRef.current?.parentNode?.nextSibling
                         }]);
                     daemonHandle.SyncNow();
                 }
@@ -174,23 +174,49 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
         if (!CurrentSelection || !CurrentAnchorNode) return;
         
+        // caret lands on the leading syntax element or on the li itself, move it into the text node
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || (CurrentAnchorNode as HTMLElement).contentEditable === 'false') {
+            if (!CurrentListItemRef.current || !CurrentListItemRef.current.childNodes.length) return;
+            for (let ChildNode of CurrentListItemRef.current.childNodes) {
+                if (ChildNode.nodeType === Node.TEXT_NODE)
+                    MoveCaretToNode(ChildNode, 0);
+            }
+            return;
+        }
+        
         const range = CurrentSelection.getRangeAt(0);
         
-        // Beginning of the line, Only add empty line before container if first element of the first item list
-        if (PrecedingText.trim() === '' && range.startOffset === 0) {
-            const ListContainer = ListItemRef.current?.parentNode;
-            if (ListContainer && ListContainer.firstElementChild === ListItemRef.current)
+        const AnchorPrevSibling = (CurrentAnchorNode as HTMLElement).previousElementSibling;
+        const bLeadingPosition = range.startOffset === 0
+            || (AnchorPrevSibling && (AnchorPrevSibling as HTMLElement).contentEditable === 'false');
+        
+        // Beginning of the line, Only add empty line before container if it's the first element of the first list item
+        if (PrecedingText.trim() === '' && bLeadingPosition) {
+            
+            const ListContainer = CurrentListItemRef.current?.parentNode;
+            
+            if (ListContainer && ListContainer.firstElementChild === CurrentListItemRef.current) {
                 return true;
+            }
+            
+            let TargetNode = GetLastTextNode();
+            
+            if (!TargetNode || !TargetNode.textContent) return;
+            
+            MoveCaretToNode(TargetNode, TargetNode.textContent.length);
+            
+            return;
         }
         // End of the line, Only add empty line after container if first element of the first item list
+        // otherwise, move caret to the next line
         if (RemainingText.trim() === '') {
-            const ListContainer = ListItemRef.current?.parentNode;
-            if (ListContainer && ListContainer.lastElementChild === ListItemRef.current)
+            const ListContainer = CurrentListItemRef.current?.parentNode;
+            if (ListContainer && ListContainer.lastElementChild === CurrentListItemRef.current)
                 return true;
             //move caret to the next line
-            if (ListItemRef.current?.nextElementSibling && ListItemRef.current.nextElementSibling.childNodes.length) {
+            if (CurrentListItemRef.current?.nextElementSibling && CurrentListItemRef.current.nextElementSibling.childNodes.length) {
                 let TargetNode: Node | null = null;
-                for (let childNode of ListItemRef.current.nextElementSibling.childNodes) {
+                for (let childNode of CurrentListItemRef.current.nextElementSibling.childNodes) {
                     if (childNode.nodeType === Node.TEXT_NODE) {
                         TargetNode = childNode;
                     }
@@ -204,23 +230,78 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             
         }
         
-        // mid-line enter key
-        if (!ListItemRef.current) return;
-        if (!ListItemRef.current.childNodes || !ListItemRef.current.childNodes.length) return;
+        // mid-line enter key, move what is following the caret to the next line as new li
+        if (!CurrentListItemRef.current) return;
+        if (!CurrentListItemRef.current.childNodes || !CurrentListItemRef.current.childNodes.length) return;
         
-        // Move caret to the end of the last text node.
-        let TargetNode: Node | null = null;
-        for (let childNode of ListItemRef.current.childNodes) {
-            if (childNode.nodeType === Node.TEXT_NODE) {
-                TargetNode = childNode;
+        const FollowingNodes = GetNextSiblings(CurrentAnchorNode);
+        // No following element or text content
+        if ((!RemainingText || RemainingText.trim() === '') && !FollowingNodes.length) {
+            // Move caret to the end of the last text node.
+            let TargetNode = GetLastTextNode();
+            
+            if (!TargetNode || !TargetNode.textContent) return;
+            
+            MoveCaretToNode(TargetNode, TargetNode.textContent.length);
+            return;
+        }
+        
+        // Normal logic
+        console.log("List mid line");
+        const NewLine = document.createElement("li");  // New list item
+        
+        let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
+        if (anchorNodeClone.textContent !== null) anchorNodeClone.textContent = RemainingText;
+        
+        NewLine.appendChild(anchorNodeClone);
+        if (FollowingNodes.length) {
+            for (let Node of FollowingNodes) {
+                
+                NewLine.appendChild(Node.cloneNode(true));
+                
+                daemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: Node,
+                });
+            }
+        }
+        daemonHandle.AddToOperations({
+            type: "TEXT",
+            targetNode: CurrentAnchorNode,
+            nodeText: PrecedingText
+        });
+        
+        daemonHandle.AddToOperations({
+            type: "ADD",
+            newNode: NewLine,
+            siblingNode: CurrentListItemRef.current?.nextSibling,
+            parentNode: CurrentListItemRef.current?.parentNode!
+        });
+        
+        daemonHandle.SetFutureCaret('ElementNextSibling');
+        daemonHandle.SyncNow();
+        
+        return;
+    }
+    
+    // Helper
+    function GetLastTextNode() {
+        let lastTextNode: Node | null = null;
+        
+        if (CurrentListItemRef.current) {
+            for (let i = CurrentListItemRef.current.childNodes.length - 1; i >= 0; i--) {
+                
+                const childNode = CurrentListItemRef.current.childNodes[i];
+                
+                if (childNode.nodeType === Node.TEXT_NODE) {
+                    lastTextNode = childNode;
+                    break;
+                }
+                
             }
         }
         
-        if (!TargetNode || !TargetNode.textContent) return;
-        
-        MoveCaretToNode(TargetNode, TargetNode.textContent.length);
-        
-        return;
+        return lastTextNode;
     }
     
     // Add filler element to ignore, add filler element's special handling operation
@@ -233,7 +314,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     
     return React.createElement(tagName, {
         ...otherProps,
-        ref: ListItemRef,
+        ref: CurrentListItemRef,
     }, [
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
