@@ -132,6 +132,21 @@ export function FindNearestParagraph(node: Node, Element: HTMLElement): HTMLElem
     return null;
 }
 
+export function GetNextSiblings(node: Node): Node[] {
+    let current: Node | null = node;
+    const siblings: Node[] = [];
+    while (current) {
+        if (current.nextSibling) {
+            siblings.push(current.nextSibling);
+            current = current.nextSibling;
+        } else {
+            break;
+        }
+    }
+    return siblings;
+}
+
+
 /**
  * Retrieves the context of the caret within the current selection.
  *

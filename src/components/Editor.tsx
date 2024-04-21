@@ -6,7 +6,7 @@ import "./Editor.css";
 import _ from 'lodash';
 
 // helper
-import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretIntoNode} from "./Helpers";
+import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretIntoNode, GetNextSiblings} from "./Helpers";
 // Editor Components
 import Paragraph from './sub_components/Paragraph';
 import PlainSyntax from "./sub_components/PlainSyntax";
@@ -723,20 +723,6 @@ function FindActiveEditorComponent(DomNode: HTMLElement, TraverseUp = 0): any {
     
     // return compFiber.stateNode; // if dealing with class component, in that case "setState" can be called from this directly.
     return compFiber;
-}
-
-function GetNextSiblings(node: Node): Node[] {
-    let current: Node | null = node;
-    const siblings: Node[] = [];
-    while (current) {
-        if (current.nextSibling) {
-            siblings.push(current.nextSibling);
-            current = current.nextSibling;
-        } else {
-            break;
-        }
-    }
-    return siblings;
 }
 
 function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement: HTMLElement) {
