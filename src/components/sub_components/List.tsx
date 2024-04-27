@@ -166,8 +166,49 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     }
     
     function DelKeyHandler(ev: Event) {
-        ev.preventDefault();
-        ev.stopImmediatePropagation();
+        
+        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
+        
+        if (!CurrentSelection || !CurrentAnchorNode) return;
+        
+        // caret lands on the leading syntax element or on the li itself, move it into the text node
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || (CurrentAnchorNode as HTMLElement).contentEditable === 'false') {
+            if (!CurrentListItemRef.current || !CurrentListItemRef.current.childNodes.length) return;
+            for (let ChildNode of CurrentListItemRef.current.childNodes) {
+                if (ChildNode.nodeType === Node.TEXT_NODE)
+                    MoveCaretToNode(ChildNode, 0);
+            }
+            return;
+        }
+        if (RemainingText.trim() !== '' || CurrentAnchorNode.nextSibling) return;
+        
+        if (!CurrentListItemRef.current) return;
+        
+        // Not having one more list item following it
+        const nextElementSibling = CurrentListItemRef.current?.nextElementSibling;
+        if (nextElementSibling?.tagName.toLowerCase() !== 'li') return;
+        
+        // End of line, join with the next list item
+        let MergedListItem = CurrentListItemRef.current.cloneNode(true);
+        
+        nextElementSibling.childNodes.forEach((ChildNode) => {
+            MergedListItem.appendChild(ChildNode.cloneNode(true));
+        })
+        
+        
+        daemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: nextElementSibling,
+        });
+        
+        daemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: CurrentListItemRef.current,
+            newNode: MergedListItem
+        });
+        
+        daemonHandle.SyncNow();
+        
     }
     
     function EnterKeyHandler(ev: Event) {
