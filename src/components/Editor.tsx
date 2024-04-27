@@ -61,7 +61,7 @@ export default function Editor(
             .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
                 acc[tagName] = (props: any) => {
                     // inline syntax
-                    if (props['data-md-syntax'] && props['data-md-container'] !== 'true') {
+                    if (props['data-md-syntax'] && props['data-md-inline']) {
                         if (props['data-link-to']) {
                             return <SpecialLink {...props}
                                                 daemonHandle={DaemonHandle}
@@ -106,17 +106,26 @@ export default function Editor(
                                           daemonHandle={DaemonHandle}
                                           tagName={tagName}/>
                     }
-                    // TODO:list component
+                    // List and items
                     if (props['data-md-list'] === 'true') {
                         return <ListContainer {...props}
                                               daemonHandle={DaemonHandle}
                                               tagName={tagName}/>
                     }
-                    
                     if (props['data-md-list-item'] === 'true') {
                         return <ListItem {...props}
                                          daemonHandle={DaemonHandle}
                                          tagName={tagName}/>
+                    }
+                    
+                    // Code and Code block
+                    // usually code blocks, supersede in-line codes
+                    if (props['data-md-pre-item'] === 'true') {
+                        //     TODO
+                    }
+                    // singular in-line code items
+                    if (props['data-md-code'] === 'true') {
+                        //     TODO
                     }
                     
                     // FIXME:Placeholder

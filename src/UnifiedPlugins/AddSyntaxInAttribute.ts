@@ -11,15 +11,16 @@ function AddSyntaxAttrTransformer(ast: object) {
         
         // special cases, when element is a part of a "composite" element
         let parentTagName: string = parent.tagName?.toLowerCase();
+        
+        // Switch on parent tag names
         switch (parentTagName) {
-            // Switch on parent tag names
-            case 'blockquote':
+            case 'blockquote': // a single block quote item
                 NodeProps['data-md-quote-item'] = "true";
                 return;
-            case 'ul':
+            case 'ul': //list item
                 NodeProps['data-md-list-item'] = "true";
                 return;
-            case 'pre':
+            case 'pre': //pre item usually a single code element that serves as a code block, different from inline code element
                 NodeProps['data-md-pre-item'] = "true";
                 return;
         }
@@ -53,14 +54,22 @@ function AddSyntaxAttrTransformer(ast: object) {
             case 'strong':
                 NodeProps['data-md-syntax'] = "**";
                 NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-inline'] = 'true';
                 break;
             case 'em':
                 NodeProps['data-md-syntax'] = "_";
                 NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-inline'] = 'true';
                 break;
             case 'del':
                 NodeProps['data-md-syntax'] = "~~";
                 NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-inline'] = 'true';
+                break;
+            case 'code':
+                NodeProps['data-md-syntax'] = "`";
+                NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-code'] = 'true';
                 break;
             // Container-like elements
             case 'blockquote':
@@ -75,11 +84,6 @@ function AddSyntaxAttrTransformer(ast: object) {
                 break;
             case 'pre':
                 NodeProps['data-md-syntax'] = "```";
-                NodeProps['data-md-wrapped'] = 'true';
-                NodeProps['data-md-container'] = 'true';
-                break;
-            case 'code':
-                NodeProps['data-md-syntax'] = "`";
                 NodeProps['data-md-wrapped'] = 'true';
                 NodeProps['data-md-container'] = 'true';
                 break;
