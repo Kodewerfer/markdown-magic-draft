@@ -73,6 +73,8 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
             daemonHandle.DiscardHistory(1);
         }
         
+        // No surrounding Ul element
+        // Add data-list-merge-valid attr to indicate this is an "OG" ul that can be merged
         if (!bPreviousSiblingIsUL && !bNextSiblingIsUL && !bCheckedForMerge.current) {
             
             bCheckedForMerge.current = true;
