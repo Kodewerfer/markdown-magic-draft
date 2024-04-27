@@ -8,11 +8,11 @@ import _ from 'lodash';
 // helper
 import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretIntoNode, GetNextSiblings} from "./Helpers";
 // Editor Components
-import Paragraph from './sub_components/Paragraph';
-import PlainSyntax from "./sub_components/PlainSyntax";
-import Links from "./sub_components/Links";
-import {Blockquote, QuoteItem} from "./sub_components/Blockquote";
-import {ListContainer, ListItem} from "./sub_components/List";
+import Paragraph from './Editor_Parts/Paragraph';
+import PlainSyntax from "./Editor_Parts/PlainSyntax";
+import Links from "./Editor_Parts/Links";
+import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
+import {ListContainer, ListItem} from "./Editor_Parts/List";
 
 type TEditorProps = {
     SourceData?: string | undefined
