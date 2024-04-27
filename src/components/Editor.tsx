@@ -423,19 +423,21 @@ export default function Editor(
         // Dealing with container type of element
         if (nextElementSibling.nodeType === Node.ELEMENT_NODE && (nextElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
             console.log("Delete into container");
+            
             if (nextElementSibling.childElementCount > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
                     targetNode: (nextElementSibling as HTMLElement).firstElementChild!
                 });
-            
-            // Only one sub element, delete the whole thing
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: nextElementSibling
-            });
+            else
+                // Only one sub element, delete the whole thing
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: nextElementSibling
+                });
             
             DaemonHandle.SyncNow();
+            
             return;
         }
         
@@ -445,12 +447,9 @@ export default function Editor(
         
         let NewLine = NearestContainer.cloneNode(true);
         
-        console.log(NewLine.childNodes[0].textContent)
-        
         nextElementSibling.childNodes.forEach((ChildNode) => {
             NewLine.appendChild(ChildNode.cloneNode(true));
         })
-        
         
         DaemonHandle.AddToOperations({
             type: "REMOVE",
@@ -502,8 +501,6 @@ export default function Editor(
         let previousElementSibling = NearestContainer?.previousElementSibling; //nextsibling could be a "\n"
         if (!previousElementSibling) return; //No more lines following
         
-        console.log(CurrentAnchorNode);
-        
         // when there is still content that could be deleted, but caret lands on the wrong element
         // FIXME: may be buggy
         if (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling !== previousElementSibling) {
@@ -544,16 +541,18 @@ export default function Editor(
         // Dealing with container type of element
         if (previousElementSibling.nodeType === Node.ELEMENT_NODE && (previousElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
             console.log("Backspace into container");
+            
             if (previousElementSibling.childElementCount > 1)
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
                     targetNode: (previousElementSibling as HTMLElement).lastElementChild!
                 });
+            else
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: previousElementSibling
+                });
             
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: previousElementSibling
-            });
             DaemonHandle.SetFutureCaret('zero');
             DaemonHandle.SyncNow();
             return;
