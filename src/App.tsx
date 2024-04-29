@@ -51,6 +51,8 @@ normal textnormal textnormal text
 
 :br
 
+test normal text with inline \`code()\` element
+
 \`\`\`javascript
 var s = "JavaScript syntax highlighting";
 alert(s);

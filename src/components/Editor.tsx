@@ -13,6 +13,7 @@ import PlainSyntax from "./Editor_Parts/PlainSyntax";
 import Links from "./Editor_Parts/Links";
 import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
 import {ListContainer, ListItem} from "./Editor_Parts/List";
+import {CodeItem, Preblock} from "./Editor_Parts/CodeItems";
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -54,6 +55,7 @@ export default function Editor(
         setEditorComponent(ConfigAndConvertToReact(EditorHTMLString.current));
     }
     
+    // FIXME: this structure is getting unwieldy, find a way to refactor.
     function ConfigAndConvertToReact(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
@@ -118,14 +120,24 @@ export default function Editor(
                                          tagName={tagName}/>
                     }
                     
+                    
+                    if (props['data-md-preformatted'] === 'true') {
+                        return <Preblock {...props}
+                                         daemonHandle={DaemonHandle}
+                                         tagName={tagName}/>
+                    }
                     // Code and Code block
                     // usually code blocks, supersede in-line codes
-                    if (props['data-md-pre-item'] === 'true') {
-                        //     TODO
+                    if (props['data-md-pre-item'] === 'true' && props['data-md-code'] === 'true') {
+                        return <CodeItem {...props}
+                                         daemonHandle={DaemonHandle}
+                                         tagName={tagName}/>
                     }
                     // singular in-line code items
                     if (props['data-md-code'] === 'true') {
-                        //     TODO
+                        return <PlainSyntax {...props}
+                                            daemonHandle={DaemonHandle}
+                                            tagName={tagName}/>;
                     }
                     
                     // FIXME:Placeholder

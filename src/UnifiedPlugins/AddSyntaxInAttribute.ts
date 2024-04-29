@@ -12,19 +12,6 @@ function AddSyntaxAttrTransformer(ast: object) {
         // special cases, when element is a part of a "composite" element
         let parentTagName: string = parent.tagName?.toLowerCase();
         
-        // Switch on parent tag names
-        switch (parentTagName) {
-            case 'blockquote': // a single block quote item
-                NodeProps['data-md-quote-item'] = "true";
-                return;
-            case 'ul': //list item
-                NodeProps['data-md-list-item'] = "true";
-                return;
-            case 'pre': //pre item usually a single code element that serves as a code block, different from inline code element
-                NodeProps['data-md-pre-item'] = "true";
-                return;
-        }
-        
         // ['p','a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'del']
         switch (tagName) {
             case 'a':
@@ -85,12 +72,27 @@ function AddSyntaxAttrTransformer(ast: object) {
             case 'pre':
                 NodeProps['data-md-syntax'] = "```";
                 NodeProps['data-md-wrapped'] = 'true';
+                NodeProps['data-md-preformatted'] = 'true';
                 NodeProps['data-md-container'] = 'true';
                 break;
             // case 'thead':
             //     NodeProps['data-md-syntax'] = "| --- | --- |";
             //     break;
         }
+        
+        // Switch on parent tag names
+        switch (parentTagName) {
+            case 'blockquote': // a single block quote item
+                NodeProps['data-md-quote-item'] = "true";
+                break;
+            case 'ul': //list item
+                NodeProps['data-md-list-item'] = "true";
+                break;
+            case 'pre': //pre item usually a single code element that serves as a code block, different from inline code element
+                NodeProps['data-md-pre-item'] = "true";
+                break;
+        }
+        
         return node;
     }
 }
