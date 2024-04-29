@@ -41,6 +41,7 @@ export function Preblock({children, tagName, parentSetActivation, daemonHandle, 
     }, isBlockEmpty ? [FillerElement] : children);
 }
 
+// Only handle code blocks, inline codes are PlainSyntax component
 export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
