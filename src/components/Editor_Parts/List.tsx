@@ -16,6 +16,29 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
     const ListContainerRef = useRef<HTMLElement | null>(null);
     const bCheckedForMerge = useRef(false);
     
+    // Self destruct if no child element
+    useEffect(() => {
+        if (!children || React.Children.count(children) === 1) {
+            if (String(children).trim() === '' && ListContainerRef.current) {
+                
+                daemonHandle.AddToOperations(
+                    {
+                        type: "REMOVE",
+                        targetNode: ListContainerRef.current!,
+                    }
+                );
+                
+                ListContainerRef.current = null;
+                daemonHandle.SyncNow()
+                    .then(() => {
+                        console.log("calling dis")
+                        daemonHandle.DiscardHistory(1);
+                    });
+                
+            }
+        }
+    });
+    
     // Merge to the prev or next ul if applicable, also manipulate history stack
     useLayoutEffect(() => {
         

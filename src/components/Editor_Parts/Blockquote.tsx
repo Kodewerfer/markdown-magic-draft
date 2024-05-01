@@ -17,7 +17,7 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     
     const [isBlockEmpty, setIsBlockEmpty] = useState(false);
     
-    // Add a simple Br as filler element if no QuoteItemgit
+    // Self destruct if no child element
     useEffect(() => {
         if (!children || React.Children.count(children) === 1) {
             if (String(children).trim() === '' && ContainerRef.current) {
