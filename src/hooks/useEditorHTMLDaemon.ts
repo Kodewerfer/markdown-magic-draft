@@ -191,7 +191,8 @@ export default function useEditorHTMLDaemon(
                 if (lastMutation && mutation.target === lastMutation.target) continue;
                 
                 // Check for ignore
-                if (DaemonState.IgnoreMap.get(mutation.target) === 'text' || DaemonState.IgnoreMap.get(mutation.target) === 'any') continue;
+                if (DaemonState.IgnoreMap.get(mutation.target) === 'text' || DaemonState.IgnoreMap.get(mutation.target) === 'any')
+                    continue;
                 
                 // Get the original value for the text node. used in undo
                 // Deprecated, but value still processed for now
@@ -390,6 +391,9 @@ export default function useEditorHTMLDaemon(
                     // Check Ignore map
                     if (DaemonState.IgnoreMap.get(addedNode) === 'add' || DaemonState.IgnoreMap.get(addedNode) === 'any')
                         continue;
+                    // since the added element will always be new, check if the container is in IgnoreMap
+                    if (DaemonState.IgnoreMap.get(mutation.target) === 'add' || DaemonState.IgnoreMap.get(mutation.target) === 'any')
+                        continue;
                     
                     // rollback
                     if (addedNode.parentNode) {
@@ -471,6 +475,10 @@ export default function useEditorHTMLDaemon(
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
         if (DaemonState.AdditionalOperation.length) {
             const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation);
+            
+            if (DaemonOptions.ShouldLog)
+                console.log("Add ops:", syncOpsBuilt);
+            
             OperationLogs.unshift(...syncOpsBuilt.reverse());
         }
         return OperationLogs;
@@ -1175,24 +1183,24 @@ export default function useEditorHTMLDaemon(
             if (DaemonOptions.ShouldLog)
                 console.log("DiscardHistory: ", DiscardCount, " Removed")
         },
-        SyncNow: () => {
+        SyncNow() {
             throttledSelectionStatus();
             throttledRollbackAndSync();
         },
-        SetFutureCaret: (token: TCaretToken) => {
+        SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideToken = token;
         },
-        AddToIgnore: (Element: Node, Type: TDOMTrigger) => {
+        AddToIgnore(Element: Node, Type: TDOMTrigger) {
             DaemonState.IgnoreMap.set(Element, Type);
         },
-        AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => {
+        AddToBindOperations(Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) {
             //TODO: DEPRECATED
             DaemonState.BindOperationMap.set(Element, {
                 Trigger: Trigger,
                 Operations: Operation
             })
         },
-        AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => {
+        AddToOperations(Operation: TSyncOperation | TSyncOperation[]) {
             if (!Array.isArray(Operation))
                 Operation = [Operation];
             DaemonState.AdditionalOperation.push(...Operation);
