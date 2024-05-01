@@ -32,7 +32,6 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
                 ContainerRef.current = null;
                 daemonHandle.SyncNow()
                     .then(() => {
-                        console.log("calling dis")
                         daemonHandle.DiscardHistory(1);
                     });
                 
