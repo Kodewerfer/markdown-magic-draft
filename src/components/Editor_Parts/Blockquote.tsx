@@ -18,22 +18,32 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     const [isBlockEmpty, setIsBlockEmpty] = useState(false);
     
     // Add a simple Br as filler element if no QuoteItemgit
-    // No really needed because the current deletion functions will delete the block all-together
     useEffect(() => {
         if (!children || React.Children.count(children) === 1) {
             if (String(children).trim() === '' && ContainerRef.current) {
-                setIsBlockEmpty(true);
+                
+                daemonHandle.AddToOperations(
+                    {
+                        type: "REMOVE",
+                        targetNode: ContainerRef.current!,
+                    }
+                );
+                
                 ContainerRef.current = null;
+                daemonHandle.SyncNow()
+                    .then(() => {
+                        console.log("calling dis")
+                        daemonHandle.DiscardHistory(1);
+                    });
+                
             }
         }
     });
     
-    const FillerElement = (<br/>);
-    
     return React.createElement(tagName, {
         ref: ContainerRef,
         ...otherProps
-    }, isBlockEmpty ? [FillerElement] : children);
+    }, children);
 }
 
 export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {

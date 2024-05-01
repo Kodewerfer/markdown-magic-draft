@@ -75,7 +75,7 @@ type THookOptions = {
 type TCaretToken = 'zero' | 'NextLine' | 'ElementNextSibling' | null;
 
 export type TDaemonReturn = {
-    SyncNow: () => void;
+    SyncNow: () => Promise<void>;
     DiscardHistory: (DiscardCount: number) => void;
     SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
@@ -1002,10 +1002,11 @@ export default function useEditorHTMLDaemon(
     }, 450);
     const debounceRollbackAndSync = _.debounce(rollbackAndSync, 500);
     
+    const throttledFuncDelay = 200;
     const throttledSelectionStatus = _.throttle(() => {
         DaemonState.SelectionStatusCache = GetSelectionStatus();
-    }, 200);
-    const throttledRollbackAndSync = _.throttle(rollbackAndSync, 200);
+    }, throttledFuncDelay);
+    const throttledRollbackAndSync = _.throttle(rollbackAndSync, throttledFuncDelay);
     
     // Primary entry point to supporting functionalities such as restoring selection.
     useLayoutEffect(() => {
@@ -1171,6 +1172,7 @@ export default function useEditorHTMLDaemon(
     // Used by the already existing components in the editor
     return {
         DiscardHistory(DiscardCount: number): void {
+            let DiscardCountActual = 0;
             if (DiscardCount === 0) return;
             if (!DaemonState.UndoStack) return;
             if (DiscardCount > DaemonState.UndoStack.length) {
@@ -1178,14 +1180,24 @@ export default function useEditorHTMLDaemon(
             }
             while (DiscardCount) {
                 DaemonState.UndoStack.pop();
+                DiscardCountActual += 1;
                 DiscardCount -= 1;
             }
             if (DaemonOptions.ShouldLog)
-                console.log("DiscardHistory: ", DiscardCount, " Removed")
+                console.log("DiscardHistory: ", DiscardCountActual, " Removed")
         },
-        SyncNow() {
-            throttledSelectionStatus();
-            throttledRollbackAndSync();
+        SyncNow(): Promise<void> {
+            
+            return new Promise((resolve) => {
+                // throttledSelectionStatus();
+                // throttledRollbackAndSync();
+                // setTimeout(() => {
+                //     resolve();
+                // }, throttledFuncDelay);
+                DaemonState.SelectionStatusCache = GetSelectionStatus();
+                rollbackAndSync()
+                resolve()
+            });
         },
         SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideToken = token;

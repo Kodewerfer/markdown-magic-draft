@@ -69,8 +69,10 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
             );
             
             ListContainerRef.current = null;
-            daemonHandle.SyncNow();
-            daemonHandle.DiscardHistory(1);
+            daemonHandle.SyncNow().then(() => {
+                daemonHandle.DiscardHistory(1);
+            });
+            
         }
         
         // No surrounding Ul element
