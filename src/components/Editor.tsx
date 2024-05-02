@@ -13,7 +13,7 @@ import PlainSyntax from "./Editor_Parts/PlainSyntax";
 import Links from "./Editor_Parts/Links";
 import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
 import {ListContainer, ListItem} from "./Editor_Parts/List";
-import {CodeItem, Preblock} from "./Editor_Parts/CodeItems";
+import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -81,22 +81,6 @@ export default function Editor(
                                       daemonHandle={DaemonHandle}
                                       tagName={tagName}/>;
                     }
-                    // Paragraph and Headers
-                    if (props['data-md-paragraph'] || props['data-md-header']) {
-                        // Header
-                        if (props['data-md-header'] !== undefined) {
-                            return <Paragraph {...props}
-                                              isHeader={true}
-                                              headerSyntax={props['data-md-header']}
-                                              daemonHandle={DaemonHandle}
-                                              tagName={tagName}/>
-                        }
-                        // Normal P tags
-                        return <Paragraph {...props}
-                                          daemonHandle={DaemonHandle}
-                                          tagName={tagName}/>
-                    }
-                    
                     // Block quote
                     if (props['data-md-blockquote'] === 'true') {
                         return <Blockquote {...props}
@@ -138,6 +122,21 @@ export default function Editor(
                         return <PlainSyntax {...props}
                                             daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
+                    }
+                    // Paragraph and Headers
+                    if (props['data-md-paragraph'] || props['data-md-header']) {
+                        // Header
+                        if (props['data-md-header'] !== undefined) {
+                            return <Paragraph {...props}
+                                              isHeader={true}
+                                              headerSyntax={props['data-md-header']}
+                                              daemonHandle={DaemonHandle}
+                                              tagName={tagName}/>
+                        }
+                        // Normal P tags
+                        return <Paragraph {...props}
+                                          daemonHandle={DaemonHandle}
+                                          tagName={tagName}/>
                     }
                     
                     // FIXME:Placeholder
@@ -243,6 +242,8 @@ export default function Editor(
             if (CallbackReturn !== true)
                 return
         }
+        ev.preventDefault();
+        ev.stopPropagation();
         
         // Normal logic
         let {RemainingText, PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
@@ -649,8 +650,6 @@ export default function Editor(
         
         function EditorKeydown(ev: HTMLElementEventMap['keydown']) {
             if (ev.key === "Enter") {
-                ev.preventDefault();
-                ev.stopPropagation();
                 EnterKeyHandler(ev);
                 return;
             }
