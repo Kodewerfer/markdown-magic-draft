@@ -6,7 +6,14 @@ import "./Editor.css";
 import _ from 'lodash';
 
 // helper
-import {TextNodeProcessor, FindNearestParagraph, GetCaretContext, MoveCaretIntoNode, GetNextSiblings} from "./Helpers";
+import {
+    TextNodeProcessor,
+    FindNearestParagraph,
+    GetCaretContext,
+    MoveCaretIntoNode,
+    GetNextSiblings,
+    MoveCaretToNode
+} from "./Helpers";
 // Editor Components
 import Paragraph from './Editor_Parts/Paragraph';
 import PlainSyntax from "./Editor_Parts/PlainSyntax";
@@ -18,6 +25,13 @@ import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 type TEditorProps = {
     SourceData?: string | undefined
 };
+
+const AutoCompleteSymbols = /([*~`"(\[{])/;
+const AutoCompletePairsMap = new Map([
+    ["[", "]"],
+    ["(", ")"],
+    ["{", "}"]
+]);
 
 type TActivationReturn = {
     'enter'?: (ev: Event) => void | boolean,
@@ -603,6 +617,94 @@ export default function Editor(
         DaemonHandle.SyncNow();
     }
     
+    function AutocompleteHandler(KeyboardInput: string) {
+        let {
+            PrecedingText,
+            SelectedText,
+            RemainingText,
+            TextAfterSelection,
+            CurrentSelection,
+            CurrentAnchorNode
+        } = GetCaretContext();
+        if (!CurrentAnchorNode || !CurrentSelection) return;
+        
+        const NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        if (!NearestContainer) return;
+        
+        // TODO: could cause non-responsiveness, need more testing
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || CurrentAnchorNode.textContent === null) return;
+        
+        // Prep the symbol
+        let KeyboardInputPair = AutoCompletePairsMap.get(KeyboardInput);
+        if (!KeyboardInputPair) KeyboardInputPair = KeyboardInput;
+        
+        // When multi-selecting
+        // Wrap the selected content
+        if (!CurrentSelection.isCollapsed && SelectedText) {
+            let OldRange = {
+                startOffset: CurrentSelection.getRangeAt(0).startOffset || 0,
+                endOffset: CurrentSelection.getRangeAt(0).endOffset || 0,
+            };
+            
+            /**
+             *  When double click to select text, the selection may include preceding or tailing whitespace,
+             *  the extra ws will break the conversion. eg: *strong* is fine, but *strong * will not immediately convert to strong tag.
+             *  in this case, remove the ws from selection, and then add them back in their original position
+             */
+                
+                
+                // Padding for whitespace that was removed
+            let LeftPadding = '';
+            let RightPadding = '';
+            
+            if (SelectedText.trim() !== SelectedText) {
+                if (SelectedText.startsWith(" ")) {
+                    LeftPadding = " ";
+                    OldRange.startOffset += 1;
+                }
+                if (SelectedText.endsWith(" ")) {
+                    RightPadding = " ";
+                    OldRange.startOffset -= 1;
+                }
+            }
+            
+            CurrentAnchorNode.textContent = PrecedingText + LeftPadding + KeyboardInput + SelectedText.trim() + KeyboardInputPair;
+            if (TextAfterSelection) {
+                CurrentAnchorNode.textContent += (RightPadding + TextAfterSelection);
+            }
+            
+            const selection = window.getSelection();
+            if (!selection) return;
+            
+            let NewRange = document.createRange();
+            
+            try {
+                NewRange.setStart(CurrentAnchorNode, OldRange.startOffset + KeyboardInput.length || 0);
+                
+                if (TextAfterSelection) {
+                    NewRange.setEnd(CurrentAnchorNode, OldRange.endOffset + KeyboardInputPair.length || 0);
+                } else {
+                    NewRange.setEnd(CurrentAnchorNode, CurrentAnchorNode.textContent.length - KeyboardInputPair.length);
+                }
+                
+                selection.removeAllRanges()
+                selection.addRange(NewRange);
+                
+            } catch (e) {
+                console.warn(e);
+            }
+            
+            return;
+        }
+        
+        // Single selection only, add symbol in pair
+        let currentSelectionStartOffset = CurrentSelection?.getRangeAt(0).startOffset || 0;
+        CurrentAnchorNode.textContent = PrecedingText + KeyboardInput + KeyboardInputPair + RemainingText;
+        
+        MoveCaretToNode(CurrentAnchorNode, currentSelectionStartOffset + KeyboardInput.length);
+        
+    }
+    
     // First time loading
     useEffect(() => {
         ;(async () => {
@@ -660,6 +762,12 @@ export default function Editor(
             if (ev.key === 'Backspace') {
                 BackSpaceKeyHandler(ev);
                 return;
+            }
+            if (AutoCompleteSymbols.test(ev.key)) {
+                ev.stopPropagation();
+                ev.stopImmediatePropagation();
+                ev.preventDefault();
+                AutocompleteHandler(ev.key);
             }
         }
         
