@@ -155,8 +155,27 @@ export function GetNextSiblings(node: Node): Node[] {
  *                   and the preceding text from the start of the node to the caret position.
  */
 export function GetCaretContext(): {
-    RemainingText: string;
+    /**
+     * Text content before the caret position
+     */
     PrecedingText: string;
+    /**
+     * If the selection is extended, this will be the selected text content
+     * otherwise it will be null.
+     */
+    SelectedText: string | null;
+    /**
+     * Text content after the caret position,
+     * DOES NOT account for extended selection.
+     */
+    RemainingText: string;
+    /**
+     * Actual remaining text content after the current selection,
+     * If the selection is not extended, it will be same as RemainingText,
+     * If the selection IS extended, it will be the remaining text after the extended selection.
+     * returns as null, if the selection extend beyond the starting text node,
+     */
+    TextAfterSelection: string | null;
     CurrentSelection: Selection | null;
     CurrentAnchorNode: any
 } {
@@ -164,6 +183,8 @@ export function GetCaretContext(): {
     
     let RemainingText = '';
     let PrecedingText = '';
+    let SelectedText: string | null = null;
+    let TextAfterSelection: string | null = null;
     let CurrentAnchorNode = undefined;
     
     if (CurrentSelection) {
@@ -174,12 +195,20 @@ export function GetCaretContext(): {
         let textContent: string | null = CurrentAnchorNode!.textContent;
         
         if (textContent) {
-            RemainingText = textContent.substring(Range.startOffset, textContent.length);
             PrecedingText = textContent.substring(0, Range.startOffset);
+            RemainingText = textContent.substring(Range.startOffset, textContent.length);
+            TextAfterSelection = textContent.substring(Range.endOffset, textContent.length);
+            if (!CurrentSelection.isCollapsed) {
+                SelectedText = textContent.substring(Range.startOffset, Range.endOffset);
+                if (CurrentSelection.focusNode !== CurrentSelection.anchorNode) {
+                    SelectedText = textContent.substring(Range.startOffset, textContent.length);
+                    TextAfterSelection = null;
+                }
+            }
         }
     }
     
-    return {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText};
+    return {PrecedingText, SelectedText, RemainingText, TextAfterSelection, CurrentSelection, CurrentAnchorNode,};
     
 }
 
