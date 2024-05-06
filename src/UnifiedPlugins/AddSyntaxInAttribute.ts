@@ -44,7 +44,7 @@ function AddSyntaxAttrTransformer(ast: object) {
                 NodeProps['data-md-inline'] = 'true';
                 break;
             case 'em':
-                NodeProps['data-md-syntax'] = "_";
+                NodeProps['data-md-syntax'] = "*";
                 NodeProps['data-md-wrapped'] = 'true';
                 NodeProps['data-md-inline'] = 'true';
                 break;
