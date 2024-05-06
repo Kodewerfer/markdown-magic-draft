@@ -16,6 +16,7 @@ export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre
 export type TSyncOperation = {
     type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE' | 'ATTR'
     fromTextHandler?: boolean  //indicate if it was a replacement node resulting from text node callback
+    IsAdditional?: boolean
     newNode?: Node | (() => Node)
     targetNode?: Node //Alternative to XP
     targetNodeXP?: string
@@ -217,12 +218,12 @@ export default function useEditorHTMLDaemon(
                     if (!callbackResult || !callbackResult.length) {
                         console.log("Text Handler: Result is empty");
                         if (OldTextNode.textContent !== '')
-                            console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode);
+                            console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode.textContent);
                         continue;
                     }
                     
-                    if (DaemonOptions.ShouldLog)
-                        console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode);
+                    // if (DaemonOptions.ShouldLog)
+                    //     console.log("Text Handler result:", callbackResult, "from text value:", OldTextNode.textContent);
                     
                     // The scope of operation
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
@@ -474,10 +475,7 @@ export default function useEditorHTMLDaemon(
     
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
         if (DaemonState.AdditionalOperation.length) {
-            const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation);
-            
-            if (DaemonOptions.ShouldLog)
-                console.log("Add ops:", syncOpsBuilt);
+            const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation, true);
             
             OperationLogs.unshift(...syncOpsBuilt.reverse());
         }
@@ -644,7 +642,7 @@ export default function useEditorHTMLDaemon(
         return '';
     }
     
-    function BuildOperations(Operations: TSyncOperation | TSyncOperation[]) {
+    function BuildOperations(Operations: TSyncOperation | TSyncOperation[], bAddOps?: boolean) {
         let OPStack: TSyncOperation[];
         if (Array.isArray(Operations)) {
             OPStack = [...Operations];
@@ -653,6 +651,12 @@ export default function useEditorHTMLDaemon(
         }
         
         for (const OPItem of OPStack) {
+            if (bAddOps) {
+                Object.assign(OPItem, {
+                    IsAdditional: true
+                })
+            }
+            
             if (!OPItem.targetNodeXP && OPItem.targetNode) {
                 Object.assign(OPItem, {
                     targetNodeXP: GetXPathFromNode(OPItem.targetNode)
@@ -680,6 +684,7 @@ export default function useEditorHTMLDaemon(
                 })
             }
         }
+        
         
         return OPStack;
     }
@@ -1062,7 +1067,6 @@ export default function useEditorHTMLDaemon(
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            
             if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.code === 'KeyZ') {
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -1079,7 +1083,7 @@ export default function useEditorHTMLDaemon(
             }
         }
         
-        const KeyUpHandler = () => {
+        const KeyUpHandler = (ev: HTMLElementEventMap['keyup']) => {
             debounceSelectionStatus();
             debounceRollbackAndSync();
         }
