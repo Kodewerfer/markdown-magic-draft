@@ -193,7 +193,7 @@ export default function Editor(
     }
     
     // Editor level selection status monitor
-    const DebouncedSelectionMonitor = _.debounce(() => {
+    const ComponentActivationSwitch = () => {
         const selection: Selection | null = window.getSelection();
         if (!selection) return;
         // Must be an editor element
@@ -238,8 +238,9 @@ export default function Editor(
                 ActivationCallbacksRef.current = ActiveComponent.memoizedState.memoizedState(true);
             }
         }
-        
-    }, 100);
+    }
+    // FIXME: Not in use, introduce too much side-effect. Keeping in case more optimization is needed
+    const DebouncedComponentActivationSwitch = _.debounce(ComponentActivationSwitch, 100);
     
     /**
      * Following are the logics to handle key presses
@@ -544,19 +545,28 @@ export default function Editor(
             return
         }
         
-        // deleting empty lines
-        if (previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
-            console.log("Backspace on empty line");
+        // Backspace previous empty lines
+        const bSelfIsEmptyLine = NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br';
+        const bPrevLineEmpty = previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br';
+        
+        if (bPrevLineEmpty) {
+            console.log("Backspace removing previous empty line");
+            
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: previousElementSibling
             });
+            
+            if (bSelfIsEmptyLine) {
+                MoveCaretToNode(previousElementSibling);
+            }
+            
             DaemonHandle.SyncNow();
             return;
         }
         
         // self is empty line
-        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
+        if (bSelfIsEmptyLine) {
             console.log("Backspace on self empty line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
@@ -734,8 +744,8 @@ export default function Editor(
     
     // Editor level selection status monitor
     useLayoutEffect(() => {
-        const OnSelectionChange = () => DebouncedSelectionMonitor();
-        const OnSelectStart = () => DebouncedSelectionMonitor();
+        const OnSelectionChange = () => ComponentActivationSwitch();
+        const OnSelectStart = () => ComponentActivationSwitch();
         
         document.addEventListener("selectstart", OnSelectStart);
         document.addEventListener("selectionchange", OnSelectionChange);
