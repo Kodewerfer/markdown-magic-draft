@@ -11,7 +11,7 @@
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 
-export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section)$/i;
+export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section|hr)$/i;
 // Instructions for DOM manipulations on the mirror document
 export type TSyncOperation = {
     type: 'TEXT' | 'ADD' | 'REMOVE' | 'REPLACE' | 'ATTR'
@@ -161,8 +161,8 @@ export default function useEditorHTMLDaemon(
         // console.log("MQueue:",...DaemonState.MutationQueue)
         
         if (!DaemonState.MutationQueue.length && !DaemonState.AdditionalOperation.length) {
-            if (DaemonOptions.ShouldLog)
-                console.log("MutationQueue and AdditionalOperation empty, sync aborted.");
+            // if (DaemonOptions.ShouldLog)
+            //     console.log("MutationQueue and AdditionalOperation empty, sync aborted.");
             return;
         }
         
