@@ -18,7 +18,9 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
                 ElementOBRef.current = null;
             }
             if (state) {
-                daemonHandle.SyncNow();
+                
+                // FIXME:cause too much input interruption, need more testing.
+                // daemonHandle.SyncNow();
                 
                 if (typeof MutationObserver) {
                     ElementOBRef.current = new MutationObserver(ObserverHandler);
