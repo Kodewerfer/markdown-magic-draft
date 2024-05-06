@@ -1,4 +1,4 @@
-import React, {useLayoutEffect, useRef, useState} from "react";
+import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {GetChildNodesTextContent} from '../Helpers'
 
@@ -62,6 +62,25 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             })
         })
     }
+    
+    // Self cleanup if there is no content left
+    useEffect(() => {
+        if ((!children || String(children).trim() === '') && WholeElementRef.current) {
+            daemonHandle.AddToOperations(
+                {
+                    type: "REMOVE",
+                    targetNode: WholeElementRef.current,
+                }
+            );
+            
+            WholeElementRef.current = null;
+            daemonHandle.SyncNow()
+                .then(() => {
+                    daemonHandle.DiscardHistory(1);
+                });
+            
+        }
+    });
     
     useLayoutEffect(() => {
         if (SyntaxElementRefFront.current)
