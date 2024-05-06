@@ -59,6 +59,10 @@ function AddSyntaxAttrTransformer(ast: object) {
                 NodeProps['data-md-code'] = 'true';
                 break;
             // Container-like elements
+            case 'hr':
+                // Hr is more of a "block" element, added the attr in so that del and backspace will have an easier time dealing with it
+                NodeProps['data-md-container'] = "true";
+                break;
             case 'blockquote':
                 NodeProps['data-md-syntax'] = ">";
                 NodeProps['data-md-blockquote'] = "true";
