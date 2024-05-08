@@ -875,13 +875,15 @@ export default function useEditorHTMLDaemon(
     }
     
     function RestoreSelectionStatus(SelectedElement: Element, SavedState: TSelectionStatus) {
-        
         const CurrentSelection = window.getSelection();
         if (!CurrentSelection) return;
         
         // Type narrowing
         if (!SavedState || SavedState.CaretPosition === undefined || SavedState.SelectionExtent === undefined)
             return;
+        
+        // Likely due to no previous data
+        if (SavedState.CaretPosition === 0) return;
         
         // use treeWalker to traverse all nodes
         const Walker = document.createTreeWalker(
@@ -898,26 +900,22 @@ export default function useEditorHTMLDaemon(
         // check all text nodes
         while (AnchorNode = Walker.nextNode()) {
             
-            if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent) {
+            if (AnchorNode.nodeType === Node.TEXT_NODE && AnchorNode!.textContent)
                 CharsToCaretPosition -= AnchorNode!.textContent.length;
-            }
             
-            if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName.toLowerCase()) && AnchorNode.childNodes.length) {
+            
+            if (DaemonOptions.ParagraphTags.test(AnchorNode.nodeName.toLowerCase()) && AnchorNode.childNodes.length)
                 PastParagraphs.push(AnchorNode);
-            }
             
-            // the anchor AnchorNode found.
+            
+            // the anchor AnchorNode found via counting
             if (CharsToCaretPosition <= 0) {
                 // Make sure that the caret lands on a node that is actually editable
                 // otherwise the caret disappear
-                let bValidLandingNode = undefined;
-                if (AnchorNode.nodeType === Node.ELEMENT_NODE) {
-                    bValidLandingNode = (AnchorNode as HTMLElement).contentEditable !== 'false';
-                }
-                if (AnchorNode.nodeType === Node.TEXT_NODE
-                    && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false') {
-                    bValidLandingNode = true;
-                }
+                let bValidLandingNode =
+                    (AnchorNode.nodeType === Node.TEXT_NODE && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false')
+                    || (AnchorNode.nodeType === Node.ELEMENT_NODE && (AnchorNode as HTMLElement).contentEditable !== 'false');
+                
                 // after breaking a new line, the CharsToCaretPosition for the end of the last line
                 // and the beginning of the new line will still be the same,
                 // So needed to check XPath to make sure the caret moved to the correct text node
@@ -933,17 +931,21 @@ export default function useEditorHTMLDaemon(
             }
         }
         
+        // Type narrowing, re-try a previous step, if null again, return
+        if (!AnchorNode) {
+            AnchorNode = Walker.previousNode();
+            if (!AnchorNode)
+                return;
+        }
+        
         // reconstruct the old CurrentSelection range
         const RangeCached = document.createRange();
         
         let StartingOffset = 0;
-        if (AnchorNode && AnchorNode.textContent) {
+        if (AnchorNode.textContent) {
             StartingOffset = AnchorNode.textContent.length + CharsToCaretPosition
             if (StartingOffset < 0) StartingOffset = 0;
         }
-        
-        // Type narrowing
-        if (!AnchorNode) return;
         
         ({
             AnchorNode,
@@ -970,7 +972,6 @@ export default function useEditorHTMLDaemon(
     function HandleSelectionToken(Walker: TreeWalker, NodeContextArray: Node[], CurrentAnchorNode: Node, CurrentStartingOffset: number) {
         const OverrideToken = DaemonState.CaretOverrideToken;
         if (!OverrideToken) return {AnchorNode: CurrentAnchorNode, StartingOffset: CurrentStartingOffset};
-        
         let AnchorNode: Node | null = CurrentAnchorNode;
         let StartingOffset = 0;
         
@@ -1199,8 +1200,10 @@ export default function useEditorHTMLDaemon(
                 //     resolve();
                 // }, throttledFuncDelay);
                 DaemonState.SelectionStatusCache = GetSelectionStatus();
-                rollbackAndSync()
-                resolve()
+                rollbackAndSync();
+                setTimeout(() => {
+                    resolve();
+                }, 0);
             });
         },
         SetFutureCaret(token: TCaretToken) {
@@ -1210,7 +1213,7 @@ export default function useEditorHTMLDaemon(
             DaemonState.IgnoreMap.set(Element, Type);
         },
         AddToBindOperations(Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) {
-            //TODO: DEPRECATED
+            //DEPRECATED
             DaemonState.BindOperationMap.set(Element, {
                 Trigger: Trigger,
                 Operations: Operation
