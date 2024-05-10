@@ -94,6 +94,7 @@ function AddSyntaxAttrTransformer(ast: object) {
                 break;
             case 'pre': //pre item usually a single code element that serves as a code block, different from inline code element
                 NodeProps['data-md-pre-item'] = "true";
+                if (tagName === 'code') NodeProps['data-md-syntax'] = "```"; //override the md syntax
                 break;
         }
         
