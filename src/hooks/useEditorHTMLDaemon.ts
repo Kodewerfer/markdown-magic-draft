@@ -73,7 +73,7 @@ type THookOptions = {
     
 }
 
-type TCaretToken = 'zero' | 'NextLine' | 'ElementNextSibling' | null;
+type TCaretToken = 'zero' | 'NextLine' | 'NextEditable' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
@@ -982,6 +982,8 @@ export default function useEditorHTMLDaemon(
         }
         
         if (!AnchorNode) return;
+        if (AnchorNode.textContent && AnchorNode.textContent.length < StartingOffset)
+            StartingOffset = AnchorNode.textContent.length;
         
         try {
             NewRange.setStart(AnchorNode, StartingOffset);
@@ -1020,22 +1022,24 @@ export default function useEditorHTMLDaemon(
             }
             case 'NextLine': {
                 while (AnchorNode = Walker.nextNode()) {
-                    if (AnchorNode.parentNode && AnchorNode.parentNode === WatchElementRef.current && (AnchorNode.parentNode as HTMLElement).contentEditable !== 'false') {
-                        FocusNode = null;
-                        StartingOffset = 0;
-                        break;
-                    }
+                    if (!AnchorNode.parentNode) continue;
+                    if (AnchorNode.parentNode !== WatchElementRef.current) continue;
+                    if ((AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                    
+                    FocusNode = null;
+                    StartingOffset = 0;
+                    break;
                 }
-                
                 break;
             }
-            case 'ElementNextSibling': {
-                if (AnchorNode.nodeType === Node.TEXT_NODE) {
-                    AnchorNode = AnchorNode.parentNode;
-                }
-                if ((AnchorNode as HTMLElement).nextElementSibling) {
-                    AnchorNode = (AnchorNode as HTMLElement).nextElementSibling
+            case 'NextEditable': {
+                while (AnchorNode = Walker.nextNode()) {
+                    if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                    if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                    
+                    FocusNode = null;
                     StartingOffset = 0;
+                    break;
                 }
                 break;
             }
