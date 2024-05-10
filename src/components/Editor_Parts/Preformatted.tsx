@@ -5,8 +5,10 @@
 
 import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {GetChildNodesTextContent, TextNodeProcessor,} from "../Helpers";
+import {GetCaretContext, GetChildNodesAsHTMLString, TextNodeProcessor,} from "../Helpers";
+import dedent from "dedent";
 
+//
 export function Preblock({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
@@ -48,19 +50,40 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
 }) {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
         return (state: boolean) => {
-            // Send whatever the text node's content to store
+            
             if (!state) {
                 ElementOBRef.current?.takeRecords();
                 ElementOBRef.current?.disconnect();
                 ElementOBRef.current = null;
                 
-                if (CodeElementRef.current && CodeElementRef.current.textContent) {
-                    const textNodeResult = TextNodeProcessor(CodeElementRef.current.textContent);
-                    if (textNodeResult) {
+                if (CodeElementRef.current && CodeElementRef.current.textContent
+                    && CodeElementRef.current.parentNode && CodeElementRef.current.parentNode.nodeName.toLowerCase() === 'pre') {
+                    
+                    // Added by the unified plugin
+                    const syntaxData = otherProps['data-md-syntax'];
+                    
+                    let ReplacementNode = null;
+                    
+                    // NOTE: converter's quirk, element will still be converted even if the ending half of the syntax is missing
+                    // NOTE: due to the particularity of the pre element(can contain syntax that should be converted to element),
+                    // only send to convert if only the result will still be a pre
+                    if (syntaxData
+                        && CodeElementRef.current.textContent.startsWith(syntaxData)
+                        && CodeElementRef.current.textContent.endsWith(syntaxData)) {
+                        
+                        const textNodeResult = TextNodeProcessor(CodeElementRef.current.textContent);
+                        ReplacementNode = textNodeResult?.length ? textNodeResult[0] : null;
+                    } else {
+                        ReplacementNode = document.createElement('p') as HTMLElement;
+                        ReplacementNode.innerHTML = GetChildNodesAsHTMLString(CodeElementRef.current?.childNodes);
+                    }
+                    
+                    
+                    if (ReplacementNode) {
                         daemonHandle.AddToOperations({
                             type: "REPLACE",
-                            targetNode: CodeElementRef.current.parentNode!,
-                            newNode: textNodeResult[0] //first result node only
+                            targetNode: CodeElementRef.current.parentNode,
+                            newNode: ReplacementNode //first result node only
                         });
                         daemonHandle.SyncNow();
                     }
@@ -68,13 +91,6 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
             }
             if (state) {
                 daemonHandle.SyncNow();
-                
-                if (typeof MutationObserver) {
-                    ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    CodeElementRef.current && ElementOBRef.current?.observe(CodeElementRef.current, {
-                        childList: true
-                    });
-                }
             }
             
             setIsEditing(state);
@@ -88,39 +104,32 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     
     const CodeElementRef = useRef<HTMLElement | null>(null);
     
-    const SyntaxElementRefFront = useRef<HTMLElement | null>(null);
-    const SyntaxElementRefRear = useRef<HTMLElement | null>(null);
-    
     const ElementOBRef = useRef<MutationObserver | null>(null);
     
-    // if frontal or rear element deleted by user, convert into textnode
-    function ObserverHandler(mutationList: MutationRecord[]) {
-        
-        let ReplacementTarget = CodeElementRef.current!;
-        if (ReplacementTarget.parentNode?.nodeName.toLowerCase() === 'pre')
-            ReplacementTarget = ReplacementTarget.parentNode as HTMLElement;
-        
-        mutationList.forEach((Record) => {
+    // Show when actively editing
+    const [GetEditingStateChild] = useState(() => {
+        return () => {
+            const textContent = CodeElementRef.current?.firstChild?.textContent?.trim();
             
-            if (!Record.removedNodes.length) return;
+            let codeElementClassName = CodeElementRef.current?.className;
+            let CodeLang = null;
+            if (codeElementClassName) {
+                
+                CodeLang = codeElementClassName.split(' ').find(c => {
+                    return codeElementClassName?.startsWith("language-");
+                });
+                
+            }
             
-            Record.removedNodes.forEach((Node) => {
-                if (Node === SyntaxElementRefFront.current || Node === SyntaxElementRefRear.current) {
-                    
-                    daemonHandle.AddToOperations({
-                        type: "REPLACE",
-                        targetNode: ReplacementTarget!,
-                        newNode: () => {
-                            const NewLine = document.createElement("p")
-                            NewLine.appendChild(document.createTextNode(GetChildNodesTextContent(CodeElementRef.current?.childNodes)));
-                            return NewLine;
-                        }
-                    });
-                    daemonHandle.SyncNow();
-                }
-            })
-        })
-    }
+            if (!CodeLang) CodeLang = "";
+            
+            if (CodeLang && CodeLang.startsWith("language-")) CodeLang = CodeLang.split("language-")[1];
+            
+            return dedent`\`\`\` ${CodeLang}
+                    ${textContent}
+                    \`\`\``;
+        };
+    });
     
     function DelKeyHandler(ev: Event) {
         ev.preventDefault();
@@ -129,11 +138,29 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     
     function EnterKeyHandler(ev: Event) {
         ev.stopPropagation();
+        
+        let {
+            PrecedingText,
+            SelectedText,
+            RemainingText,
+            TextAfterSelection,
+            CurrentSelection,
+            CurrentAnchorNode
+        } = GetCaretContext();
+        
+        if (!CurrentAnchorNode || !CurrentSelection) return false;
+        
+        // Add a new line after, use generic logic from editor
+        if (TextAfterSelection?.trim() === "" || !TextAfterSelection) {
+            return true;
+        }
+        
         return false;
     }
     
     // change contentEditable type to plaintext-only
     useEffect(() => {
+        GetEditingStateChild();
         // add code element itself to ignore
         if (CodeElementRef.current) {
             CodeElementRef.current.contentEditable = "plaintext-only";
@@ -150,23 +177,5 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     return React.createElement(tagName, {
         ...otherProps,
         ref: CodeElementRef,
-    }, [
-        React.createElement('span', {
-            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
-            key: 'CodeSyntaxLead',
-            ref: SyntaxElementRefFront,
-            contentEditable: false,
-            className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, "```\n"),
-        
-        ...(Array.isArray(children) ? children : [children]),
-        
-        React.createElement('span', {
-            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
-            key: 'CodeSyntaxRear',
-            ref: SyntaxElementRefRear,
-            contentEditable: false,
-            className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, " ```"),
-    ]);
+    }, isEditing ? GetEditingStateChild() : children);
 }
