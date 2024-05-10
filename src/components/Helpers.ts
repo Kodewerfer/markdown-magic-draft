@@ -146,7 +146,6 @@ export function GetNextSiblings(node: Node): Node[] {
     return siblings;
 }
 
-
 /**
  * Retrieves the context of the caret within the current selection.
  *
@@ -282,4 +281,27 @@ export function MoveCaretIntoNode(ContainerNode: Node | null | undefined, Offset
     } catch (e: any) {
         console.warn("MoveCaretIntoNode: ", e.message);
     }
+}
+
+/**
+ * Creates a TreeWalker and walks to the specified target node.
+ *
+ * @param {Node | HTMLElement} rootNode - The root node from which to start the tree traversal.
+ * @param {Node | HTMLElement} targetNode - The node to walk to.
+ * @return {TreeWalker} The TreeWalker that has been walked to the targetNode if reachable.
+ */
+export function CreateAndWalkToNode(rootNode: Node | HTMLElement, targetNode: Node | HTMLElement): TreeWalker {
+    const nodeWalker = document.createTreeWalker(
+        rootNode,
+        NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+        null
+    );
+    
+    let tempNode: Node | null;
+    while (tempNode = nodeWalker.nextNode()) {
+        if (tempNode === targetNode)
+            break;
+    }
+    
+    return nodeWalker; // returns TreeWalker that has been walked to the targetNode (if reachable)
 }
