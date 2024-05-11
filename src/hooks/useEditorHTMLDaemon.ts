@@ -131,7 +131,7 @@ export default function useEditorHTMLDaemon(
         return state;
     })[0];
     
-    const toggleObserve = (bObserver: boolean) => {
+    const ToggleObserve = (bObserver: boolean) => {
         
         if (!bObserver) {
             DaemonState.Observer.disconnect();
@@ -151,7 +151,7 @@ export default function useEditorHTMLDaemon(
     };
     
     // Flush all changes in the MutationQueue
-    const rollbackAndSync = () => {
+    const FlushAllRecords = () => {
         
         // OB's callback is asynchronous
         // make sure no records are left behind
@@ -171,16 +171,60 @@ export default function useEditorHTMLDaemon(
         if (typeof DaemonOptions.OnRollback === 'function')
             onRollbackReturn = DaemonOptions.OnRollback();
         
-        toggleObserve(false);
+        ToggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
         
+        let {OperationLogs, BindOperationLogs} = RollbackAndBuildOps();
+        
+        /**
+         * The order of execution for the operations is:
+         * 1. user initiated operations(on-page editing);
+         * 2. "bind" operations, eg: those that are triggered by removing a syntax span
+         * 3. "additional" operations, usually sent directly from a component
+         */
+        // Append Bind Ops
+        OperationLogs.unshift(...BindOperationLogs); //DEPRECATED
+        
+        // Append Ops sent directly from components
+        const newOperations: TSyncOperation[] = AppendAdditionalOperations(OperationLogs);
+        DaemonState.AdditionalOperation = []
+        
+        // Revert back to editing state when no operations are queued.
+        // This can happen when all elements in the MutationQueue are ignored.
+        if (newOperations.length === 0) {
+            if (DaemonOptions.ShouldLog)
+                console.log("No Operation generated, abort.");
+            
+            ToggleObserve(true);
+            WatchElementRef.current!.contentEditable = 'true';
+            
+            if (typeof onRollbackReturn === "function")
+                // Run the cleanup/revert function that is the return of the onRollbackReturn handler.
+                // right now it's just unmasking.
+                onRollbackReturn();
+            
+            RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
+            return;
+        }
+        
+        SaveMirrorToHistory();
+        
+        if (!SyncToMirror(newOperations)) DaemonState.UndoStack?.pop();
+        
+        // Reset ignore
+        DaemonState.IgnoreMap.clear();
+        
+        // Notify parent
+        FinalizeChanges();
+    }
+    
+    const RollbackAndBuildOps = () => {
         // Rollback Changes
         let mutation: MutationRecord | void;
         let lastMutation: MutationRecord | null = null;
         let OperationLogs: TSyncOperation[] = [];
         let BindOperationLogs: TSyncOperation[] = [];
         
-        // THE MAIN LOGIC BLOCK
         while ((mutation = DaemonState.MutationQueue.pop())) {
             
             /**
@@ -208,7 +252,7 @@ export default function useEditorHTMLDaemon(
                     })
                 }
                 
-                /** TextNodeCallback present, use TextNodeCallback result */
+                // TextNodeCallback present, use TextNodeCallback result
                 if (typeof DaemonOptions.TextNodeCallback === 'function') {
                     const ParentNode = mutation.target.parentNode as HTMLElement;
                     const OldTextNode = mutation.target;
@@ -418,52 +462,7 @@ export default function useEditorHTMLDaemon(
             lastMutation = mutation;
         }
         
-        /**
-         * The order of execution for the operations is:
-         * 1. user initiated operations(on-page editing);
-         * 2. "bind" operations, eg: those that are triggered by removing a syntax span
-         * 3. "additional" operations, usually sent directly from a component
-         */
-        // Append Bind Ops
-        OperationLogs.unshift(...BindOperationLogs); //DEPRECATED
-        
-        // Append Ops sent directly from components
-        const newOperations: TSyncOperation[] = AppendAdditionalOperations(OperationLogs);
-        DaemonState.AdditionalOperation = []
-        
-        // Revert back to editing state when no operations are queued.
-        // This can happen when all elements in the MutationQueue are ignored.
-        if (newOperations.length === 0) {
-            if (DaemonOptions.ShouldLog)
-                console.log("No Operation generated, abort.");
-            
-            toggleObserve(true);
-            WatchElementRef.current!.contentEditable = 'true';
-            
-            if (typeof onRollbackReturn === "function")
-                // Run the cleanup/revert function that is the return of the onRollbackReturn handler.
-                // right now it's just unmasking.
-                onRollbackReturn();
-            
-            RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
-            return;
-        }
-        
-        saveMirrorToHistory();
-        
-        if (!syncToMirror(newOperations)) {
-            DaemonState.UndoStack?.pop();
-        }
-        
-        // Reset ignore
-        DaemonState.IgnoreMap.clear();
-        
-        // Notify parent
-        FinalizeChanges();
-    }
-    
-    const FlushRecords = () => {
-    
+        return {OperationLogs, BindOperationLogs};
     }
     
     //DEPRECATED
@@ -486,7 +485,7 @@ export default function useEditorHTMLDaemon(
         return OperationLogs;
     }
     
-    const saveMirrorToHistory = () => {
+    const SaveMirrorToHistory = () => {
         if (!MirrorDocumentRef || !MirrorDocumentRef.current) {
             return;
         }
@@ -506,7 +505,7 @@ export default function useEditorHTMLDaemon(
     }
     
     // Use content from Undo stack to override the page, save it to Redo Stack
-    const undoAndSync = () => {
+    const UndoAndSync = () => {
         // FIXME: expensive operation, but to revert the OpLogs brings too many problems
         console.log("Undo, stack length:", DaemonState.UndoStack?.length);
         if (!DaemonState.UndoStack || !DaemonState.UndoStack.length || !MirrorDocumentRef.current) return;
@@ -533,7 +532,7 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
-    const redoAndSync = () => {
+    const RedoAndSync = () => {
         console.log("Redo, stack length:", DaemonState.RedoStack?.length);
         
         DaemonState.MutationQueue = [];
@@ -541,7 +540,7 @@ export default function useEditorHTMLDaemon(
         if (!DaemonState.RedoStack || !DaemonState.RedoStack.length || !MirrorDocumentRef.current) return;
         
         // save to history again
-        saveMirrorToHistory();
+        SaveMirrorToHistory();
         
         MirrorDocumentRef.current = DaemonState.RedoStack.pop();
         
@@ -694,7 +693,7 @@ export default function useEditorHTMLDaemon(
     }
     
     // Sync to the mirror document, middleman function
-    const syncToMirror = (Operations: TSyncOperation[]) => {
+    const SyncToMirror = (Operations: TSyncOperation[]) => {
         
         if (!Operations.length) return false;
         let operation: TSyncOperation | void;
@@ -1060,13 +1059,13 @@ export default function useEditorHTMLDaemon(
     const debounceSelectionStatus = _.debounce(() => {
         DaemonState.SelectionStatusCache = GetSelectionStatus();
     }, 450);
-    const debounceRollbackAndSync = _.debounce(rollbackAndSync, 500);
+    const debounceRollbackAndSync = _.debounce(FlushAllRecords, 500);
     
     const throttledFuncDelay = 200;
     const throttledSelectionStatus = _.throttle(() => {
         DaemonState.SelectionStatusCache = GetSelectionStatus();
     }, throttledFuncDelay);
-    const throttledRollbackAndSync = _.throttle(rollbackAndSync, throttledFuncDelay);
+    const throttledRollbackAndSync = _.throttle(FlushAllRecords, throttledFuncDelay);
     
     // Primary entry point to supporting functionalities such as restoring selection.
     useLayoutEffect(() => {
@@ -1098,13 +1097,13 @@ export default function useEditorHTMLDaemon(
         }
         
         if (DaemonOptions.ShouldObserve) {
-            toggleObserve(true);
+            ToggleObserve(true);
         }
         
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
-            toggleObserve(false);
+            ToggleObserve(false);
             
             if (DaemonState.SelectionStatusCache === null) {
                 DaemonState.SelectionStatusCache = GetSelectionStatus(WatchedElement);
@@ -1140,14 +1139,14 @@ export default function useEditorHTMLDaemon(
                 ev.preventDefault();
                 ev.stopPropagation();
                 throttledRollbackAndSync();
-                setTimeout(() => undoAndSync(), 0);
+                setTimeout(() => UndoAndSync(), 0);
                 return;
                 
             }
             if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.code === 'KeyY') {
                 ev.preventDefault();
                 ev.stopPropagation();
-                redoAndSync();
+                RedoAndSync();
                 return;
             }
         }
@@ -1268,7 +1267,7 @@ export default function useEditorHTMLDaemon(
                 //     resolve();
                 // }, throttledFuncDelay);
                 DaemonState.SelectionStatusCache = GetSelectionStatus();
-                rollbackAndSync();
+                FlushAllRecords();
                 setTimeout(() => {
                     resolve();
                 }, 0);
