@@ -462,6 +462,10 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
+    const FlushRecords = () => {
+    
+    }
+    
     //DEPRECATED
     const HandleBindOperations = (Node: HTMLElement | Node, BindTrigger: string, LogStack: TSyncOperation[]) => {
         const OperationItem = DaemonState.BindOperationMap.get(Node);
@@ -967,6 +971,10 @@ export default function useEditorHTMLDaemon(
         let StartingOffset = bOriginalNodeFound ? SavedState.StartingOffset : 0;
         
         // Override if need be
+        /**
+         * NOTE: after enter is pressed to break lines, the caret will start on the end of the first line where the line was cut off,
+         *       this works regardless if it was an expanded selection. But on expanded selection, the selection will extend to the new line and may cause problems especially with tokens
+         */
         const OverrideToken = DaemonState.CaretOverrideToken;
         if (OverrideToken) {
             ({
@@ -980,8 +988,8 @@ export default function useEditorHTMLDaemon(
             }));
             
         }
-        
         if (!AnchorNode) return;
+        
         if (AnchorNode.textContent && AnchorNode.textContent.length < StartingOffset)
             StartingOffset = AnchorNode.textContent.length;
         
@@ -1023,9 +1031,9 @@ export default function useEditorHTMLDaemon(
             case 'NextLine': {
                 while (AnchorNode = Walker.nextNode()) {
                     if (!AnchorNode.parentNode) continue;
+                    if (AnchorNode.textContent === "\n") continue;
                     if (AnchorNode.parentNode !== WatchElementRef.current) continue;
                     if ((AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
-                    
                     FocusNode = null;
                     StartingOffset = 0;
                     break;
@@ -1035,6 +1043,7 @@ export default function useEditorHTMLDaemon(
             case 'NextEditable': {
                 while (AnchorNode = Walker.nextNode()) {
                     if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                    if (AnchorNode.textContent === "\n") continue;
                     if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
                     
                     FocusNode = null;
