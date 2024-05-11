@@ -31,7 +31,6 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
                 ListContainerRef.current = null;
                 daemonHandle.SyncNow()
                     .then(() => {
-                        console.log("calling dis")
                         daemonHandle.DiscardHistory(1);
                     });
                 
@@ -239,9 +238,13 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     }
     
     function EnterKeyHandler(ev: Event) {
-        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
-        if (!CurrentSelection || !CurrentAnchorNode) return;
         
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
+        
+        if (!CurrentSelection || !CurrentAnchorNode) return;
         // caret lands on the leading syntax element or on the li itself, move it into the text node
         if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || (CurrentAnchorNode as HTMLElement).contentEditable === 'false') {
             if (!CurrentListItemRef.current || !CurrentListItemRef.current.childNodes.length) return;
@@ -252,15 +255,15 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             return;
         }
         
-        const range = CurrentSelection.getRangeAt(0);
+        const currentRange = CurrentSelection.getRangeAt(0);
         
         const AnchorPrevSibling = (CurrentAnchorNode as HTMLElement).previousElementSibling;
-        const bLeadingPosition = range.startOffset === 0
+        const bLeadingPosition = currentRange.startOffset === 0
             || (AnchorPrevSibling && (AnchorPrevSibling as HTMLElement).contentEditable === 'false');
         
         // Beginning of the line, Only add empty line before container if it's the first element of the first list item
         if (PrecedingText.trim() === '' && bLeadingPosition) {
-            
+            console.log("Breaking - List BOL");
             const ListContainer = CurrentListItemRef.current?.parentNode;
             
             if (ListContainer && ListContainer.firstElementChild === CurrentListItemRef.current) {
@@ -278,6 +281,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         // End of the line, Only add empty line after container if first element of the first item list
         // otherwise, move caret to the next line
         if (RemainingText.trim() === '') {
+            console.log("Breaking - List EOL");
             const ListContainer = CurrentListItemRef.current?.parentNode;
             if (ListContainer && ListContainer.lastElementChild === CurrentListItemRef.current)
                 return true;
@@ -315,7 +319,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         }
         
         // Normal logic
-        console.log("List mid line");
+        console.log("Breaking - List Mid-Line");
         const NewLine = document.createElement("li");  // New list item
         
         let anchorNodeClone: Node = CurrentAnchorNode.cloneNode(true);
@@ -346,7 +350,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             parentNode: CurrentListItemRef.current?.parentNode!
         });
         
-        daemonHandle.SetFutureCaret('ElementNextSibling');
+        daemonHandle.SetFutureCaret('NextEditable');
         daemonHandle.SyncNow();
         
         return;
