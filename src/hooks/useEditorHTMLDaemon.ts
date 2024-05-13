@@ -35,6 +35,7 @@ type TSelectionStatus = {
     AnchorNodeXPath: string;
     StartingOffset: number;
     SelectionExtent: number;
+    AnchorNodeXPathConcise: string; // serve only as a reference
 }
 
 type TDOMTrigger = 'add' | 'remove' | 'text' | 'any';
@@ -79,7 +80,7 @@ export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
     DiscardHistory: (DiscardCount: number) => void;
     SetFutureCaret: (token: TCaretToken) => void;
-    AddToIgnore: (Element: Node, Type: TDOMTrigger) => void;
+    AddToIgnore: (Element: Node, Type: TDOMTrigger, bIncludeAllChild?: boolean) => void;
     AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void; //DEPRECATED
     AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
 }
@@ -166,10 +167,10 @@ export default function useEditorHTMLDaemon(
             return;
         }
         
-        let onRollbackReturn: any; // the cleanup function, if present
+        let onRollbackCancelled: any; // the cleanup function, if present
         // Rollback mask
         if (typeof DaemonOptions.OnRollback === 'function')
-            onRollbackReturn = DaemonOptions.OnRollback();
+            onRollbackCancelled = DaemonOptions.OnRollback();
         
         ToggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
@@ -198,10 +199,10 @@ export default function useEditorHTMLDaemon(
             ToggleObserve(true);
             WatchElementRef.current!.contentEditable = 'true';
             
-            if (typeof onRollbackReturn === "function")
+            if (typeof onRollbackCancelled === "function")
                 // Run the cleanup/revert function that is the return of the onRollbackReturn handler.
                 // right now it's just unmasking.
-                onRollbackReturn();
+                onRollbackCancelled();
             
             RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
             return;
@@ -237,6 +238,11 @@ export default function useEditorHTMLDaemon(
                 
                 // Check for ignore
                 if (DaemonState.IgnoreMap.get(mutation.target) === 'text' || DaemonState.IgnoreMap.get(mutation.target) === 'any')
+                    continue;
+                
+                // Since text node is usually under a parent, check for the parent for ignore as well
+                let textParent = mutation.target.parentNode;
+                if (textParent && (DaemonState.IgnoreMap.get(textParent) === 'text' || DaemonState.IgnoreMap.get(textParent) === 'any'))
                     continue;
                 
                 // Get the original value for the text node. used in undo
@@ -280,9 +286,7 @@ export default function useEditorHTMLDaemon(
                     let whiteSpaceStart = OldTextNode.textContent!.match(/^\s*/) || [""];
                     let whiteSpaceEnd = OldTextNode.textContent!.match(/\s*$/) || [""];
                     
-                    /**
-                     *  Result in only one text node
-                     */
+                    //Result in only one text node
                     if (callbackResult.length === 1 && callbackResult[0].nodeType === Node.TEXT_NODE && callbackResult[0].textContent !== null) {
                         const RestoredText = whiteSpaceStart[0] + callbackResult[0].textContent.trim() + whiteSpaceEnd[0];
                         
@@ -299,9 +303,7 @@ export default function useEditorHTMLDaemon(
                         continue;
                     }
                     
-                    /**
-                     *  Result in multiple nodes or only one node but no longer a text node.
-                     */
+                    //Result in multiple nodes or only one node but no longer a text node.
                     let LogNodeXP = GetXPathNthChild(OldTextNode);
                     let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
                     // at this point, the text node can either be under a sub-level element(strong,del etc) or a paragraph-level tag
@@ -372,7 +374,7 @@ export default function useEditorHTMLDaemon(
                         type: "ADD",
                         fromTextHandler: true,
                         newNode: NewFragment.cloneNode(true),
-                        targetNodeXP: LogNodeXP, //redo will remove at the position of the "replaced" text node
+                        targetNodeXP: LogNodeXP,
                         parentXP: LogParentXP,
                         siblingXP: logSiblingXP,
                     });
@@ -547,8 +549,8 @@ export default function useEditorHTMLDaemon(
         FinalizeChanges();
     }
     
-    // Helper to get the precise location in the original DOM tree, ignore generated tags
-    function GetXPathFromNode(node: Node): string {
+    // Helper to get the precise location in the original DOM tree, ignore generated tags(flag)
+    function GetXPathFromNode(node: Node, bFilterGenerated = true): string {
         
         if (!WatchElementRef.current) return '';
         let parent = node.parentNode;
@@ -596,53 +598,62 @@ export default function useEditorHTMLDaemon(
                 return GetXPathFromNode(parent) + '/' + node.nodeName.toLowerCase() + '[' + (nodeCount + 1) + ']';
             }
             
-            if (sibling.nodeType === Node.ELEMENT_NODE && sibling.nodeName === node.nodeName && !(sibling as HTMLElement).hasAttribute('data-is-generated')) {
+            if (sibling.nodeType === Node.ELEMENT_NODE && sibling.nodeName === node.nodeName && !(sibling as HTMLElement).hasAttribute('data-is-generated'))
                 nodeCount++;
-            }
+            
+            
+            if (!bFilterGenerated && sibling.nodeName === node.nodeName)
+                nodeCount++;
+            
         }
         
         return '';
     }
     
-    // A slightly modified version of the above function, returns the node's xpath regardless of node type
+    // A different method of getting xp, non-recursion
     // This is the "approximate" location of the note, the undo function can then "delete on this location"
     // Mainly used in give Xpath to the would be added nodes
     function GetXPathNthChild(node: Node, bFilterGenerated = true): string {
-        if (!WatchElementRef.current) return '';
+        let xpSegments: string[] = [];
         
-        let parent = node.parentNode;
-        
-        // XPath upper limit: any element with an ID
-        if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
-            return '//*[@id="' + (node as HTMLElement).id + '"]';
-        }
-        
-        // XPath upper limit: The watched element.
-        if ((node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
-            return '//body';
-        }
-        
-        if (!parent) return ''; // If no parent found, very unlikely
-        
-        // For all nodes we calculate their position regardless of their type
-        let nodeCount: number = 0;
-        for (let i = 0; i < parent.childNodes.length; i++) {
-            let sibling = parent.childNodes[i];
-            
-            if (sibling === node) {
-                // Recurse on the parent node, then append this node's details to form an XPath string
-                return GetXPathNthChild(parent) + '/node()[' + (nodeCount + 1) + ']';
+        while (node && node !== document.body) {
+            // the most identifiable, no need to run more logic
+            if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
+                xpSegments.push('//*[@id="' + (node as HTMLElement).id + '"]');
+                break;
             }
             
-            // NOTE: filter generated is needed for most cases because the xpath are used to operate the mirror doc, which won't have those elements.
-            if (!bFilterGenerated
-                || sibling.nodeType === Node.TEXT_NODE
-                || (sibling.nodeType === Node.ELEMENT_NODE && !(sibling as HTMLElement).hasAttribute('data-is-generated'))) {
-                nodeCount++;
+            // Node is the container itself
+            if (WatchElementRef.current && (node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
+                xpSegments.push('body');
+                break;
             }
+            
+            let parent = node.parentNode;
+            if (!parent) break;
+            
+            let nodeCount: number = 0;
+            
+            // start checking prev child nodes against the current node
+            for (let i = 0; i < parent.childNodes.length; i++) {
+                let sibling = parent.childNodes[i];
+                if (sibling === node) {
+                    xpSegments.push('node()[' + (nodeCount + 1) + ']');
+                    break;
+                }
+                // If the sibling is a relevant node (either not generated or text node), its count is increased.
+                if (!bFilterGenerated
+                    || sibling.nodeType === Node.TEXT_NODE
+                    || (sibling.nodeType === Node.ELEMENT_NODE && !(sibling as HTMLElement).hasAttribute('data-is-generated')))
+                    nodeCount++;
+            }
+            // Move up the tree to the next parent node.
+            node = parent as Node;
+            
         }
         
-        return '';
+        // new path were pushed in, need to reverse them to be correct.
+        return '/' + xpSegments.reverse().join('/');
     }
     
     function BuildOperations(Operations: TSyncOperation | TSyncOperation[], bAddOps?: boolean) {
@@ -859,6 +870,7 @@ export default function useEditorHTMLDaemon(
         if (!CurrentRange) return null;
         
         const AnchorNodeXPath: string = GetXPathNthChild(CurrentSelection.anchorNode, false);
+        const AnchorNodeXPathConcise: string = GetXPathFromNode(CurrentSelection.anchorNode, false);
         
         const SelectionExtent = CurrentSelection.isCollapsed ? 0 : CurrentSelection.toString().length;
         
@@ -867,6 +879,7 @@ export default function useEditorHTMLDaemon(
         
         return {
             AnchorNodeXPath,
+            AnchorNodeXPathConcise,
             StartingOffset: CurrentRange.startOffset,
             SelectionExtent,
         };
@@ -875,7 +888,10 @@ export default function useEditorHTMLDaemon(
     function RestoreSelectionStatus(RootElement: Element, SavedState: TSelectionStatus) {
         const CurrentSelection = window.getSelection();
         
-        if (!CurrentSelection || !SavedState || SavedState.AnchorNodeXPath === '//body') return;
+        if (!CurrentSelection || !SavedState || SavedState.AnchorNodeXPathConcise === '//body') return;
+        
+        if (DaemonOptions.ShouldLog)
+            console.log("Restoring selection status: ", SavedState);
         
         let XPathSegments = ParseXPath(SavedState.AnchorNodeXPath);
         
@@ -905,7 +921,6 @@ export default function useEditorHTMLDaemon(
             
             const XPathReconstructed = reconstructXPath();
             AnchorNode = GetNodeFromXPathInHTMLElement(WatchElementRef.current!, XPathReconstructed);
-            // console.log("trying ", XPathReconstructed);
             
             if (AnchorNode) break;
             
@@ -1276,8 +1291,23 @@ export default function useEditorHTMLDaemon(
         SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideToken = token;
         },
-        AddToIgnore(Element: Node, Type: TDOMTrigger) {
-            DaemonState.IgnoreMap.set(Element, Type);
+        AddToIgnore(Element: Node | HTMLElement, TriggerType: TDOMTrigger, bIncludeAllChild = false) {
+            if (!bIncludeAllChild)
+                return DaemonState.IgnoreMap.set(Element, TriggerType);
+            
+            // Non-recursion func that add all child nodes to ignore too
+            
+            const queue = [Element];
+            
+            while (queue.length) {
+                const currentNode = queue.shift();
+                if (!currentNode) break;
+                
+                DaemonState.IgnoreMap.set(currentNode, TriggerType)
+                
+                Array.from(currentNode.childNodes).forEach(childNode => queue.push(childNode));
+            }
+            
         },
         AddToBindOperations(Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) {
             //DEPRECATED
