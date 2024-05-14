@@ -20,6 +20,7 @@ import Links from "./Editor_Parts/Links";
 import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
 import {ListContainer, ListItem} from "./Editor_Parts/List";
 import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
+import {TActivationReturn} from "./Editor_Types";
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -31,15 +32,6 @@ type TActivationCache = {
     return: TActivationReturn | null;
     anchor: Node | null;
 }
-
-// NOTE: this is what the very first state of a component(that can be consider as "activatable") should return, these are keydown handlers that will run conditionally.
-// Editor's handler serve as "default behavior" whereas components may have their own behaviors.
-// the returning value of these components' handler determined whether the "default behavior" should continue to run.
-export type TActivationReturn = {
-    'enter'?: (ev: Event) => void | boolean,
-    'del'?: (ev: Event) => void | boolean,
-    'backspace'?: (ev: Event) => void | boolean,
-};
 
 const AutoCompleteSymbols = /([*~`"(\[{])/;
 const AutoCompletePairsMap = new Map([
@@ -505,111 +497,6 @@ export default function Editor(
         DaemonHandle.SyncNow();
     }
     
-    function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
-        
-        let {RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
-        if (!CurrentAnchorNode) return;
-        
-        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
-        if (!NearestContainer) return;
-        
-        const bCaretOnContainer = CurrentAnchorNode === NearestContainer;
-        const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
-        const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
-        
-        // Run the normal key press on in-line editing
-        if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;
-        if (CurrentSelection && !CurrentSelection.isCollapsed) return;
-        
-        // line joining
-        ev.preventDefault();
-        ev.stopPropagation();
-        
-        let nextElementSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
-        if (!nextElementSibling) return; //No more lines following
-        
-        // same as back space, when there is still content that could be deleted, but caret lands on the wrong element
-        // FIXME: may be buggy
-        if (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling !== nextElementSibling) {
-            MoveCaretIntoNode(CurrentAnchorNode);
-            return;
-        }
-        
-        // deleting empty lines
-        if (nextElementSibling?.childNodes.length === 1 && nextElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
-            console.log("Delete Empty Line");
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: nextElementSibling
-            });
-            DaemonHandle.SyncNow();
-            return;
-        }
-        
-        // self is empty line
-        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
-            console.log("Self is Empty Line");
-            DaemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: NearestContainer
-            });
-            DaemonHandle.SyncNow();
-            return;
-        }
-        
-        // Run the component spec handler if present
-        if (typeof LastActivationCache.current.return?.del === 'function') {
-            console.log("Component Spec Deleting");
-            
-            if (LastActivationCache.current.return?.del(ev) !== true)
-                return
-        }
-        
-        // Dealing with container type of element
-        if (nextElementSibling.nodeType === Node.ELEMENT_NODE && (nextElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
-            console.log("Delete into container");
-            
-            if (nextElementSibling.childElementCount > 1)
-                DaemonHandle.AddToOperations({
-                    type: "REMOVE",
-                    targetNode: (nextElementSibling as HTMLElement).firstElementChild!
-                });
-            else
-                // Only one sub element, delete the whole thing
-                DaemonHandle.AddToOperations({
-                    type: "REMOVE",
-                    targetNode: nextElementSibling
-                });
-            
-            DaemonHandle.SyncNow();
-            
-            return;
-        }
-        
-        
-        // "Normal" joining lines
-        console.log("Line joining");
-        
-        let NewLine = NearestContainer.cloneNode(true);
-        
-        nextElementSibling.childNodes.forEach((ChildNode) => {
-            NewLine.appendChild(ChildNode.cloneNode(true));
-        })
-        
-        DaemonHandle.AddToOperations({
-            type: "REMOVE",
-            targetNode: nextElementSibling,
-        });
-        
-        DaemonHandle.AddToOperations({
-            type: "REPLACE",
-            targetNode: NearestContainer,
-            newNode: NewLine
-        });
-        
-        DaemonHandle.SyncNow();
-    }
-    
     function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
         // basically a reverse of the "delete", but with key differences on "normal join line"
         let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
@@ -649,16 +536,28 @@ export default function Editor(
         // when there is still content that could be deleted, but caret lands on the wrong element
         // FIXME: may be buggy
         if (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling !== previousElementSibling) {
+            console.log("Backspace: Invalid Caret, moving Caret to ", CurrentAnchorNode);
             MoveCaretIntoNode(CurrentAnchorNode);
             return
         }
         
-        // Backspace previous empty lines
+        // Moves caret, This may not be needed for "deleting forward", but added for good measure.
+        let anchorParent = CurrentAnchorNode.parentNode;
+        if (CurrentAnchorNode.parentNode && anchorParent !== NearestContainer) {
+            const nearestSibling = GetPrevAvailableSibling(CurrentAnchorNode, NearestContainer);
+            if (nearestSibling) {
+                console.log("Backspace: Moving Caret to ", nearestSibling);
+                MoveCaretToNode(nearestSibling, 0);
+                return;
+            }
+        }
+        
         const bSelfIsEmptyLine = NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br';
         const bPrevLineEmpty = previousElementSibling?.childNodes.length === 1 && previousElementSibling?.firstChild?.nodeName.toLowerCase() === 'br';
         
+        // Backspace previous empty lines
         if (bPrevLineEmpty) {
-            console.log("Backspace removing previous empty line");
+            console.log("Backspace: Empty Line");
             
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
@@ -675,7 +574,7 @@ export default function Editor(
         
         // self is empty line
         if (bSelfIsEmptyLine) {
-            console.log("Backspace on self empty line");
+            console.log("Backspace: Self Empty Line");
             DaemonHandle.AddToOperations({
                 type: "REMOVE",
                 targetNode: NearestContainer
@@ -687,14 +586,14 @@ export default function Editor(
         
         // Run the component spec handler if present
         if (typeof LastActivationCache.current.return?.backspace === 'function') {
-            console.log("Backspace component logic");
+            console.log("Backspace: Component Spec Logic");
             if (LastActivationCache.current.return?.backspace(ev) !== true)
                 return;
         }
         
         // Dealing with container type of element
         if (previousElementSibling.nodeType === Node.ELEMENT_NODE && (previousElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
-            console.log("Backspace into container");
+            console.log("Backspace: Container Item");
             
             if (previousElementSibling.childElementCount > 1)
                 DaemonHandle.AddToOperations({
@@ -713,7 +612,7 @@ export default function Editor(
         }
         
         // "Normal" joining lines
-        console.log("Backspace line joning");
+        console.log("Backspace: Line Join");
         let NewLine = previousElementSibling.cloneNode(true);
         
         NearestContainer.childNodes.forEach((ChildNode) => {
@@ -732,6 +631,146 @@ export default function Editor(
         });
         
         MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
+        DaemonHandle.SyncNow();
+    }
+    
+    function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        
+        let {RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        
+        console.log(CurrentAnchorNode);
+        if (!CurrentAnchorNode) return;
+        
+        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        if (!NearestContainer) return;
+        
+        const bCaretOnContainer = CurrentAnchorNode === NearestContainer;
+        const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
+        const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
+        
+        // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
+        // deleting text logic override is written below
+        
+        // Expanded selection, use browser defualt logic
+        if (CurrentSelection && !CurrentSelection.isCollapsed) return;
+        
+        // line joining
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        // NOTE: this is an override on editing text, so far only needed for del key
+        if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) {
+            if (RemainingText.trim() !== '') {
+                CurrentAnchorNode.deleteData(CurrentSelection?.anchorOffset, 1);
+                return;
+            }
+            let nextSibling = CurrentAnchorNode.nextSibling;
+            if (nextSibling) {
+                // Delete the first character of the next text node
+                if (nextSibling.nodeType === Node.TEXT_NODE)
+                    (nextSibling as Text).deleteData(0, 1);
+                if (nextSibling.nodeType === Node.ELEMENT_NODE)
+                    MoveCaretToNode(nextSibling);
+                
+                return;
+            }
+        }
+        
+        let nextElementSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
+        if (!nextElementSibling) return; //No more lines following
+        
+        // same as back space, when there is still content that could be deleted, but caret lands on the wrong element
+        // FIXME: may be buggy
+        if (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling !== nextElementSibling) {
+            console.log("Del: Invalid Caret, moving Caret to ", CurrentAnchorNode);
+            MoveCaretIntoNode(CurrentAnchorNode);
+            return;
+        }
+        
+        // Move the caret, mainly dealing with nested node structure with their own text nodes
+        let anchorParent = CurrentAnchorNode.parentNode;
+        if (CurrentAnchorNode.parentNode && anchorParent !== NearestContainer) {
+            const nearestSibling = GetNextAvailableSibling(CurrentAnchorNode, NearestContainer);
+            if (nearestSibling) {
+                console.log("Del: Moving Caret to ", nearestSibling);
+                MoveCaretToNode(nearestSibling, 0);
+                return;
+            }
+        }
+        
+        // Line joining logics
+        // deleting empty lines
+        if (nextElementSibling?.childNodes.length === 1 && nextElementSibling?.firstChild?.nodeName.toLowerCase() === 'br') {
+            console.log("Del:Delete Empty Line");
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: nextElementSibling
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // self is empty line
+        if (NearestContainer?.childNodes.length === 1 && NearestContainer?.firstChild?.nodeName.toLowerCase() === 'br') {
+            console.log("Del:Self Empty Line");
+            DaemonHandle.AddToOperations({
+                type: "REMOVE",
+                targetNode: NearestContainer
+            });
+            DaemonHandle.SyncNow();
+            return;
+        }
+        
+        // Run the component spec handler if present
+        if (typeof LastActivationCache.current.return?.del === 'function') {
+            console.log("Del: Component Spec Deleting");
+            
+            if (LastActivationCache.current.return?.del(ev) !== true)
+                return
+        }
+        
+        // Dealing with container type of element
+        if (nextElementSibling.nodeType === Node.ELEMENT_NODE && (nextElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {
+            console.log("Del: Container Item");
+            
+            if (nextElementSibling.childElementCount > 1)
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: (nextElementSibling as HTMLElement).firstElementChild!
+                });
+            else
+                // Only one sub element, delete the whole thing
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: nextElementSibling
+                });
+            
+            DaemonHandle.SyncNow();
+            
+            return;
+        }
+        
+        
+        // "Normal" joining lines
+        console.log("Del:Line join");
+        
+        let NewLine = NearestContainer.cloneNode(true);
+        
+        nextElementSibling.childNodes.forEach((ChildNode) => {
+            NewLine.appendChild(ChildNode.cloneNode(true));
+        })
+        
+        DaemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: nextElementSibling,
+        });
+        
+        DaemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: NearestContainer,
+            newNode: NewLine
+        });
+        
         DaemonHandle.SyncNow();
     }
     
@@ -921,4 +960,36 @@ function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement
         console.warn(e.message);
     }
     return;
+}
+
+function GetNextAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HTMLElement): Node | null {
+    let current = node;
+    
+    do {
+        let nextSibling = current.nextSibling;
+        if (nextSibling && (nextSibling.nodeType === Node.ELEMENT_NODE || nextSibling.textContent && nextSibling.textContent.trim() !== '')) {
+            return nextSibling;
+        }
+        
+        current = current.parentNode as Node;
+        
+    } while (current && current !== upperLimit);
+    
+    return null;
+}
+
+function GetPrevAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HTMLElement): Node | null {
+    let current = node;
+    
+    do {
+        let previousSiblingNode = current.previousSibling;
+        if (previousSiblingNode && (previousSiblingNode.nodeType === Node.ELEMENT_NODE || previousSiblingNode.textContent && previousSiblingNode.textContent.trim() !== '')) {
+            return previousSiblingNode;
+        }
+        
+        current = current.parentNode as Node;
+        
+    } while (current && current !== upperLimit);
+    
+    return null;
 }
