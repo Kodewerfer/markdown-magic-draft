@@ -1,6 +1,9 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {GetChildNodesTextContent} from '../Helpers'
+import {
+    GetChildNodesTextContent,
+    TextNodeProcessor
+} from '../Helpers'
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -9,24 +12,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     [key: string]: any; // for otherProps
 }) {
     const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            if (!state) {
-                ElementOBRef.current?.takeRecords();
-                ElementOBRef.current?.disconnect();
-                ElementOBRef.current = null;
-            }
-            if (state) {
-                daemonHandle.SyncNow();
-                
-                if (typeof MutationObserver) {
-                    ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
-                        childList: true
-                    });
-                }
-            }
-            setIsEditing(state);
-        }
+        return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
     
     const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
@@ -41,6 +27,30 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     const WholeElementRef = useRef<HTMLElement | null>(null);
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    function ComponentActivation(state: boolean) {
+        if (!state) {
+            ElementOBRef.current?.takeRecords();
+            ElementOBRef.current?.disconnect();
+            ElementOBRef.current = null;
+            
+            const TextContent = CompileAllTextNode();
+            UpdateComponent(TextContent, WholeElementRef.current);
+            
+        }
+        if (state) {
+            daemonHandle.SyncNow();
+            
+            if (typeof MutationObserver) {
+                ElementOBRef.current = new MutationObserver(ObserverHandler);
+                WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
+                    childList: true,
+                });
+            }
+        }
+        setIsEditing(state);
+        return;
+    }
     
     function ObserverHandler(mutationList: MutationRecord[]) {
         mutationList.forEach((Record) => {
@@ -63,6 +73,39 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         })
     }
     
+    // Called in meta state
+    function CompileAllTextNode() {
+        if (!WholeElementRef.current) return;
+        let elementWalker = document.createTreeWalker(WholeElementRef.current, NodeFilter.SHOW_TEXT);
+        
+        let node;
+        let textContent = '';
+        while (node = elementWalker.nextNode()) {
+            textContent += node.textContent;
+        }
+        
+        console.log(textContent);
+        return textContent;
+    }
+    
+    // Called in meta state
+    function UpdateComponent(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
+        if (!TextNodeContent || !ParentElement) return;
+        const textNodeResult = TextNodeProcessor(TextNodeContent);
+        
+        let documentFragment = document.createDocumentFragment();
+        textNodeResult?.forEach(item => documentFragment.appendChild(item));
+        
+        if (textNodeResult) {
+            daemonHandle.AddToOperations({
+                type: "REPLACE",
+                targetNode: ParentElement,
+                newNode: documentFragment //first result node only
+            });
+            daemonHandle.SyncNow();
+        }
+    }
+    
     // Self cleanup if there is no content left
     useEffect(() => {
         if ((!children || String(children).trim() === '') && WholeElementRef.current) {
@@ -82,13 +125,11 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         }
     });
     
+    // Add all nodes to ignore, updating this component relies on activation function
     useLayoutEffect(() => {
-        if (SyntaxElementRefFront.current)
-            daemonHandle.AddToIgnore(SyntaxElementRefFront.current, "any");
-        
-        if (SyntaxElementRefRear.current)
-            daemonHandle.AddToIgnore(SyntaxElementRefRear.current, "any");
-        
+        if (WholeElementRef.current && WholeElementRef.current.childNodes) {
+            daemonHandle.AddToIgnore(WholeElementRef.current, "any", true);
+        }
     });
     
     return React.createElement(tagName, {
@@ -99,7 +140,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxFront',
             ref: SyntaxElementRefFront,
-            contentEditable: false,
             className: ` ${isEditing ? '' : 'Hide-It'}`
         }, propSyntaxData),
         
@@ -109,9 +149,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxRear',
             ref: SyntaxElementRefRear,
-            contentEditable: false,
             className: ` ${isEditing ? '' : 'Hide-It'}`
         }, propSyntaxData)
     ]);
-    
 }
