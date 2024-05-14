@@ -305,3 +305,47 @@ export function CreateAndWalkToNode(rootNode: Node | HTMLElement, targetNode: No
     
     return nodeWalker; // returns TreeWalker that has been walked to the targetNode (if reachable)
 }
+
+/**
+ * Retrieves the last text node within the given container node.
+ *
+ * @param {Node | HTMLElement} ContainerNode - The container node from which to search for the last text node.
+ * @return {Node | null} - The last text node found or null if no text node is found.
+ */
+export function GetLastTextNode(ContainerNode: Node | HTMLElement): Node | null {
+    if (!ContainerNode) return null;
+    let lastTextNode: Node | null = null;
+    
+    const {childNodes} = ContainerNode;
+    
+    for (let i = childNodes.length - 1; i >= 0; i--) {
+        const childNode = childNodes[i];
+        if (childNode.nodeType !== Node.TEXT_NODE) continue;
+        lastTextNode = childNode;
+        break;
+    }
+    
+    return lastTextNode;
+}
+
+/**
+ * Retrieves the first text node within a given container node.
+ *
+ * @param {Node | HTMLElement} ContainerNode - The container node to search within.
+ * @return {Node | null} - The first text node found, or null if no text node is found.
+ */
+export function GetFirstTextNode(ContainerNode: Node | HTMLElement): Node | null {
+    if (!ContainerNode) return null;
+    let firstTextNode: Node | null = null;
+    
+    const {childNodes} = ContainerNode;
+    
+    for (let i = 0; i < childNodes.length; i++) {
+        const childNode = childNodes[i];
+        if (childNode.nodeType !== Node.TEXT_NODE) continue;
+        firstTextNode = childNode;
+        break;
+    }
+    
+    return firstTextNode;
+}
