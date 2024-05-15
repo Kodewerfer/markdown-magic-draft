@@ -7,7 +7,7 @@ import "./Editor.css";
 // helper
 import {
     TextNodeProcessor,
-    FindNearestParagraph,
+    FindWrappingElementWithinContainer,
     GetCaretContext,
     MoveCaretIntoNode,
     GetNextSiblings,
@@ -259,7 +259,7 @@ export default function Editor(
         } = GetCaretContext();
         if (!CurrentAnchorNode || !CurrentSelection) return;
         
-        const NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
         if (!NearestContainer) return;
         
         // TODO: could cause non-responsiveness, need more testing
@@ -364,32 +364,25 @@ export default function Editor(
         
         if ((CurrentAnchorNode as HTMLElement)?.contentEditable === 'false' || (CurrentAnchorNode.parentNode as HTMLElement)?.contentEditable === 'false') return
         
-        let NearestContainer: HTMLElement | null = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!);
+        let NearestContainer: HTMLElement | null = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!);
+        if (!NearestContainer) return; //unlikely
         
         // Check if caret at an empty line
         const bEmptyLine = NearestContainer === CurrentAnchorNode || (NearestContainer?.childNodes.length === 1 && NearestContainer.childNodes[0].nodeName.toLowerCase() === 'br');
         
         // Empty line when caret landed on the p tag itself. the NearestContainer would be the p tag
-        if (bEmptyLine && NearestContainer!.firstChild) {
+        if (bEmptyLine && NearestContainer.firstChild) {
             RemainingText = '';
             PrecedingText = '';
-            CurrentAnchorNode = NearestContainer!.firstChild;
+            CurrentAnchorNode = NearestContainer.firstChild;
         }
         
         // Caret usually land on a text node, get the wrapping element
-        let CurrentElementNode: HTMLElement;
-        // Check if it was a text node under P tag or under other tags such as strong
-        if (CurrentAnchorNode.parentNode !== null && CurrentAnchorNode.parentNode !== NearestContainer && !ParagraphTest.test(CurrentAnchorNode.parentNode.nodeName)) {
-            // When caret is in the text node of a, for example, strong tag within a p tag
-            CurrentElementNode = CurrentAnchorNode.parentNode;
-        } else {
-            CurrentElementNode = CurrentAnchorNode;
-        }
+        let Current_ElementNode = FindWrappingElementWithinContainer(CurrentAnchorNode, NearestContainer);
+        if (!Current_ElementNode) return; //unlikly
         
         // if landed on a non-editble content, do nothing
-        if (CurrentElementNode.contentEditable === 'false') return;
-        
-        let FollowingNodes = GetNextSiblings(CurrentElementNode)
+        if (Current_ElementNode.contentEditable === 'false') return;
         
         // Breaking in an empty line
         if (bEmptyLine && CurrentAnchorNode.nodeName.toLowerCase() === 'br') {
@@ -412,8 +405,8 @@ export default function Editor(
         
         const Range = CurrentSelection.getRangeAt(0);
         const bNoValidPreSiblings =
-            !CurrentElementNode.previousSibling
-            || (CurrentElementNode.previousSibling as HTMLElement).contentEditable === 'false' && !CurrentElementNode.previousSibling.previousSibling;
+            !Current_ElementNode.previousSibling
+            || (Current_ElementNode.previousSibling as HTMLElement).contentEditable === 'false' && !Current_ElementNode.previousSibling.previousSibling;
         
         // Breaking at the very beginning of the line
         if (bNoValidPreSiblings && Range.startOffset === 0) {
@@ -434,6 +427,7 @@ export default function Editor(
             return;
         }
         
+        let FollowingNodes = GetNextSiblings(Current_ElementNode)
         // Breaking anywhere in the middle of the line
         if (RemainingText !== '' || FollowingNodes.length > 1 || (FollowingNodes.length === 1 && FollowingNodes[0].textContent !== '\n')) {
             console.log("Breaking - Mid line");
@@ -449,15 +443,15 @@ export default function Editor(
             const NewLine = document.createElement("p");  // The new line
             NewLine.appendChild(anchorNodeClone);
             
-            if (FollowingNodes.length) {
-                for (let Node of FollowingNodes) {
-                    NewLine.appendChild(Node.cloneNode(true));
-                    DaemonHandle.AddToOperations({
-                        type: "REMOVE",
-                        targetNode: Node,
-                    });
-                }
-            }
+            // Delete the elements in the old line, need to remove the last one first otherwise the xpath will not be correct
+            FollowingNodes.slice().reverse().forEach(Node => {
+                NewLine.appendChild(Node.cloneNode(true));
+                DaemonHandle.AddToOperations({
+                    type: "REMOVE",
+                    targetNode: Node,
+                });
+            })
+            
             
             // Clean up the old line
             DaemonHandle.AddToOperations({
@@ -502,7 +496,7 @@ export default function Editor(
         let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
-        const NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
         if (!NearestContainer) return;
         
         if (NearestContainer === CurrentAnchorNode) {
@@ -641,7 +635,7 @@ export default function Editor(
         console.log(CurrentAnchorNode);
         if (!CurrentAnchorNode) return;
         
-        let NearestContainer = FindNearestParagraph(CurrentAnchorNode, EditorRef.current!)
+        let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
         if (!NearestContainer) return;
         
         const bCaretOnContainer = CurrentAnchorNode === NearestContainer;
@@ -884,6 +878,10 @@ const CommonRenderer = (props: any) => {
 };
 
 // Editor Spec helpers
+
+/**
+ * The hack func that retrieves the react fiber and thus the active component
+ */
 function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 0): any {
     if (DomNode.nodeType === Node.TEXT_NODE) {
         if (DomNode.parentNode)
@@ -921,12 +919,20 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 0): a
     return compFiber;
 }
 
+/**
+ * Moves the caret to the last end of line (EOL) position within the provided container element.
+ * If a current selection is not provided or does not exist, the method will return without performing any action.
+ * Used in handling backspace, move caret then sync is more reliable than to set up future token
+ *
+ * @param {Selection | null} currentSelection - The current selection.
+ * @param {HTMLElement} ContainerElement - The container element within which the caret will be moved.
+ */
 function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement: HTMLElement) {
     if (!currentSelection) return;
     let CurrentAnchor = currentSelection.anchorNode;
     if (!CurrentAnchor) return;
     
-    const NearestParagraph = FindNearestParagraph(CurrentAnchor, ContainerElement);
+    const NearestParagraph = FindWrappingElementWithinContainer(CurrentAnchor, ContainerElement);
     
     let currentPrevSibling = NearestParagraph?.previousElementSibling;
     while (currentPrevSibling) {
@@ -962,6 +968,13 @@ function MoveCaretToLastEOL(currentSelection: Selection | null, ContainerElement
     return;
 }
 
+/**
+ * Returns the next available sibling of a given node within an upper limit.
+ *
+ * @param {Node | HTMLElement} node - The starting node to find the next available sibling.
+ * @param {Node | HTMLElement} upperLimit - The upper limit node to stop the search.
+ * @return {Node | null} - The next available sibling or null if not found.
+ */
 function GetNextAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HTMLElement): Node | null {
     let current = node;
     
@@ -978,6 +991,15 @@ function GetNextAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HT
     return null;
 }
 
+/**
+ * Returns the previous available sibling of a given node within a specified upper limit.
+ * An available sibling is defined as the previous sibling that is either an element node or has non-empty text content.
+ * If no available sibling is found, null is returned.
+ *
+ * @param {Node | HTMLElement} node - The node to find the previous available sibling for.
+ * @param {Node | HTMLElement} upperLimit - The upper limit node to stop searching for the previous sibling.
+ * @return {Node | null} - The previous available sibling of the given node, or null if not found.
+ */
 function GetPrevAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HTMLElement): Node | null {
     let current = node;
     
