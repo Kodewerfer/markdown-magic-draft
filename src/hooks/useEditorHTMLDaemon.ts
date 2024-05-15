@@ -1136,8 +1136,6 @@ export default function useEditorHTMLDaemon(
             ToggleObserve(true);
         }
         
-        console.log("support has ran")
-        
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
