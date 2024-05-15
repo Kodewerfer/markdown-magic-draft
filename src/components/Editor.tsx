@@ -632,7 +632,6 @@ export default function Editor(
         
         let {RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         
-        console.log(CurrentAnchorNode);
         if (!CurrentAnchorNode) return;
         
         let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
@@ -654,7 +653,7 @@ export default function Editor(
         
         // NOTE: this is an override on editing text, so far only needed for del key
         if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) {
-            if (RemainingText.trim() !== '') {
+            if (RemainingText !== '') {
                 CurrentAnchorNode.deleteData(CurrentSelection?.anchorOffset, 1);
                 return;
             }
@@ -980,7 +979,7 @@ function GetNextAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HT
     
     do {
         let nextSibling = current.nextSibling;
-        if (nextSibling && (nextSibling.nodeType === Node.ELEMENT_NODE || nextSibling.textContent && nextSibling.textContent.trim() !== '')) {
+        if (nextSibling && (nextSibling.nodeType === Node.ELEMENT_NODE || nextSibling.textContent && nextSibling.textContent !== '\n')) {
             return nextSibling;
         }
         
@@ -1005,7 +1004,7 @@ function GetPrevAvailableSibling(node: Node | HTMLElement, upperLimit: Node | HT
     
     do {
         let previousSiblingNode = current.previousSibling;
-        if (previousSiblingNode && (previousSiblingNode.nodeType === Node.ELEMENT_NODE || previousSiblingNode.textContent && previousSiblingNode.textContent.trim() !== '')) {
+        if (previousSiblingNode && (previousSiblingNode.nodeType === Node.ELEMENT_NODE || previousSiblingNode.textContent && previousSiblingNode.textContent !== '\n')) {
             return previousSiblingNode;
         }
         
