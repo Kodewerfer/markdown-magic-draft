@@ -115,20 +115,19 @@ export function GetChildNodesTextContent(ChildNodes: NodeListOf<ChildNode> | und
     return textContent;
 }
 
-/**
- * Get the Nearest "Paragraph" under the 'Element' arg, usually a p tag, but can also be ul/pre etc.
- * @param node - the child node
- * @param Element - the containers that contains the child node and the "Paragraph"
- */
-export function FindNearestParagraph(node: Node, Element: HTMLElement): HTMLElement | null {
+export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLElement): HTMLElement | null {
     
-    let current: Node | null = node;
-    while (current) {
-        if (current.parentNode && current.parentNode === Element) {
-            return current as HTMLElement;
-        }
-        current = current.parentNode;
+    let currentNode = Node;
+    
+    if (currentNode === Container) return currentNode as HTMLElement;
+    
+    while (currentNode.parentNode) {
+        let parentNode = currentNode.parentNode;
+        if (parentNode === Container) return currentNode as HTMLElement;
+        
+        currentNode = parentNode;
     }
+    
     return null;
 }
 
