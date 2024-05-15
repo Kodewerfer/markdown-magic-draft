@@ -63,6 +63,28 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         })
     }
     
+    // Self destruct if no child element
+    useEffect(() => {
+        if (!children || React.Children.count(children) === 1) {
+            if (String(children).trim() === '' && MainElementRef.current) {
+                
+                daemonHandle.AddToOperations(
+                    {
+                        type: "REMOVE",
+                        targetNode: MainElementRef.current,
+                    }
+                );
+                
+                MainElementRef.current = null;
+                daemonHandle.SyncNow()
+                    .then(() => {
+                        daemonHandle.DiscardHistory(1);
+                    });
+                
+            }
+        }
+    });
+    
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {
         if (isHeader && SyntaxElementRef.current)
