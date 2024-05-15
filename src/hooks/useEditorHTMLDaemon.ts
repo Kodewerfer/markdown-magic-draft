@@ -177,7 +177,6 @@ export default function useEditorHTMLDaemon(
         WatchElementRef.current!.contentEditable = 'false';
         
         let {OperationLogs, BindOperationLogs} = RollbackAndBuildOps();
-        
         /**
          * The order of execution for the operations is:
          * 1. user initiated operations(on-page editing);
@@ -278,7 +277,10 @@ export default function useEditorHTMLDaemon(
                     
                     // The scope of operation
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
-                    const ParentParentXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
+                    const parentClosestParagraph = FindNearestParagraph(ParentNode, DaemonOptions.ParagraphTags, WatchElementRef.current!);
+                    const parentClosestParagraphXPath = parentClosestParagraph ? GetXPathFromNode(parentClosestParagraph) : '';
+                    // const parentClosestParagraphXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
+                    
                     
                     // Determined if parent of the text is paragraph level (p/div etc.) then choose candidate, !! may be overwritten later.
                     const ParentTagsTest = DaemonOptions.ParagraphTags
@@ -309,7 +311,7 @@ export default function useEditorHTMLDaemon(
                     let logSiblingXP = OldTextNode.nextSibling ? GetXPathFromNode(OldTextNode.nextSibling) : null;
                     // at this point, the text node can either be under a sub-level element(strong,del etc) or a paragraph-level tag
                     // if it was the former case, override; otherwise, leave the nodes where they're (unless they themselves have a paragraph-level tag)
-                    LogParentXP = DaemonOptions.ParagraphTags.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : ParentParentXPath;
+                    LogParentXP = DaemonOptions.ParagraphTags.test(ParentNode.tagName.toLowerCase()) ? ParentXPath : parentClosestParagraphXPath;
                     
                     // Add the new node/nodes in a doc frag.It's "toReversed()", because the later operation uses pop()
                     // Also check if contains any paragraph level tags.
@@ -355,12 +357,13 @@ export default function useEditorHTMLDaemon(
                     
                     // ! Scope override
                     if (shouldOverrideParent)
-                        LogParentXP = ParentParentXPath;
+                        LogParentXP = parentClosestParagraphXPath;
                     
-                    if (LogParentXP === ParentParentXPath) {
+                    if (LogParentXP === parentClosestParagraphXPath) {
                         LogNodeXP = GetXPathNthChild(ParentNode);
                         logSiblingXP = ParentNode.nextSibling ? GetXPathNthChild(ParentNode.nextSibling) : null;
                     }
+                    
                     
                     // remove the old node, later operation uses pop(), so this happens last.
                     OperationLogs.push({
@@ -480,11 +483,11 @@ export default function useEditorHTMLDaemon(
     }
     
     const AppendAdditionalOperations = (OperationLogs: TSyncOperation[]) => {
-        if (DaemonState.AdditionalOperation.length) {
-            const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation, true);
-            
-            OperationLogs.unshift(...syncOpsBuilt.reverse());
-        }
+        if (!DaemonState.AdditionalOperation.length) return OperationLogs;
+        const syncOpsBuilt = BuildOperations(DaemonState.AdditionalOperation, true);
+        
+        OperationLogs.unshift(...syncOpsBuilt.reverse());
+        
         return OperationLogs;
     }
     
@@ -626,7 +629,7 @@ export default function useEditorHTMLDaemon(
             
             // Node is the container itself
             if (WatchElementRef.current && (node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
-                xpSegments.push('body');
+                xpSegments.push('/body');
                 break;
             }
             
@@ -675,7 +678,6 @@ export default function useEditorHTMLDaemon(
             if (!OPItem.targetNodeXP && OPItem.targetNode) {
                 
                 const targetNode = typeof OPItem.targetNode === "function" ? OPItem.targetNode() : OPItem.targetNode;
-                
                 Object.assign(OPItem, {
                     targetNodeXP: GetXPathFromNode(targetNode)
                 })
@@ -1350,7 +1352,7 @@ function ParseXPath(xpath: string) {
     const pathSegments = xpath.split('/');
     for (const pathElement of pathSegments) {
         if (!pathElement) continue;
-        if (pathElement === 'body') continue;
+        if (pathElement === 'body' || pathElement === '/body') continue;
         
         let nodePath = pathElement;
         let index: number | null = null;
@@ -1386,4 +1388,21 @@ function GetNodeFromXPathInHTMLElement(ContainerElement: HTMLElement, XPath: str
     }
     let result = evaluator.evaluate(XPath, ContainerElement, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
     return result.singleNodeValue;
+}
+
+
+export function FindNearestParagraph(Node: Node, NodeNameTest: RegExp, UpperLimit: Node | HTMLElement) {
+    
+    let currentNode = Node;
+    
+    // if (NodeNameTest.test(currentNode.nodeName.toLowerCase())) return currentNode;
+    
+    while (currentNode.parentNode && currentNode !== UpperLimit) {
+        let parentNode = currentNode.parentNode;
+        if (NodeNameTest.test(parentNode.nodeName.toLowerCase())) return parentNode as Node;
+        
+        currentNode = parentNode;
+    }
+    
+    return null;
 }
