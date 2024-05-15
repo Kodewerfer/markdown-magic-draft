@@ -8,7 +8,7 @@
  *  So, the original DOM needs to be kept as-is; the changes will be made on the other DOM ref instead, which will later be turned to React components so that React can do proper diffing and DOM manipulation.
  */
 
-import {useLayoutEffect, useState} from "react";
+import {useEffect, useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 import {CreateAndWalkToNode} from "../components/Helpers";
 
@@ -19,12 +19,12 @@ export type TSyncOperation = {
     fromTextHandler?: boolean  //indicate if it was a replacement node resulting from text node callback
     IsAdditional?: boolean
     newNode?: Node | (() => Node)
-    targetNode?: Node //Alternative to XP
+    targetNode?: Node | (() => Node) //Alternative to XP
     targetNodeXP?: string
     nodeText?: string | null
     nodeTextOld?: string | null //used in redo
     parentXP?: string | null
-    parentNode?: Node //Alternative to XP, when adding
+    parentNode?: Node | (() => Node)//Alternative to XP, when adding
     siblingXP?: string | null
     siblingNode?: Node | undefined | null
     attribute?: { name: string; value: string }
@@ -50,16 +50,17 @@ export type TElementOperation = Map<Node, {
 
 // Hook's persistent variables
 type TDaemonState = {
-    Observer: MutationObserver //Mutation Observer instance
-    MutationQueue: MutationRecord[] // All records will be pushed to here
-    IgnoreMap: TIgnoreMap
-    BindOperationMap: TElementOperation
-    AdditionalOperation: TSyncOperation[]
+    Observer: MutationObserver; //Mutation Observer instance
+    MutationQueue: MutationRecord[];// All records will be pushed to here
+    IgnoreMap: TIgnoreMap;
+    BindOperationMap: TElementOperation;
+    AdditionalOperation: TSyncOperation[];
     CaretOverrideToken: TCaretToken // for now, enter key logic only, move the caret to the beginning of the next line if need be.
-    UndoStack: [Document] | null
-    RedoStack: [Document] | null
-    SelectionStatusCache: TSelectionStatus | null
-    SelectionStatusCachePreBlur: TSelectionStatus | null
+    UndoStack: [Document] | null;
+    RedoStack: [Document] | null;
+    SelectionStatusCache: TSelectionStatus | null;
+    SelectionStatusCachePreBlur: TSelectionStatus | null;
+    
 }
 
 type THookOptions = {
@@ -74,7 +75,7 @@ type THookOptions = {
     
 }
 
-type TCaretToken = 'zero' | 'NextLine' | 'NextEditable' | null;
+type TCaretToken = 'zero' | 'NextLine' | 'NextEditable' | 'NextRealEditable' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
@@ -118,7 +119,7 @@ export default function useEditorHTMLDaemon(
             UndoStack: null,
             RedoStack: null,
             SelectionStatusCache: null,
-            SelectionStatusCachePreBlur: null
+            SelectionStatusCachePreBlur: null,
         }
         
         if (typeof MutationObserver) {
@@ -672,18 +673,24 @@ export default function useEditorHTMLDaemon(
             }
             
             if (!OPItem.targetNodeXP && OPItem.targetNode) {
+                
+                const targetNode = typeof OPItem.targetNode === "function" ? OPItem.targetNode() : OPItem.targetNode;
+                
                 Object.assign(OPItem, {
-                    targetNodeXP: GetXPathFromNode(OPItem.targetNode)
+                    targetNodeXP: GetXPathFromNode(targetNode)
                 })
             }
             // adding
             if (!OPItem.parentXP && OPItem.parentNode) {
+                
+                const parentNode = typeof OPItem.parentNode === "function" ? OPItem.parentNode() : OPItem.parentNode;
+                
                 Object.assign(OPItem, {
-                    parentXP: GetXPathFromNode(OPItem.parentNode)
+                    parentXP: GetXPathFromNode(parentNode)
                 })
             }
             // remove,replace
-            if (!OPItem.parentXP && OPItem.targetNode && OPItem.targetNode.parentNode) {
+            if (!OPItem.parentXP && OPItem.targetNode && OPItem.targetNode instanceof Node && OPItem.targetNode.parentNode) {
                 Object.assign(OPItem, {
                     parentXP: GetXPathFromNode(OPItem.targetNode.parentNode)
                 })
@@ -692,7 +699,7 @@ export default function useEditorHTMLDaemon(
                 Object.assign(OPItem, {
                     siblingXP: OPItem.siblingNode ? GetXPathFromNode(OPItem.siblingNode) : null // if not undefined, then there isn't a sibling node
                 })
-            } else if (!OPItem.siblingXP && OPItem.targetNode) {
+            } else if (!OPItem.siblingXP && OPItem.targetNode && OPItem.targetNode instanceof Node) {
                 Object.assign(OPItem, {
                     siblingXP: OPItem.targetNode.nextSibling ? GetXPathFromNode(OPItem.targetNode.nextSibling) : null
                 })
@@ -1057,8 +1064,22 @@ export default function useEditorHTMLDaemon(
             case 'NextEditable': {
                 while (AnchorNode = Walker.nextNode()) {
                     if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
-                    if (AnchorNode.textContent === "\n") continue;
+                    // if (AnchorNode.textContent === "\n") continue;
                     if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                    
+                    FocusNode = null;
+                    StartingOffset = 0;
+                    break;
+                }
+                break;
+            }
+            case 'NextRealEditable': {
+                // Same as NextEditable but filter out generated elements
+                while (AnchorNode = Walker.nextNode()) {
+                    if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                    // if (AnchorNode.textContent === "\n") continue;
+                    if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                    if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).hasAttribute("data-is-generated")) continue;
                     
                     FocusNode = null;
                     StartingOffset = 0;
@@ -1114,6 +1135,8 @@ export default function useEditorHTMLDaemon(
         if (DaemonOptions.ShouldObserve) {
             ToggleObserve(true);
         }
+        
+        console.log("support has ran")
         
         // clean up
         return () => {
@@ -1274,18 +1297,10 @@ export default function useEditorHTMLDaemon(
                 console.log("DiscardHistory: ", DiscardCountActual, " Removed")
         },
         SyncNow(): Promise<void> {
-            
-            return new Promise((resolve) => {
-                // throttledSelectionStatus();
-                // throttledRollbackAndSync();
-                // setTimeout(() => {
-                //     resolve();
-                // }, throttledFuncDelay);
+            return new Promise((resolve, reject) => {
                 DaemonState.SelectionStatusCache = GetSelectionStatus();
                 FlushAllRecords();
-                setTimeout(() => {
-                    resolve();
-                }, 0);
+                resolve();
             });
         },
         SetFutureCaret(token: TCaretToken) {
