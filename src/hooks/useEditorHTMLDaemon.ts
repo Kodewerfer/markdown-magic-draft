@@ -50,6 +50,7 @@ export type TElementOperation = Map<Node, {
 
 // Hook's persistent variables
 type TDaemonState = {
+    EditorLocked: boolean | undefined;
     Observer: MutationObserver; //Mutation Observer instance
     MutationQueue: MutationRecord[];// All records will be pushed to here
     IgnoreMap: TIgnoreMap;
@@ -81,9 +82,9 @@ export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
     DiscardHistory: (DiscardCount: number) => void;
     SetFutureCaret: (token: TCaretToken) => void;
-    AddToIgnore: (Element: Node, Type: TDOMTrigger, bIncludeAllChild?: boolean) => void;
+    AddToIgnore: (Element: Node | HTMLElement | Node[], Type: TDOMTrigger, bIncludeAllChild?: boolean) => void;
     AddToBindOperations: (Element: Node, Trigger: TDOMTrigger, Operation: TSyncOperation | TSyncOperation[]) => void; //DEPRECATED
-    AddToOperations: (Operation: TSyncOperation | TSyncOperation[]) => void;
+    AddToOperations: (Operation: TSyncOperation | TSyncOperation[], ShouldLockPage?: boolean) => void;
 }
 
 export default function useEditorHTMLDaemon(
@@ -110,6 +111,7 @@ export default function useEditorHTMLDaemon(
     const DaemonState: TDaemonState = useState(() => {
         
         const state: TDaemonState = {
+            EditorLocked: undefined,
             Observer: null as any,
             MutationQueue: [],
             IgnoreMap: new Map(),
@@ -170,8 +172,10 @@ export default function useEditorHTMLDaemon(
         
         let onRollbackCancelled: any; // the cleanup function, if present
         // Rollback mask
-        if (typeof DaemonOptions.OnRollback === 'function')
+        if (typeof DaemonOptions.OnRollback === 'function' && !DaemonState.EditorLocked) {
             onRollbackCancelled = DaemonOptions.OnRollback();
+            DaemonState.EditorLocked = true;
+        }
         
         ToggleObserve(false);
         WatchElementRef.current!.contentEditable = 'false';
@@ -205,6 +209,7 @@ export default function useEditorHTMLDaemon(
                 onRollbackCancelled();
             
             RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
+            DaemonState.EditorLocked = false;
             return;
         }
         
@@ -246,7 +251,7 @@ export default function useEditorHTMLDaemon(
                     continue;
                 
                 // Get the original value for the text node. used in undo
-                // Deprecated, but value still processed for now
+                // FIXME: loop within loop
                 let TextNodeOriginalValue = mutation.oldValue;
                 if (DaemonState.MutationQueue.length >= 1) {
                     DaemonState.MutationQueue.slice().reverse().some((mutationData) => {
@@ -266,9 +271,23 @@ export default function useEditorHTMLDaemon(
                     const callbackResult = DaemonOptions.TextNodeCallback(OldTextNode);
                     
                     if (!callbackResult || !callbackResult.length) {
-                        console.log("Text Handler: Result is empty");
+                        // exception
                         if (OldTextNode.textContent !== '')
                             console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode.textContent);
+                        //
+                        if (OldTextNode.textContent === '' && (mutation.oldValue || TextNodeOriginalValue)) {
+                            console.log("Text Handler: Result is empty,delete text node");
+                            const operationLog: TSyncOperation = {
+                                type: "REMOVE",
+                                newNode: OldTextNode.cloneNode(true),
+                                targetNodeXP: GetXPathFromNode(OldTextNode),
+                                parentXP: GetXPathFromNode(ParentNode),
+                                siblingXP: mutation.nextSibling ? GetXPathFromNode(mutation.nextSibling) : null
+                            }
+                            OperationLogs.push(operationLog);
+                        }
+                        
+                        lastMutation = mutation;
                         continue;
                     }
                     
@@ -623,7 +642,7 @@ export default function useEditorHTMLDaemon(
         while (node && node !== document.body) {
             // the most identifiable, no need to run more logic
             if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
-                xpSegments.push('//*[@id="' + (node as HTMLElement).id + '"]');
+                xpSegments.push('/*[@id="' + (node as HTMLElement).id + '"]');
                 break;
             }
             
@@ -1138,6 +1157,8 @@ export default function useEditorHTMLDaemon(
             ToggleObserve(true);
         }
         
+        DaemonState.EditorLocked = false;
+        
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
@@ -1306,13 +1327,17 @@ export default function useEditorHTMLDaemon(
         SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideToken = token;
         },
-        AddToIgnore(Element: Node | HTMLElement, TriggerType: TDOMTrigger, bIncludeAllChild = false) {
-            if (!bIncludeAllChild)
+        AddToIgnore(Element: Node | HTMLElement | Node[], TriggerType: TDOMTrigger, bIncludeAllChild = false) {
+            if (!bIncludeAllChild && !Array.isArray(Element))
                 return DaemonState.IgnoreMap.set(Element, TriggerType);
             
             // Non-recursion func that add all child nodes to ignore too
-            
-            const queue = [Element];
+            let queue;
+            if (Array.isArray(Element)) {
+                queue = [...Element];
+            } else {
+                queue = [Element];
+            }
             
             while (queue.length) {
                 const currentNode = queue.shift();
@@ -1331,7 +1356,13 @@ export default function useEditorHTMLDaemon(
                 Operations: Operation
             })
         },
-        AddToOperations(Operation: TSyncOperation | TSyncOperation[]) {
+        AddToOperations(Operation: TSyncOperation | TSyncOperation[], ShouldLockPage = true) {
+            
+            if (!DaemonState.EditorLocked && ShouldLockPage) {
+                typeof DaemonOptions.OnRollback === 'function' && DaemonOptions.OnRollback();
+                DaemonState.EditorLocked = true;
+            }
+            
             if (!Array.isArray(Operation))
                 Operation = [Operation];
             DaemonState.AdditionalOperation.push(...Operation);

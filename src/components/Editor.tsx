@@ -11,7 +11,7 @@ import {
     GetCaretContext,
     MoveCaretIntoNode,
     GetNextSiblings,
-    MoveCaretToNode
+    MoveCaretToNode, GetFirstTextNode
 } from "./Helpers";
 // Editor Components
 import Paragraph from './Editor_Parts/Paragraph';
@@ -423,6 +423,7 @@ export default function Editor(
                 siblingNode: NearestContainer,
                 parentXP: "//body"
             });
+            DaemonHandle.SetFutureCaret("NextLine");
             DaemonHandle.SyncNow();
             return;
         }
@@ -435,6 +436,7 @@ export default function Editor(
             // FIXME: May be a better solution
             if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) {
                 console.warn("Enter Key Exception")
+                MoveCaretIntoNode(NearestContainer);
                 return;
             }
             
@@ -443,9 +445,13 @@ export default function Editor(
             const NewLine = document.createElement("p");  // The new line
             NewLine.appendChild(anchorNodeClone);
             
+            // Add the following elements in right order
+            FollowingNodes.forEach(Node => {
+                NewLine.appendChild(Node.cloneNode(true));
+            })
+            
             // Delete the elements in the old line, need to remove the last one first otherwise the xpath will not be correct
             FollowingNodes.slice().reverse().forEach(Node => {
-                NewLine.appendChild(Node.cloneNode(true));
                 DaemonHandle.AddToOperations({
                     type: "REMOVE",
                     targetNode: Node,
@@ -658,19 +664,24 @@ export default function Editor(
                 return;
             }
             let nextSibling = CurrentAnchorNode.nextSibling;
-            if (nextSibling) {
-                // Delete the first character of the next text node
-                if (nextSibling.nodeType === Node.TEXT_NODE)
-                    (nextSibling as Text).deleteData(0, 1);
-                if (nextSibling.nodeType === Node.ELEMENT_NODE)
-                    MoveCaretToNode(nextSibling);
-                
-                return;
+            if (!nextSibling) return;
+            // Delete the first character of the next text node
+            if (nextSibling.nodeType === Node.TEXT_NODE) {
+                (nextSibling as Text).deleteData(0, 1);
+                MoveCaretToNode(nextSibling);
             }
+            if (nextSibling.nodeType === Node.ELEMENT_NODE) {
+                let textNode = GetFirstTextNode(nextSibling);
+                if (!textNode) return MoveCaretIntoNode(textNode);
+                (textNode as Text).deleteData(0, 1);
+                MoveCaretToNode(textNode);
+            }
+            return;
         }
         
         let nextElementSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
         if (!nextElementSibling) return; //No more lines following
+        
         
         // same as back space, when there is still content that could be deleted, but caret lands on the wrong element
         // FIXME: may be buggy

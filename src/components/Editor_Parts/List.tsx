@@ -2,7 +2,7 @@ import React, {useEffect, Children, useRef, useState, useLayoutEffect} from "rea
 import {TDaemonReturn, TSyncOperation} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
-    GetChildNodesAsHTMLString, GetNextSiblings,
+    GetChildNodesAsHTMLString, GetLastTextNode, GetNextSiblings,
     MoveCaretToNode
 } from "../Helpers";
 
@@ -245,6 +245,9 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
         
         if (!CurrentSelection || !CurrentAnchorNode) return;
+        
+        if (!CurrentSelection.isCollapsed) return CurrentSelection.collapseToEnd();
+        
         // caret lands on the leading syntax element or on the li itself, move it into the text node
         if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || (CurrentAnchorNode as HTMLElement).contentEditable === 'false') {
             if (!CurrentListItemRef.current || !CurrentListItemRef.current.childNodes.length) return;
@@ -270,7 +273,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
                 return true;
             }
             
-            let TargetNode = GetLastTextNode();
+            let TargetNode = GetLastTextNode(CurrentListItemRef.current!);
             
             if (!TargetNode || !TargetNode.textContent) return;
             
@@ -310,7 +313,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         // No following element or text content
         if ((!RemainingText || RemainingText.trim() === '') && !FollowingNodes.length) {
             // Move caret to the end of the last text node.
-            let TargetNode = GetLastTextNode();
+            let TargetNode = GetLastTextNode(CurrentListItemRef.current);
             
             if (!TargetNode || !TargetNode.textContent) return;
             
@@ -356,25 +359,6 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         return;
     }
     
-    // Helper
-    function GetLastTextNode() {
-        let lastTextNode: Node | null = null;
-        
-        if (CurrentListItemRef.current) {
-            for (let i = CurrentListItemRef.current.childNodes.length - 1; i >= 0; i--) {
-                
-                const childNode = CurrentListItemRef.current.childNodes[i];
-                
-                if (childNode.nodeType === Node.TEXT_NODE) {
-                    lastTextNode = childNode;
-                    break;
-                }
-                
-            }
-        }
-        
-        return lastTextNode;
-    }
     
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {

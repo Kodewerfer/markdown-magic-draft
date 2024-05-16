@@ -76,10 +76,8 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
                 );
                 
                 MainElementRef.current = null;
-                daemonHandle.SyncNow()
-                    .then(() => {
-                        daemonHandle.DiscardHistory(1);
-                    });
+                daemonHandle.SyncNow();
+                daemonHandle.DiscardHistory(1);
                 
             }
         }

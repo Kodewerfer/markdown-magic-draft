@@ -2,7 +2,7 @@ import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
-    GetChildNodesAsHTMLString,
+    GetChildNodesAsHTMLString, GetFirstTextNode, GetLastTextNode,
     MoveCaretToNode
 } from "../Helpers";
 
@@ -123,25 +123,27 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     }
     
     function EnterKeyHandler(ev: Event) {
+        
+        ev.preventDefault();
+        ev.stopPropagation();
+        
+        if (!WholeElementRef.current) return;
+        
         const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
         if (!CurrentSelection || !CurrentAnchorNode) return;
         
-        const range = CurrentSelection.getRangeAt(0);
+        const currentRange = CurrentSelection.getRangeAt(0);
         
-        if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) return MoveCaretToNode(GetFirstTextNode(WholeElementRef.current), 0);
+        
+        if (PrecedingText.trim() === '' && currentRange.startOffset === 0) return true;
         if (RemainingText.trim() === '') return true;
         
         // mid-line enter key
-        if (!WholeElementRef.current) return;
         if (!WholeElementRef.current.childNodes || !WholeElementRef.current.childNodes.length) return;
         
         // Move caret to the end of the last text node.
-        let TargetNode: Node | null = null;
-        for (let childNode of WholeElementRef.current.childNodes) {
-            if (childNode.nodeType === Node.TEXT_NODE) {
-                TargetNode = childNode;
-            }
-        }
+        let TargetNode: Node | null = GetLastTextNode(WholeElementRef.current);
         
         if (!TargetNode || !TargetNode.textContent) return;
         

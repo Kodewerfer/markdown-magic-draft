@@ -115,7 +115,7 @@ export function GetChildNodesTextContent(ChildNodes: NodeListOf<ChildNode> | und
     return textContent;
 }
 
-export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLElement): HTMLElement | null {
+export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLElement, NodeNameTest?: RegExp): HTMLElement | null {
     
     let currentNode = Node;
     
@@ -124,6 +124,7 @@ export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLEl
     while (currentNode.parentNode) {
         let parentNode = currentNode.parentNode;
         if (parentNode === Container) return currentNode as HTMLElement;
+        if (NodeNameTest && NodeNameTest.test(parentNode.nodeName.toLowerCase())) return currentNode as HTMLElement;
         
         currentNode = parentNode;
     }

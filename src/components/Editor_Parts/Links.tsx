@@ -10,47 +10,49 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
 }) {
     
     const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            // send whatever within the text node before re-rendering to the processor
-            if (!state) {
-                if (LinkElementRef.current && LinkElementRef.current.firstChild) {
-                    const textNodeResult = TextNodeProcessor(LinkElementRef.current.firstChild);
-                    if (textNodeResult) {
-                        daemonHandle.AddToOperations({
-                            type: "REPLACE",
-                            targetNode: LinkElementRef.current,
-                            newNode: textNodeResult[0] //first result node only
-                        });
-                        daemonHandle.SyncNow();
-                    }
-                }
-            }
-            if (state) {
-                daemonHandle.SyncNow();
-            }
-            setIsEditing(state);
-            
-            return {
-                "del": (ev: Event) => {
-                    //Del line merge
-                    return HandleLineJoining();
-                },
-                "backspace": (ev: Event) => {
-                    //Del line merge
-                    
-                    return HandleLineJoining();
-                },
-                "enter": (ev: Event) => {
-                    return HandleEnter();
-                }
-            }
-        }
+        return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
     
     const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
     
     // the element tag
     const LinkElementRef = useRef<HTMLElement | null>(null);
+    
+    function ComponentActivation(state: boolean) {
+        // send whatever within the text node before re-rendering to the processor
+        if (!state) {
+            if (LinkElementRef.current && LinkElementRef.current.firstChild) {
+                const textNodeResult = TextNodeProcessor(LinkElementRef.current.firstChild);
+                if (textNodeResult) {
+                    daemonHandle.AddToOperations({
+                        type: "REPLACE",
+                        targetNode: LinkElementRef.current,
+                        newNode: textNodeResult[0] //first result node only
+                    });
+                    daemonHandle.SyncNow();
+                }
+            }
+        }
+        if (state) {
+            daemonHandle.SyncNow();
+        }
+        setIsEditing(state);
+        
+        return {
+            "del": (ev: Event) => {
+                //Del line merge
+                return HandleLineJoining();
+            },
+            "backspace": (ev: Event) => {
+                //Del line merge
+                
+                return HandleLineJoining();
+            },
+            "enter": (ev: Event) => {
+                return HandleEnter();
+            }
+        }
+    }
     
     // Show when actively editing
     const [GetEditingStateChild] = useState(() => {

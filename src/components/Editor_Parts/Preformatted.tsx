@@ -137,25 +137,23 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     }
     
     function EnterKeyHandler(ev: Event) {
+        
         ev.stopPropagation();
         
         let {
-            PrecedingText,
-            SelectedText,
-            RemainingText,
             TextAfterSelection,
             CurrentSelection,
             CurrentAnchorNode
         } = GetCaretContext();
         
-        if (!CurrentAnchorNode || !CurrentSelection) return false;
+        if (!CurrentAnchorNode || !CurrentSelection) return;
         
         // Add a new line after, use generic logic from editor
-        if (TextAfterSelection?.trim() === "" || !TextAfterSelection) {
+        if (TextAfterSelection?.trim() === "" || !TextAfterSelection)
             return true;
-        }
         
-        return false;
+        
+        return;
     }
     
     // change contentEditable type to plaintext-only
