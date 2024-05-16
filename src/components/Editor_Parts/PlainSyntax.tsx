@@ -1,9 +1,11 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
-    GetChildNodesTextContent,
+    GetCaretContext,
+    GetChildNodesTextContent, MoveCaretToNode,
     TextNodeProcessor
 } from '../Helpers'
+import {TActivationReturn} from "../Editor_Types";
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -11,7 +13,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
+    const [SetActivation] = useState<(state: boolean) => TActivationReturn>(() => {
         return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
     
@@ -28,14 +30,14 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
     
-    function ComponentActivation(state: boolean) {
+    function ComponentActivation(state: boolean): TActivationReturn {
         if (!state) {
             ElementOBRef.current?.takeRecords();
             ElementOBRef.current?.disconnect();
             ElementOBRef.current = null;
             
             const TextContent = CompileAllTextNode();
-            UpdateComponent(TextContent, WholeElementRef.current);
+            UpdateComponentAndSync(TextContent, WholeElementRef.current);
             
         }
         if (state) {
@@ -49,7 +51,9 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             }
         }
         setIsEditing(state);
-        return;
+        return {
+            enter: EnterKeyHandler
+        };
     }
     
     function ObserverHandler(mutationList: MutationRecord[]) {
@@ -67,10 +71,22 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
                             return document.createTextNode(GetChildNodesTextContent(WholeElementRef.current?.childNodes))
                         }
                     });
+                    MoveCaretToNode(WholeElementRef.current);
                     daemonHandle.SyncNow();
                 }
             })
         })
+    }
+    
+    function EnterKeyHandler(ev: Event) {
+        ev.preventDefault();
+        
+        const TextContent = CompileAllTextNode();
+        
+        daemonHandle.SetFutureCaret("NextRealEditable");
+        UpdateComponentAndSync(TextContent, WholeElementRef.current);
+        
+        return false;
     }
     
     // Called in meta state
@@ -84,26 +100,25 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             textContent += node.textContent;
         }
         
-        console.log(textContent);
         return textContent;
     }
     
     // Called in meta state
-    function UpdateComponent(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
+    function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
         if (!TextNodeContent || !ParentElement) return;
         const textNodeResult = TextNodeProcessor(TextNodeContent);
+        
+        if (!textNodeResult) return;
         
         let documentFragment = document.createDocumentFragment();
         textNodeResult?.forEach(item => documentFragment.appendChild(item));
         
-        if (textNodeResult) {
-            daemonHandle.AddToOperations({
-                type: "REPLACE",
-                targetNode: ParentElement,
-                newNode: documentFragment //first result node only
-            });
-            daemonHandle.SyncNow();
-        }
+        daemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: ParentElement,
+            newNode: documentFragment //first result node only
+        });
+        return daemonHandle.SyncNow();
     }
     
     // Self cleanup if there is no content left
@@ -128,7 +143,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     // Add all nodes to ignore, updating this component relies on activation function
     useLayoutEffect(() => {
         if (WholeElementRef.current && WholeElementRef.current.childNodes) {
-            daemonHandle.AddToIgnore(WholeElementRef.current, "any", true);
+            daemonHandle.AddToIgnore([...WholeElementRef.current.childNodes], "any", true);
         }
     });
     
