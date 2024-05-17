@@ -56,7 +56,7 @@ type TDaemonState = {
     IgnoreMap: TIgnoreMap;
     BindOperationMap: TElementOperation;
     AdditionalOperation: TSyncOperation[];
-    CaretOverrideToken: TCaretToken // for now, enter key logic only, move the caret to the beginning of the next line if need be.
+    CaretOverrideTokens: TCaretToken[]; // for now, enter key logic only, move the caret to the beginning of the next line if need be.
     UndoStack: [Document] | null;
     RedoStack: [Document] | null;
     SelectionStatusCache: TSelectionStatus | null;
@@ -117,7 +117,7 @@ export default function useEditorHTMLDaemon(
             IgnoreMap: new Map(),
             BindOperationMap: new Map(),
             AdditionalOperation: [],
-            CaretOverrideToken: null,
+            CaretOverrideTokens: [],
             UndoStack: null,
             RedoStack: null,
             SelectionStatusCache: null,
@@ -172,13 +172,14 @@ export default function useEditorHTMLDaemon(
         
         let onRollbackCancelled: any; // the cleanup function, if present
         // Rollback mask
-        if (typeof DaemonOptions.OnRollback === 'function' && !DaemonState.EditorLocked) {
-            onRollbackCancelled = DaemonOptions.OnRollback();
+        if (!DaemonState.EditorLocked) {
+            if (typeof DaemonOptions.OnRollback === 'function')
+                onRollbackCancelled = DaemonOptions.OnRollback();
             DaemonState.EditorLocked = true;
+            ToggleObserve(false);
+            WatchElementRef.current!.contentEditable = 'false';
         }
         
-        ToggleObserve(false);
-        WatchElementRef.current!.contentEditable = 'false';
         
         let {OperationLogs, BindOperationLogs} = RollbackAndBuildOps();
         /**
@@ -575,8 +576,9 @@ export default function useEditorHTMLDaemon(
     // Helper to get the precise location in the original DOM tree, ignore generated tags(flag)
     function GetXPathFromNode(node: Node, bFilterGenerated = true): string {
         
-        if (!WatchElementRef.current) return '';
+        if (!WatchElementRef.current || !node) return '';
         let parent = node.parentNode;
+        if (!parent) return ''; // If no parent found, very unlikely
         
         // XPath upper limit: any element with an ID
         if ((node as HTMLElement).id && (node as HTMLElement).id !== '') {
@@ -609,8 +611,6 @@ export default function useEditorHTMLDaemon(
             }
         }
         
-        if (!parent) return ''; // If no parent found, very unlikely
-        
         // For Non-text nodes
         let nodeCount: number = 0;
         for (let i = 0; i < parent.childNodes.length; i++) {
@@ -637,6 +637,7 @@ export default function useEditorHTMLDaemon(
     // This is the "approximate" location of the note, the undo function can then "delete on this location"
     // Mainly used in give Xpath to the would be added nodes
     function GetXPathNthChild(node: Node, bFilterGenerated = true): string {
+        if (!node) return '';
         let xpSegments: string[] = [];
         
         while (node && node !== document.body) {
@@ -950,6 +951,8 @@ export default function useEditorHTMLDaemon(
             const XPathReconstructed = reconstructXPath();
             AnchorNode = GetNodeFromXPathInHTMLElement(WatchElementRef.current!, XPathReconstructed);
             
+            // console.log("Trying:", XPathReconstructed, GetXPathFromNode(AnchorNode!));
+            
             if (AnchorNode) break;
             
             if (bOriginalNodeFound)
@@ -1017,8 +1020,8 @@ export default function useEditorHTMLDaemon(
          * NOTE: after enter is pressed to break lines, the caret will start on the end of the first line where the line was cut off,
          *       this works regardless if it was an expanded selection. But on expanded selection, the selection will extend to the new line and may cause problems especially with tokens
          */
-        const OverrideToken = DaemonState.CaretOverrideToken;
-        if (OverrideToken) {
+        const OverrideToken = DaemonState.CaretOverrideTokens;
+        if (OverrideToken.length) {
             ({
                 AnchorNode, StartingOffset, FocusNode, EndOffset
             }
@@ -1028,7 +1031,13 @@ export default function useEditorHTMLDaemon(
                 CurrentEndOffset: EndOffset,
                 CurrentFocusNode: FocusNode
             }));
-            
+            if (DaemonOptions.ShouldLog)
+                console.log("Caret after Token: ", {
+                    AnchorNode: GetXPathFromNode(AnchorNode),
+                    StartingOffset: StartingOffset,
+                    FocusNode: FocusNode ? GetXPathFromNode(FocusNode) : "",
+                    EndOffset: EndOffset
+                });
         }
         if (!AnchorNode) return;
         
@@ -1051,64 +1060,69 @@ export default function useEditorHTMLDaemon(
         }
     }
     
-    function HandleSelectionToken(OverrideToken: TCaretToken, Walker: TreeWalker,
+    function HandleSelectionToken(OverrideTokens: TCaretToken[], Walker: TreeWalker,
                                   RangeInformation: {
                                       CurrentAnchorNode: Node,
                                       CurrentStartingOffset: number,
                                       CurrentFocusNode?: Node | null | undefined,
                                       CurrentEndOffset?: number
                                   }) {
-        
         let AnchorNode: Node | null = RangeInformation.CurrentAnchorNode;
         let StartingOffset = RangeInformation.CurrentStartingOffset;
         let FocusNode: Node | null | undefined = RangeInformation.CurrentFocusNode;
         let EndOffset: number | undefined = RangeInformation.CurrentEndOffset;
         
-        switch (OverrideToken) {
-            case 'zero': {
-                StartingOffset = 0;
-                FocusNode = null;
-                break;
-            }
-            case 'NextLine': {
-                while (AnchorNode = Walker.nextNode()) {
-                    if (!AnchorNode.parentNode) continue;
-                    if (AnchorNode.textContent === "\n") continue;
-                    if (AnchorNode.parentNode !== WatchElementRef.current) continue;
-                    if ((AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
-                    FocusNode = null;
+        OverrideTokens.forEach((TokenString) => {
+            if (DaemonOptions.ShouldLog)
+                console.log("Overriding Caret, Token: ", TokenString);
+            
+            switch (TokenString) {
+                case 'zero': {
                     StartingOffset = 0;
+                    FocusNode = null;
                     break;
                 }
-                break;
-            }
-            case 'NextEditable': {
-                while (AnchorNode = Walker.nextNode()) {
-                    if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
-                    // if (AnchorNode.textContent === "\n") continue;
-                    if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
-                    
-                    FocusNode = null;
-                    StartingOffset = 0;
+                case 'NextLine': {
+                    while (AnchorNode = Walker.nextNode()) {
+                        if (!AnchorNode.parentNode) continue;
+                        if (AnchorNode.textContent === "\n") continue;
+                        if (AnchorNode.parentNode !== WatchElementRef.current) continue;
+                        if ((AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                        FocusNode = null;
+                        StartingOffset = 0;
+                        break;
+                    }
                     break;
                 }
-                break;
-            }
-            case 'NextRealEditable': {
-                // Same as NextEditable but filter out generated elements
-                while (AnchorNode = Walker.nextNode()) {
-                    if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
-                    // if (AnchorNode.textContent === "\n") continue;
-                    if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
-                    if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).hasAttribute("data-is-generated")) continue;
-                    
-                    FocusNode = null;
-                    StartingOffset = 0;
+                case 'NextEditable': {
+                    while (AnchorNode = Walker.nextNode()) {
+                        if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                        if (AnchorNode.textContent === "\n") continue;
+                        if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                        
+                        FocusNode = null;
+                        StartingOffset = 0;
+                        break;
+                    }
                     break;
                 }
-                break;
+                case 'NextRealEditable': {
+                    // Same as NextEditable but filter out generated elements
+                    while (AnchorNode = Walker.nextNode()) {
+                        if (CheckForAncestor(AnchorNode, RangeInformation.CurrentAnchorNode)) continue;
+                        if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                        if (AnchorNode.textContent === "\n") continue;
+                        if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                        if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).hasAttribute("data-is-generated")) continue;
+                        
+                        FocusNode = null;
+                        StartingOffset = 0;
+                        break;
+                    }
+                    break;
+                }
             }
-        }
+        })
         
         return {AnchorNode, StartingOffset, FocusNode, EndOffset};
     }
@@ -1131,6 +1145,8 @@ export default function useEditorHTMLDaemon(
             return;
         }
         
+        DaemonState.EditorLocked = false;
+        
         const WatchedElement = WatchElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
         
@@ -1150,15 +1166,12 @@ export default function useEditorHTMLDaemon(
             // consume the saved status
             RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
             DaemonState.SelectionStatusCache = null;
-            DaemonState.CaretOverrideToken = null;
+            DaemonState.CaretOverrideTokens = [];
         }
         
         if (DaemonOptions.ShouldObserve) {
             ToggleObserve(true);
         }
-        
-        DaemonState.EditorLocked = false;
-        
         // clean up
         return () => {
             WatchedElement.contentEditable = contentEditableCached;
@@ -1325,7 +1338,7 @@ export default function useEditorHTMLDaemon(
             });
         },
         SetFutureCaret(token: TCaretToken) {
-            DaemonState.CaretOverrideToken = token;
+            DaemonState.CaretOverrideTokens.push(token);
         },
         AddToIgnore(Element: Node | HTMLElement | Node[], TriggerType: TDOMTrigger, bIncludeAllChild = false) {
             if (!bIncludeAllChild && !Array.isArray(Element))
@@ -1359,6 +1372,12 @@ export default function useEditorHTMLDaemon(
         AddToOperations(Operation: TSyncOperation | TSyncOperation[], ShouldLockPage = true) {
             
             if (!DaemonState.EditorLocked && ShouldLockPage) {
+                if (!DaemonState.SelectionStatusCache)
+                    DaemonState.SelectionStatusCache = GetSelectionStatus();
+                ToggleObserve(false);
+                WatchElementRef.current!.contentEditable = 'false';
+                if (WatchElementRef.current)
+                    WatchElementRef.current.contentEditable = 'false';
                 typeof DaemonOptions.OnRollback === 'function' && DaemonOptions.OnRollback();
                 DaemonState.EditorLocked = true;
             }
@@ -1421,12 +1440,10 @@ function GetNodeFromXPathInHTMLElement(ContainerElement: HTMLElement, XPath: str
     return result.singleNodeValue;
 }
 
-
-export function FindNearestParagraph(Node: Node, NodeNameTest: RegExp, UpperLimit: Node | HTMLElement) {
+//Daemon's version of the helper, check with RegExp only, used in text node handling when trying to find the "top level" element under a container
+function FindNearestParagraph(Node: Node, NodeNameTest: RegExp, UpperLimit: Node | HTMLElement) {
     
     let currentNode = Node;
-    
-    // if (NodeNameTest.test(currentNode.nodeName.toLowerCase())) return currentNode;
     
     while (currentNode.parentNode && currentNode !== UpperLimit) {
         let parentNode = currentNode.parentNode;
@@ -1436,4 +1453,24 @@ export function FindNearestParagraph(Node: Node, NodeNameTest: RegExp, UpperLimi
     }
     
     return null;
+}
+
+/**
+ * Checks if a given node has a specified ancestor within a certain number of levels.
+ * Default to five level, needed for handling caret token
+ */
+function CheckForAncestor(node: Node | null, searchAgainst: Node | null, level: number = 5): boolean {
+    let ancestor = node;
+    for (let i = 0; i < level; i++) {
+        if (ancestor === searchAgainst) {
+            return true;
+        }
+        
+        if (!ancestor) {
+            break;
+        }
+        
+        ancestor = ancestor.parentNode;
+    }
+    return false;
 }
