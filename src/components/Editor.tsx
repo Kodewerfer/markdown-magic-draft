@@ -1,5 +1,5 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
-import {HTML2MD, HTML2ReactSnyc, MD2HTML} from "../Utils/Conversion";
+import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "../Utils/Conversion";
 import useEditorHTMLDaemon, {ParagraphTest} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
@@ -47,11 +47,11 @@ export default function Editor(
         SourceData = SourceData || "";
         return SourceData;
     });
-    const EditorRef = useRef<HTMLElement | null>(null);
-    const EditorSourceRef = useRef<Document | null>(null);
+    const EditorElementRef = useRef<HTMLElement | null>(null);
+    const EditorSourceStringRef = useRef('');
+    const EditorSourceDOCRef = useRef<Document | null>(null);
     const EditorMaskRef = useRef<HTMLDivElement | null>(null);
     
-    const EditorHTMLString = useRef('');
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
     // Cache of the last activated component
@@ -64,12 +64,20 @@ export default function Editor(
     
     // Subsequence reload
     async function ReloadEditorContent() {
-        if (!EditorSourceRef.current) return;
-        const bodyElement: HTMLBodyElement | null = EditorSourceRef.current.documentElement.querySelector('body');
+        if (!EditorSourceDOCRef.current) return;
+        const bodyElement: HTMLBodyElement | null = EditorSourceDOCRef.current.documentElement.querySelector('body');
         if (!bodyElement) return;
         bodyElement.normalize();
-        EditorHTMLString.current = String(bodyElement!.innerHTML);
-        setEditorComponent(ConfigAndConvertToReact(EditorHTMLString.current));
+        
+        EditorSourceStringRef.current = String(bodyElement.innerHTML);
+        const CleanedHTML = HTMLCleanUP(bodyElement.innerHTML);
+        
+        EditorSourceStringRef.current = String(CleanedHTML);
+        const HTMLParser = new DOMParser();
+        EditorSourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
+        
+        
+        setEditorComponent(ConfigAndConvertToReact(EditorSourceStringRef.current));
     }
     
     // FIXME: this structure is getting unwieldy, find a way to refactor.
@@ -174,24 +182,24 @@ export default function Editor(
         
         if (!EditorMaskRef.current || !EditorMaskRef.current.innerHTML) return;
         
-        const editorInnerHTML = EditorRef.current?.innerHTML;
+        const editorInnerHTML = EditorElementRef.current?.innerHTML;
         if (editorInnerHTML) {
-            EditorRef.current?.classList.add("No-Vis");
+            EditorElementRef.current?.classList.add("No-Vis");
             EditorMaskRef.current!.innerHTML = editorInnerHTML;
             EditorMaskRef.current!.classList.remove("Hide-It");
         }
         
         // return the Unmask function for the Daemon
         return () => {
-            if (!EditorRef.current || !EditorMaskRef.current) return;
-            EditorRef.current.classList.remove("No-Vis");
+            if (!EditorElementRef.current || !EditorMaskRef.current) return;
+            EditorElementRef.current.classList.remove("No-Vis");
             EditorMaskRef.current.classList.add('Hide-It');
             EditorMaskRef.current.innerHTML = " ";
         }
     }
     
     async function ExtractMD() {
-        const ConvertedMarkdown = await HTML2MD(EditorHTMLString.current);
+        const ConvertedMarkdown = await HTML2MD(EditorSourceStringRef.current);
         console.log(String(ConvertedMarkdown));
     }
     
@@ -200,7 +208,7 @@ export default function Editor(
         const selection: Selection | null = window.getSelection();
         if (!selection) return;
         // Must be an editor element
-        if (!EditorRef.current?.contains(selection?.anchorNode)) return;
+        if (!EditorElementRef.current?.contains(selection?.anchorNode)) return;
         // Must not contains multiple elements
         if (!selection.isCollapsed) {
             if (selection.anchorNode === selection.focusNode)
@@ -259,7 +267,7 @@ export default function Editor(
         } = GetCaretContext();
         if (!CurrentAnchorNode || !CurrentSelection) return;
         
-        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
+        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
         
         // TODO: could cause non-responsiveness, need more testing
@@ -342,11 +350,11 @@ export default function Editor(
      * if subcomponents need to have their own logic on these keys, they are injected via state function return and stored in "ActivationCallbacksRef.current"
      * when no special logic is present, the "generic" logic would run.
      */
-    function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
+    async function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
         // Run the component spec handler if present
         // if the callback returns 'true', continue the editor's logic
         if (typeof LastActivationCache.current.return?.enter === 'function') {
-            const CallbackReturn = LastActivationCache.current.return?.enter(ev);
+            const CallbackReturn = await LastActivationCache.current.return?.enter(ev);
             
             if (CallbackReturn !== true)
                 return
@@ -362,9 +370,14 @@ export default function Editor(
         // Collapse selection, otherwise expanded selection may extend to the new line and cause weird behaviors.
         if (!CurrentSelection.isCollapsed) return CurrentSelection.collapseToEnd();
         
-        if ((CurrentAnchorNode as HTMLElement)?.contentEditable === 'false' || (CurrentAnchorNode.parentNode as HTMLElement)?.contentEditable === 'false') return
+        if ((CurrentAnchorNode as HTMLElement)?.contentEditable === 'false' || (CurrentAnchorNode.parentNode as HTMLElement)?.contentEditable === 'false' || CurrentAnchorNode.textContent === '\n') {
+            console.warn("Enter Key Exception, not a valid node", CurrentAnchorNode);
+            DaemonHandle.SetFutureCaret("NextRealEditable");
+            DaemonHandle.SyncNow();
+            return;
+        }
         
-        let NearestContainer: HTMLElement | null = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!);
+        let NearestContainer: HTMLElement | null = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!);
         if (!NearestContainer) return; //unlikely
         
         // Check if caret at an empty line
@@ -435,7 +448,7 @@ export default function Editor(
             // Exception, when caret is on the element tag itself, and didn't fit the previous cases (happens on PlainSyntax primarily)
             // FIXME: May be a better solution
             if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) {
-                console.warn("Enter Key Exception")
+                console.warn("Enter Key Exception, move caret to", NearestContainer);
                 MoveCaretIntoNode(NearestContainer);
                 return;
             }
@@ -502,7 +515,7 @@ export default function Editor(
         let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
-        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
+        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
         
         if (NearestContainer === CurrentAnchorNode) {
@@ -564,9 +577,7 @@ export default function Editor(
                 targetNode: previousElementSibling
             });
             
-            if (bSelfIsEmptyLine) {
-                MoveCaretToNode(previousElementSibling);
-            }
+            MoveCaretToNode(previousElementSibling);
             
             DaemonHandle.SyncNow();
             return;
@@ -579,7 +590,7 @@ export default function Editor(
                 type: "REMOVE",
                 targetNode: NearestContainer
             });
-            MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
+            MoveCaretToLastEOL(window.getSelection(), EditorElementRef.current!);
             DaemonHandle.SyncNow();
             return;
         }
@@ -630,7 +641,7 @@ export default function Editor(
             newNode: NewLine
         });
         
-        MoveCaretToLastEOL(window.getSelection(), EditorRef.current!);
+        MoveCaretToLastEOL(window.getSelection(), EditorElementRef.current!);
         DaemonHandle.SyncNow();
     }
     
@@ -640,44 +651,43 @@ export default function Editor(
         
         if (!CurrentAnchorNode) return;
         
-        let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorRef.current!)
+        let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
         
         const bCaretOnContainer = CurrentAnchorNode === NearestContainer;
         const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
         const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
         
-        // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
-        // deleting text logic override is written below
-        
         // Expanded selection, use browser defualt logic
         if (CurrentSelection && !CurrentSelection.isCollapsed) return;
+        if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;   // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
         
         // line joining
         ev.preventDefault();
         ev.stopPropagation();
         
         // NOTE: this is an override on editing text, so far only needed for del key
-        if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) {
-            if (RemainingText !== '') {
-                CurrentAnchorNode.deleteData(CurrentSelection?.anchorOffset, 1);
-                return;
-            }
-            let nextSibling = CurrentAnchorNode.nextSibling;
-            if (!nextSibling) return;
-            // Delete the first character of the next text node
-            if (nextSibling.nodeType === Node.TEXT_NODE) {
-                (nextSibling as Text).deleteData(0, 1);
-                MoveCaretToNode(nextSibling);
-            }
-            if (nextSibling.nodeType === Node.ELEMENT_NODE) {
-                let textNode = GetFirstTextNode(nextSibling);
-                if (!textNode) return MoveCaretIntoNode(textNode);
-                (textNode as Text).deleteData(0, 1);
-                MoveCaretToNode(textNode);
-            }
-            return;
-        }
+        // TODO: Incomplete,browser's logic cause caret to move back and fourth, but re-implementing causes too much problem, saving this for reference.
+        // if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) {
+        //     if (RemainingText !== '') {
+        //         CurrentAnchorNode.deleteData(CurrentSelection?.anchorOffset, 1);
+        //         return;
+        //     }
+        //     let nextSibling = CurrentAnchorNode.nextSibling;
+        //     if (!nextSibling) return;
+        //     // Delete the first character of the next text node
+        //     if (nextSibling.nodeType === Node.TEXT_NODE) {
+        //         (nextSibling as Text).deleteData(0, 1);
+        //         MoveCaretToNode(nextSibling);
+        //     }
+        //     if (nextSibling.nodeType === Node.ELEMENT_NODE) {
+        //         let textNode = GetFirstTextNode(nextSibling);
+        //         if (!textNode) return MoveCaretIntoNode(textNode);
+        //         (textNode as Text).deleteData(0, 1);
+        //         MoveCaretToNode(textNode);
+        //     }
+        //     return;
+        // }
         
         let nextElementSibling = NearestContainer?.nextElementSibling; //nextsibling could be a "\n"
         if (!nextElementSibling) return; //No more lines following
@@ -783,24 +793,25 @@ export default function Editor(
         ;(async () => {
             // convert MD to HTML
             const convertedHTML: string = String(await MD2HTML(sourceMD));
+            let CleanedHTML = HTMLCleanUP(convertedHTML);
             
             // Save a copy of HTML
             const HTMLParser = new DOMParser();
-            EditorSourceRef.current = HTMLParser.parseFromString(convertedHTML, "text/html");
+            EditorSourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
             
             // save a text copy
-            EditorHTMLString.current = convertedHTML;
+            EditorSourceStringRef.current = String(CleanedHTML);
             // load editor component
-            setEditorComponent(ConfigAndConvertToReact(convertedHTML))
+            setEditorComponent(ConfigAndConvertToReact(String(CleanedHTML)))
         })()
         
     }, [sourceMD]);
     
     // Masking and unmasking to hide flicker
     useLayoutEffect(() => {
-        if (!EditorRef.current || !EditorMaskRef.current) return;
+        if (!EditorElementRef.current || !EditorMaskRef.current) return;
         // After elements are properly loaded, hide the mask to show editor content
-        EditorRef.current.classList.remove("No-Vis");
+        EditorElementRef.current.classList.remove("No-Vis");
         EditorMaskRef.current.classList.add('Hide-It');
         EditorMaskRef.current.innerHTML = " ";
     });
@@ -818,7 +829,7 @@ export default function Editor(
             document.removeEventListener("selectionchange", OnSelectionChange);
         }
         
-    }, [EditorRef.current, document]);
+    }, [EditorElementRef.current, document]);
     
     // Override keys
     useLayoutEffect(() => {
@@ -844,13 +855,13 @@ export default function Editor(
             }
         }
         
-        EditorRef.current?.addEventListener("keydown", EditorKeydown);
+        EditorElementRef.current?.addEventListener("keydown", EditorKeydown);
         return () => {
-            EditorRef.current?.removeEventListener("keydown", EditorKeydown);
+            EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
         }
-    }, [EditorRef.current])
+    }, [EditorElementRef.current])
     
-    const DaemonHandle = useEditorHTMLDaemon(EditorRef, EditorSourceRef, ReloadEditorContent,
+    const DaemonHandle = useEditorHTMLDaemon(EditorElementRef, EditorSourceDOCRef, ReloadEditorContent,
         {
             OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeProcessor,
@@ -863,7 +874,7 @@ export default function Editor(
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
-                <main className={'Editor-Inner'} ref={EditorRef}>
+                <main className={'Editor-Inner'} ref={EditorElementRef}>
                     {EditorComponent}
                 </main>
                 <div className={'Editor-Mask'} ref={EditorMaskRef}>

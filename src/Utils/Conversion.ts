@@ -18,6 +18,7 @@ import remarkDirective from "remark-directive";
 import HandleCustomDirectives from "../UnifiedPlugins/HandleCustomDirectives";
 import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
 import {CleanupExtraTags} from "../UnifiedPlugins/CleanupExtraTags";
+import {CleanupEmptyElements} from "../UnifiedPlugins/CleanupEmptyElements";
 
 function MDProcess() {
     return unified()
@@ -51,6 +52,7 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Rec
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
         .use(CleanupExtraTags)
+        .use(CleanupEmptyElements)
         .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
             ...jsxElementConfig,
@@ -65,11 +67,23 @@ export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Recor
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
         .use(CleanupExtraTags)
+        .use(CleanupEmptyElements)
         .use(AddSyntaxInAttribute)
         .use(rehypeReact, {
             ...jsxElementConfig,
             components: componentOptions
         })
+        .processSync(HTMLContent);
+}
+
+export function HTMLCleanUP(HTMLContent: Compatible, componentOptions?: Record<string, React.FunctionComponent<any>>) {
+    
+    return unified()
+        .use(rehypeParse, {fragment: true})
+        .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
+        .use(CleanupExtraTags)
+        .use(CleanupEmptyElements)
+        .use(rehypeStringify)
         .processSync(HTMLContent);
 }
 
