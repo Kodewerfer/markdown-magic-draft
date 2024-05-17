@@ -2,7 +2,7 @@
 // Editor's handler serve as "default behavior" whereas components may have their own behaviors.
 // the returning value of these components' handler determined whether the "default behavior" should continue to run.
 export type TActivationReturn = {
-    'enter'?: (ev: Event) => void | boolean,
+    'enter'?: (ev: Event) => void | boolean | Promise<boolean>
     'del'?: (ev: Event) => void | boolean,
     'backspace'?: (ev: Event) => void | boolean,
 };
