@@ -951,9 +951,15 @@ export default function useEditorHTMLDaemon(
             const XPathReconstructed = reconstructXPath();
             AnchorNode = GetNodeFromXPathInHTMLElement(WatchElementRef.current!, XPathReconstructed);
             
-            // console.log("Trying:", XPathReconstructed, GetXPathFromNode(AnchorNode!));
             
-            if (AnchorNode) break;
+            if (AnchorNode) {
+                if (DaemonOptions.ShouldLog)
+                    console.log("AnchorNode Found on:", {
+                        XPathReconstructed: XPathReconstructed,
+                        AnchorNodeXPathConcise: GetXPathFromNode(AnchorNode)
+                    },);
+                break
+            }
             
             if (bOriginalNodeFound)
                 bOriginalNodeFound = false;
@@ -1072,10 +1078,10 @@ export default function useEditorHTMLDaemon(
         let FocusNode: Node | null | undefined = RangeInformation.CurrentFocusNode;
         let EndOffset: number | undefined = RangeInformation.CurrentEndOffset;
         
+        if (DaemonOptions.ShouldLog)
+            console.log("Overriding Caret, Token: ", ...OverrideTokens);
+        
         OverrideTokens.forEach((TokenString) => {
-            if (DaemonOptions.ShouldLog)
-                console.log("Overriding Caret, Token: ", TokenString);
-            
             switch (TokenString) {
                 case 'zero': {
                     StartingOffset = 0;
