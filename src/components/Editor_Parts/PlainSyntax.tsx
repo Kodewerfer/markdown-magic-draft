@@ -156,7 +156,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxFront',
-            className: ` ${isEditing ? '' : 'Hide-It'}`
+            className: ` Text-Normal ${isEditing ? '' : 'Hide-It'}`
         }, ['\u00A0', (<span ref={SyntaxElementRefFront} key={'SyntaxFrontBlock'}
                              contentEditable={false}>{propSyntaxData}</span>)]),
         
@@ -165,8 +165,9 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         propShouldWrap && React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxRear',
-            className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, [(<span ref={SyntaxElementRefRear} key={'SyntaxRearBlock'}
-                   contentEditable={false}>{propSyntaxData}</span>), '\u00A0'])
+            className: `Text-Normal ${isEditing ? '' : 'Hide-It'}`
+        }, [
+            propShouldWrap ? (<span ref={SyntaxElementRefRear} key={'SyntaxRearBlock'}
+                                    contentEditable={false}>{propSyntaxData}</span>) : null, '\u00A0'])
     ]);
 }
