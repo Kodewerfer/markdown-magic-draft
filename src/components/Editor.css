@@ -6,6 +6,10 @@
     @apply hidden;
 }
 
+.Text-Normal {
+    @apply not-italic no-underline font-normal decoration-0 normal-case;
+}
+
 .Editor {
     @apply relative;
 }
