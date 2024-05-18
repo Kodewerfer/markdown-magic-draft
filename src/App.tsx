@@ -14,9 +14,12 @@ import Editor from "./components/Editor";
  * Special links:
  *
  * :LinkTo[AAA, A1A]{aaa}
- *
+ * * [x] List with items
  * :br
- *
+ * Normaltextabov
+ * - list1**test**
+ * - list2
+ * - list3
  */
 const MarkdownFakeDate = dedent`
 # Title!
@@ -32,10 +35,10 @@ Normal text test three
 
 Hi! I'm ~~your~~ Markdown file in Editor**.
 
-**custom** **syntax**
-
-Normal text test
+**custom**Normal text test
 :br
+
+**syntax**
 
 **custom1** **custom2** **custom3**
 
@@ -55,16 +58,10 @@ pre text [Link test](google.com) afte text
 
 :br
 
-Normaltextabov
-- list1
-- list2
-- list3
 
 :br
 
 test normal text
-
-* [x] List with items
 
 test normal text with inline \`code()\` element
 
@@ -79,12 +76,33 @@ alert(s);
 \`\`\`
 `
 
+const MarkdownFakeDateTwo = dedent`
+# Title!
+
+Normal text test one
+
+Normal text test two
+
+Normal text test three
+
+**custom**Normal text test
+
+**syntax**
+
+**custom1** **custom2** **custom3**
+
+ - list1**test**
+ - list2
+ - list3
+
+`
+
 export default function App() {
     return (
         <div className="App">
             <header></header>
             <main className="Main-wrapper">
-                <Editor SourceData={MarkdownFakeDate}/>
+                <Editor SourceData={MarkdownFakeDateTwo}/>
             </main>
         </div>
     );
