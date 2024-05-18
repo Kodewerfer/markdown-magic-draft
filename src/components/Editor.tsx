@@ -31,6 +31,7 @@ type TActivationCache = {
     func: ((arg: boolean) => TActivationReturn) | null | undefined;
     return: TActivationReturn | null;
     anchor: Node | null;
+    wrapperFiber: any | null; //NOTE: due to how mapping converted component works, only the anonymous component one level higher have a valid key
 }
 
 const AutoCompleteSymbols = /([*~`"(\[{])/;
@@ -59,7 +60,8 @@ export default function Editor(
         fiber: null,
         func: null,
         return: null,
-        anchor: null
+        anchor: null,
+        wrapperFiber: null
     });
     
     // Subsequence reload
@@ -87,6 +89,7 @@ export default function Editor(
         const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
             .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
                 acc[tagName] = (props: any) => {
+                    
                     // inline syntax
                     if (props['data-md-syntax'] && props['data-md-inline']) {
                         if (props['data-link-to']) {
@@ -218,11 +221,16 @@ export default function Editor(
             if (typeof LastActivationFunc !== 'function') return;
             
             // Switch off last activation if drag selection passed the last element
-            const ActiveComponentEndPoint: any = FindActiveEditorComponentFiber(selection.focusNode! as HTMLElement);
+            const {
+                compFiber: ActiveComponentEndPoint,
+                parentFiber
+            }: any = FindActiveEditorComponentFiber(selection.focusNode! as HTMLElement);
+            
             if (ActiveComponentEndPoint && ActiveComponentEndPoint !== LastActivationFunc) {
                 LastActivationFunc(false);
                 LastActivationCache.current.func = undefined;
                 LastActivationCache.current.anchor = null;
+                LastActivationCache.current.wrapperFiber = null;
             }
             return;
         }
@@ -232,8 +240,10 @@ export default function Editor(
         LastActivationCache.current.anchor = selection.anchorNode;
         
         // retrieve the component, set the editing state
-        const ActiveComponentFiber: any = FindActiveEditorComponentFiber(selection.anchorNode! as HTMLElement);
-        
+        const {
+            compFiber: ActiveComponentFiber,
+            parentFiber
+        }: any = FindActiveEditorComponentFiber(selection.anchorNode! as HTMLElement);
         // FIXME: This is VERY VERY VERY HACKY
         // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
         // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
@@ -244,13 +254,18 @@ export default function Editor(
         typeof LastActivationCache.current.func === 'function' && LastActivationCache.current.func(false);
         LastActivationCache.current.func = null;
         LastActivationCache.current.return = null;
+        LastActivationCache.current.wrapperFiber = null;
+        
         
         // Switch on the current, add to cache
         LastActivationCache.current.fiber = ActiveComponentFiber;
         if (ActiveComponentFiber.memoizedState && typeof ActiveComponentFiber.memoizedState.memoizedState === "function") {
             LastActivationCache.current.func = ActiveComponentFiber.memoizedState.memoizedState;
             LastActivationCache.current.return = ActiveComponentFiber.memoizedState.memoizedState(true);
+            LastActivationCache.current.wrapperFiber = parentFiber;
         }
+        
+        // console.log("switching finished", selection.anchorNode, LastActivationCache.current.return)
     }
     // FIXME: Not in use, introduce too much side-effect. Keeping in case more optimization is needed
     // const DebouncedComponentActivationSwitch = _.debounce(ComponentActivationSwitch, 100);
@@ -353,13 +368,32 @@ export default function Editor(
     async function EnterKeyHandler(ev: HTMLElementEventMap['keydown']) {
         // Run the component spec handler if present
         // if the callback returns 'true', continue the editor's logic
-        if (typeof LastActivationCache.current.return?.enter === 'function') {
-            const CallbackReturn = await LastActivationCache.current.return?.enter(ev);
+        let LastComponentKey = null;
+        let LatestCallbackReturn: void | boolean = undefined;
+        
+        // Run "current component"'s enter key logic until there is none or encountered self again.
+        // This is to deal with changed caret position and therefore changed active component after enter key.
+        while (typeof LastActivationCache.current.return?.enter === 'function' && (LastActivationCache.current.wrapperFiber && LastActivationCache.current.wrapperFiber.key !== LastComponentKey)) {
             
-            if (CallbackReturn !== true)
-                return
+            console.log("Component Enter key ", LastComponentKey);
+            
+            LastComponentKey = LastActivationCache.current.wrapperFiber.key;  //NOTE: due to how mapping converted component works, only the anonymous component one level higher have a valid key
+            
+            LatestCallbackReturn = await LastActivationCache.current.return?.enter(ev);
+            
         }
-        console.log("Editor Enter key");
+        
+        if (LatestCallbackReturn !== true)
+            return
+        // NOTE: this will only run the component enter key once
+        // if (typeof LastActivationCache.current.return?.enter === 'function') {
+        //     console.log("Component Enter key")
+        //     const CallbackReturn = await LastActivationCache.current.return?.enter(ev);
+        //
+        //     if (CallbackReturn !== true)
+        //         return
+        // }
+        
         ev.preventDefault();
         ev.stopPropagation();
         
@@ -870,6 +904,11 @@ export default function Editor(
             ShouldObserve: true
         });
     
+    // Force refreshing the activated component after reloading and caret is restored
+    useLayoutEffect(() => {
+        ComponentActivationSwitch();
+    });
+    
     return (
         <>
             <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
@@ -903,23 +942,26 @@ const CommonRenderer = (props: any) => {
 /**
  * The hack func that retrieves the react fiber and thus the active component
  */
-function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 0): any {
+function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 1): any {
+    
+    const NULL_RETURN = {compFiber: null, parentFiber: null};
+    
     if (DomNode.nodeType === Node.TEXT_NODE) {
         if (DomNode.parentNode)
             DomNode = DomNode.parentNode as HTMLElement
         else {
             console.log("Activation Monitor: Text node without parent");
-            return null;
+            return NULL_RETURN;
         }
     }
     // Find the key starting with "__reactFiber$" which indicates a React 18 element
     const key = Object.keys(DomNode).find(key => key.startsWith("__reactFiber$"));
     
-    if (!key) return;
+    if (!key) return NULL_RETURN;
     
     // Get the Fiber node from the DOM element
     const domFiber = (DomNode as any)[key] as { type?: string; return?: any; stateNode?: any; };
-    if (domFiber === undefined) return null;
+    if (domFiber === undefined) return NULL_RETURN;
     
     // Function to get parent component fiber
     const getCompFiber = (fiber: { type?: string; return?: any; stateNode?: any; }) => {
@@ -931,13 +973,15 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 0): a
     };
     
     // Get the component fiber
-    let compFiber = getCompFiber(domFiber);
+    const compFiber = getCompFiber(domFiber);
+    let parentFiber = getCompFiber(domFiber);
     for (let i = 0; i < TraverseUp; i++) {
-        compFiber = getCompFiber(compFiber);
+        parentFiber = getCompFiber(parentFiber);
     }
     
     // return compFiber.stateNode; // if dealing with class component, in that case "setState" can be called from this directly.
-    return compFiber;
+    
+    return {compFiber: compFiber, parentFiber: parentFiber};
 }
 
 /**
