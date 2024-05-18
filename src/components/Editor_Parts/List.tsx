@@ -5,6 +5,7 @@ import {
     GetChildNodesAsHTMLString, GetLastTextNode, GetNextSiblings,
     MoveCaretToNode
 } from "../Helpers";
+import {TActivationReturn} from "../Editor_Types";
 
 export function ListContainer({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -14,107 +15,6 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
     [key: string]: any; // for otherProps
 }) {
     const ListContainerRef = useRef<HTMLElement | null>(null);
-    const bCheckedForMerge = useRef(false);
-    
-    // Self destruct if no child element
-    useEffect(() => {
-        if (!children || React.Children.count(children) === 1) {
-            if (String(children).trim() === '' && ListContainerRef.current) {
-                
-                daemonHandle.AddToOperations(
-                    {
-                        type: "REMOVE",
-                        targetNode: ListContainerRef.current!,
-                    }
-                );
-                
-                ListContainerRef.current = null;
-                daemonHandle.SyncNow()
-                    .then(() => {
-                        daemonHandle.DiscardHistory(1);
-                    });
-                
-            }
-        }
-    });
-    
-    // Merge to the prev or next ul if applicable, also manipulate history stack
-    useLayoutEffect(() => {
-        
-        if (!ListContainerRef.current) return;
-        if (!ListContainerRef.current!.children.length) return;
-        if (ListContainerRef.current?.hasAttribute("data-being-merged")) return;
-        
-        const ListPrevSibling = ListContainerRef.current?.previousElementSibling;
-        const bPreviousSiblingIsUL = ListPrevSibling?.tagName.toLowerCase() === 'ul';
-        
-        // Add to last ul element if there is no space in-between, higher priority
-        if (bPreviousSiblingIsUL && ListPrevSibling.hasAttribute("data-list-merge-valid")) {
-            
-            for (let ChildLi of ListContainerRef.current.children) {
-                daemonHandle.AddToOperations({
-                    type: "ADD",
-                    parentNode: ListPrevSibling,
-                    newNode: ChildLi.cloneNode(true)
-                })
-            }
-            daemonHandle.AddToOperations({
-                type: "REMOVE",
-                targetNode: ListContainerRef.current,
-            });
-            
-            ListContainerRef.current = null;
-            daemonHandle.SyncNow();
-            daemonHandle.DiscardHistory(1);
-        }
-        
-        // Add to the next ul element if there is no space in-between
-        const ListNextSibling = ListContainerRef.current?.nextElementSibling;
-        const bNextSiblingIsUL = ListNextSibling?.tagName.toLowerCase() === 'ul';
-        
-        if (!bPreviousSiblingIsUL && bNextSiblingIsUL && ListContainerRef.current && ListNextSibling.hasAttribute("data-list-merge-valid")) {
-            
-            for (let ChildLi of ListContainerRef.current.children) {
-                daemonHandle.AddToOperations({
-                    type: "ADD",
-                    parentNode: ListNextSibling,
-                    newNode: ChildLi.cloneNode(true),
-                    siblingNode: ListNextSibling.firstElementChild
-                })
-            }
-            
-            daemonHandle.AddToOperations(
-                {
-                    type: "REMOVE",
-                    targetNode: ListContainerRef.current!,
-                }
-            );
-            
-            ListContainerRef.current = null;
-            daemonHandle.SyncNow().then(() => {
-                daemonHandle.DiscardHistory(1);
-            });
-            
-        }
-        
-        // No surrounding Ul element
-        // Add data-list-merge-valid attr to indicate this is an "OG" ul that can be merged
-        if (!bPreviousSiblingIsUL && !bNextSiblingIsUL && !bCheckedForMerge.current) {
-            
-            bCheckedForMerge.current = true;
-            
-            if (!ListContainerRef.current?.hasAttribute('data-list-merge-valid')) {
-                daemonHandle.AddToOperations({
-                    type: "ATTR",
-                    targetNode: ListContainerRef.current!,
-                    attribute: {name: "data-list-merge-valid", value: "true"}
-                });
-                daemonHandle.SyncNow();
-                daemonHandle.DiscardHistory(1);
-            }
-        }
-        
-    });
     
     return React.createElement(tagName, {
         ref: ListContainerRef,
@@ -130,38 +30,40 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
     [key: string]: any; // for otherProps
 }) {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            
-            if (!state) {
-                ElementOBRef.current?.takeRecords();
-                ElementOBRef.current?.disconnect();
-                ElementOBRef.current = null;
-            }
-            if (state) {
-                daemonHandle.SyncNow();
-                
-                if (typeof MutationObserver) {
-                    ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    CurrentListItemRef.current && ElementOBRef.current?.observe(CurrentListItemRef.current, {
-                        childList: true
-                    });
-                }
-            }
-            
-            setIsEditing(state);
-            return {
-                "enter": EnterKeyHandler,
-                "del": DelKeyHandler,
-            }
-        }
+    const [SetActivation] = useState<(state: boolean) => TActivationReturn>(() => {
+        return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     
     const CurrentListItemRef = useRef<HTMLElement | null>(null);
-    const QuoteSyntaxFiller = useRef<HTMLElement>();  //filler element
+    const ListSyntaxFiller = useRef<HTMLElement>();  //filler element
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    function ComponentActivation(state: boolean): TActivationReturn {
+        
+        if (!state) {
+            ElementOBRef.current?.takeRecords();
+            ElementOBRef.current?.disconnect();
+            ElementOBRef.current = null;
+        }
+        if (state) {
+            daemonHandle.SyncNow();
+            
+            if (typeof MutationObserver) {
+                ElementOBRef.current = new MutationObserver(ObserverHandler);
+                CurrentListItemRef.current && ElementOBRef.current?.observe(CurrentListItemRef.current, {
+                    childList: true
+                });
+            }
+        }
+        
+        setIsEditing(state);
+        return {
+            "enter": EnterKeyHandler,
+            "del": DelKeyHandler,
+        }
+    }
     
     function ObserverHandler(mutationList: MutationRecord[]) {
         mutationList.forEach((Record) => {
@@ -169,7 +71,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             if (!Record.removedNodes.length) return;
             
             Record.removedNodes.forEach((Node) => {
-                if (Node === QuoteSyntaxFiller.current) {
+                if (Node === ListSyntaxFiller.current) {
                     daemonHandle.AddToOperations([
                         {
                             type: "REMOVE",
@@ -242,6 +144,8 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         ev.preventDefault();
         ev.stopPropagation();
         
+        console.log("List Enter")
+        
         const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
         
         if (!CurrentSelection || !CurrentAnchorNode) return;
@@ -270,7 +174,20 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             const ListContainer = CurrentListItemRef.current?.parentNode;
             
             if (ListContainer && ListContainer.firstElementChild === CurrentListItemRef.current) {
-                return true;
+                // A new line with only a br
+                const lineBreakElement: HTMLBRElement = document.createElement("br");
+                const NewLine = document.createElement("p");  // The new line
+                NewLine.appendChild(lineBreakElement);
+                
+                daemonHandle.AddToOperations({
+                    type: "ADD",
+                    newNode: NewLine,
+                    siblingNode: ListContainer,
+                    parentXP: "//body"
+                });
+                daemonHandle.SetFutureCaret("NextLine");
+                daemonHandle.SyncNow();
+                return;
             }
             
             let TargetNode = GetLastTextNode(CurrentListItemRef.current!);
@@ -362,8 +279,8 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {
-        if (QuoteSyntaxFiller.current) {
-            daemonHandle.AddToIgnore(QuoteSyntaxFiller.current, "any");
+        if (ListSyntaxFiller.current) {
+            daemonHandle.AddToIgnore(ListSyntaxFiller.current, "any");
         }
     });
     
@@ -375,7 +292,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'HeaderSyntaxLead',
-            ref: QuoteSyntaxFiller,
+            ref: ListSyntaxFiller,
             contentEditable: false,
             className: ` ${isEditing ? '' : 'Hide-It'}`
         }, "- "),

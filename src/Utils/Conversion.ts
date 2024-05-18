@@ -19,6 +19,7 @@ import HandleCustomDirectives from "../UnifiedPlugins/HandleCustomDirectives";
 import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
 import {CleanupExtraTags} from "../UnifiedPlugins/CleanupExtraTags";
 import {CleanupEmptyElements} from "../UnifiedPlugins/CleanupEmptyElements";
+import {ListElementHandler} from "../UnifiedPlugins/ListElementHandler";
 
 function MDProcess() {
     return unified()
@@ -83,6 +84,7 @@ export function HTMLCleanUP(HTMLContent: Compatible, componentOptions?: Record<s
         .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
         .use(CleanupExtraTags)
         .use(CleanupEmptyElements)
+        .use(ListElementHandler)
         .use(rehypeStringify)
         .processSync(HTMLContent);
 }
