@@ -76,7 +76,7 @@ type THookOptions = {
     
 }
 
-type TCaretToken = 'zero' | 'NextLine' | 'NextEditable' | 'NextRealEditable' | null;
+type TCaretToken = 'zero' | 'PrevLine' | 'NextLine' | 'NextEditable' | 'NextElement' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
@@ -1088,6 +1088,19 @@ export default function useEditorHTMLDaemon(
                     FocusNode = null;
                     break;
                 }
+                case 'PrevLine': {
+                    while (AnchorNode = Walker.previousNode()) {
+                        if (AnchorNode.parentNode !== WatchElementRef.current) continue;
+                        if (CheckForAncestor(RangeInformation.CurrentAnchorNode, AnchorNode)) continue;
+                        if (!AnchorNode.parentNode) continue;
+                        if (AnchorNode.textContent === "\n") continue;
+                        if ((AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                        FocusNode = null;
+                        StartingOffset = 0;
+                        break;
+                    }
+                    break;
+                }
                 case 'NextLine': {
                     while (AnchorNode = Walker.nextNode()) {
                         if (!AnchorNode.parentNode) continue;
@@ -1112,11 +1125,11 @@ export default function useEditorHTMLDaemon(
                     }
                     break;
                 }
-                case 'NextRealEditable': {
+                case 'NextElement': {
                     // Same as NextEditable but filter out generated elements
                     while (AnchorNode = Walker.nextNode()) {
                         if (CheckForAncestor(AnchorNode, RangeInformation.CurrentAnchorNode)) continue;
-                        if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                        // if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
                         if (AnchorNode.textContent === "\n") continue;
                         if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
                         if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).hasAttribute("data-is-generated")) continue;
