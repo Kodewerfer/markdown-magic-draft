@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "../Utils/Conversion";
-import useEditorHTMLDaemon, {ParagraphTest} from "../hooks/useEditorHTMLDaemon";
+import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 
@@ -11,7 +11,7 @@ import {
     GetCaretContext,
     MoveCaretIntoNode,
     GetNextSiblings,
-    MoveCaretToNode, GetFirstTextNode
+    MoveCaretToNode
 } from "./Helpers";
 // Editor Components
 import Paragraph from './Editor_Parts/Paragraph';
@@ -21,6 +21,7 @@ import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
 import {ListContainer, ListItem} from "./Editor_Parts/List";
 import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 import {TActivationReturn} from "./Editor_Types";
+import SpecialLink from "./Editor_Parts/SpecialLink";
 
 type TEditorProps = {
     SourceData?: string | undefined
@@ -167,7 +168,6 @@ export default function Editor(
                                           tagName={tagName}/>
                     }
                     
-                    // FIXME:Placeholder
                     return <CommonRenderer {...props}
                                            tagName={tagName}/>;
                 }
@@ -222,8 +222,7 @@ export default function Editor(
             
             // Switch off last activation if drag selection passed the last element
             const {
-                compFiber: ActiveComponentEndPoint,
-                parentFiber
+                compFiber: ActiveComponentEndPoint
             }: any = FindActiveEditorComponentFiber(selection.focusNode! as HTMLElement);
             
             if (ActiveComponentEndPoint && ActiveComponentEndPoint !== LastActivationFunc) {
@@ -267,7 +266,7 @@ export default function Editor(
         
         // console.log("switching finished", selection.anchorNode, LastActivationCache.current.return)
     }
-    // FIXME: Not in use, introduce too much side-effect. Keeping in case more optimization is needed
+    // FIXME: Not in use, introduced too much side-effect. Keeping in case more optimization is needed
     // const DebouncedComponentActivationSwitch = _.debounce(ComponentActivationSwitch, 100);
     
     // Functionalities such as wrapping selected text with certain symbols or brackets
@@ -370,22 +369,20 @@ export default function Editor(
         // if the callback returns 'true', continue the editor's logic
         let LastComponentKey = null;
         let LatestCallbackReturn: void | boolean = undefined;
+        let bComponentEnterUsed = false;
         
         // Run "current component"'s enter key logic until there is none or encountered self again.
         // This is to deal with changed caret position and therefore changed active component after enter key.
         while (typeof LastActivationCache.current.return?.enter === 'function' && (LastActivationCache.current.wrapperFiber && LastActivationCache.current.wrapperFiber.key !== LastComponentKey)) {
-            
-            console.log("Component Enter key ", LastComponentKey);
-            
+            bComponentEnterUsed = true;
             LastComponentKey = LastActivationCache.current.wrapperFiber.key;  //NOTE: due to how mapping converted component works, only the anonymous component one level higher have a valid key
-            
+            console.log("Component Enter key ", LastComponentKey);
             LatestCallbackReturn = await LastActivationCache.current.return?.enter(ev);
-            
         }
         
-        if (LatestCallbackReturn !== true)
+        if (bComponentEnterUsed && LatestCallbackReturn !== true)
             return
-        // NOTE: this will only run the component enter key once
+        // NOTE: Old implementation, this will only run the component enter key only once, no longer suited for the async/await structure.
         // if (typeof LastActivationCache.current.return?.enter === 'function') {
         //     console.log("Component Enter key")
         //     const CallbackReturn = await LastActivationCache.current.return?.enter(ev);
@@ -406,7 +403,7 @@ export default function Editor(
         
         if ((CurrentAnchorNode as HTMLElement)?.contentEditable === 'false' || (CurrentAnchorNode.parentNode as HTMLElement)?.contentEditable === 'false' || CurrentAnchorNode.textContent === '\n') {
             console.warn("Enter Key Exception, not a valid node", CurrentAnchorNode);
-            DaemonHandle.SetFutureCaret("NextRealEditable");
+            DaemonHandle.SetFutureCaret("NextElement");
             DaemonHandle.SyncNow();
             return;
         }
@@ -480,7 +477,6 @@ export default function Editor(
         if (RemainingText !== '' || FollowingNodes.length > 1 || (FollowingNodes.length === 1 && FollowingNodes[0].textContent !== '\n')) {
             console.log("Breaking - Mid line");
             // Exception, when caret is on the element tag itself, and didn't fit the previous cases (happens on PlainSyntax primarily)
-            // FIXME: May be a better solution
             if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) {
                 console.warn("Enter Key Exception, move caret to", NearestContainer);
                 MoveCaretIntoNode(NearestContainer);
@@ -504,7 +500,6 @@ export default function Editor(
                     targetNode: Node,
                 });
             })
-            
             
             // Clean up the old line
             DaemonHandle.AddToOperations({
@@ -581,7 +576,7 @@ export default function Editor(
         if (!previousElementSibling) return; //No more lines following
         
         // when there is still content that could be deleted, but caret lands on the wrong element
-        // FIXME: may be buggy
+        // FIXME: may be buggy, need more testing
         if (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling !== previousElementSibling) {
             console.log("Backspace: Invalid Caret, moving Caret to ", CurrentAnchorNode);
             MoveCaretIntoNode(CurrentAnchorNode);
@@ -651,7 +646,7 @@ export default function Editor(
                     targetNode: previousElementSibling
                 });
             
-            DaemonHandle.SetFutureCaret('zero');
+            DaemonHandle.SetFutureCaret('PrevLine');
             DaemonHandle.SyncNow();
             return;
         }
@@ -700,8 +695,8 @@ export default function Editor(
         ev.preventDefault();
         ev.stopPropagation();
         
-        // NOTE: this is an override on editing text, so far only needed for del key
-        // TODO: Incomplete,browser's logic cause caret to move back and fourth, but re-implementing causes too much problem, saving this for reference.
+        // TODO: NOTE: this is an override on editing text, so far only needed for del key
+        // TODO: Incomplete,browser's logic cause caret to move back and fourth, but re-implementing involves handling too many edge cases, deemed not worth it, saving for reference.
         // if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) {
         //     if (RemainingText !== '') {
         //         CurrentAnchorNode.deleteData(CurrentSelection?.anchorOffset, 1);
@@ -728,7 +723,6 @@ export default function Editor(
         
         
         // same as back space, when there is still content that could be deleted, but caret lands on the wrong element
-        // FIXME: may be buggy
         if (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling !== nextElementSibling) {
             console.log("Del: Invalid Caret, moving Caret to ", CurrentAnchorNode);
             MoveCaretIntoNode(CurrentAnchorNode);
@@ -904,7 +898,7 @@ export default function Editor(
             ShouldObserve: true
         });
     
-    // Force refreshing the activated component after reloading and caret is restored
+    // Force refreshing the activated component after reloading and caret is restored, needed to be after DaemonHandle's layout effect
     useLayoutEffect(() => {
         ComponentActivationSwitch();
     });
@@ -924,14 +918,9 @@ export default function Editor(
     )
 }
 
-// TODO
-function SpecialLink(props: any) {
-    const {children, tagName, ParentAction, ...otherProps} = props;
-    return React.createElement(tagName, otherProps, children);
-}
-
-// FIXME: placeholder
-const CommonRenderer = (props: any) => {
+// the fallback render for any unknown or unspecified elements
+// Needed if the like of br is to be rendered normally.
+function CommonRenderer(props: any) {
     const {children, tagName, ParentAction, ...otherProps} = props;
     
     return React.createElement(tagName, otherProps, children);
@@ -975,8 +964,11 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 1): a
     // Get the component fiber
     const compFiber = getCompFiber(domFiber);
     let parentFiber = getCompFiber(domFiber);
+    let compoundKeys = '';
+    //TODO: May be needed: get all valid parent fibers in an array, then store each parent's meta state return, peel each layer when needed (eg: inline component in LI instead of p)
     for (let i = 0; i < TraverseUp; i++) {
         parentFiber = getCompFiber(parentFiber);
+        // compoundKeys += parentFiber.key ? String(parentFiber.key) : '';
     }
     
     // return compFiber.stateNode; // if dealing with class component, in that case "setState" can be called from this directly.
