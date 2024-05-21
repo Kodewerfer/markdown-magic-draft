@@ -1,10 +1,11 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
     GetChildNodesAsHTMLString, GetFirstTextNode, GetLastTextNode,
     MoveCaretToNode
 } from "../Helpers";
+import {TActivationReturn} from "../Editor_Types";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -14,30 +15,6 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     [key: string]: any; // for otherProps
 }) {
     const ContainerRef = useRef<HTMLElement | null>(null);
-    
-    const [isBlockEmpty, setIsBlockEmpty] = useState(false);
-    
-    // Self destruct if no child element
-    useEffect(() => {
-        if (!children || React.Children.count(children) === 1) {
-            if (String(children).trim() === '' && ContainerRef.current) {
-                
-                daemonHandle.AddToOperations(
-                    {
-                        type: "REMOVE",
-                        targetNode: ContainerRef.current!,
-                    }
-                );
-                
-                ContainerRef.current = null;
-                daemonHandle.SyncNow()
-                    .then(() => {
-                        daemonHandle.DiscardHistory(1);
-                    });
-                
-            }
-        }
-    });
     
     return React.createElement(tagName, {
         ref: ContainerRef,
@@ -53,31 +30,8 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
     [key: string]: any; // for otherProps
 }) {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            
-            if (!state) {
-                ElementOBRef.current?.takeRecords();
-                ElementOBRef.current?.disconnect();
-                ElementOBRef.current = null;
-            }
-            if (state) {
-                daemonHandle.SyncNow();
-                
-                if (typeof MutationObserver) {
-                    ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
-                        childList: true
-                    });
-                }
-            }
-            
-            setIsEditing(state);
-            return {
-                "enter": EnterKeyHandler,
-                "del": DelKeyHandler,
-            }
-        }
+    const [SetActivation] = useState<(state: boolean) => TActivationReturn>(() => {
+        return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     
@@ -86,11 +40,34 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
     
+    function ComponentActivation(state: boolean): TActivationReturn {
+        
+        if (!state) {
+            ElementOBRef.current?.takeRecords();
+            ElementOBRef.current?.disconnect();
+            ElementOBRef.current = null;
+        }
+        if (state) {
+            daemonHandle.SyncNow();
+            
+            if (typeof MutationObserver) {
+                ElementOBRef.current = new MutationObserver(ObserverHandler);
+                WholeElementRef.current && ElementOBRef.current?.observe(WholeElementRef.current, {
+                    childList: true
+                });
+            }
+        }
+        
+        setIsEditing(state);
+        return {
+            "enter": EnterKeyHandler,
+            "del": DelKeyHandler,
+        }
+    }
+    
     function ObserverHandler(mutationList: MutationRecord[]) {
         mutationList.forEach((Record) => {
-            
             if (!Record.removedNodes.length) return;
-            
             Record.removedNodes.forEach((Node) => {
                 if (Node === QuoteSyntaxFiller.current) {
                     
@@ -109,9 +86,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
                             parentXP: "//body",
                             siblingNode: WholeElementRef.current?.parentNode?.nextSibling
                         }]);
-                    
                     daemonHandle.SyncNow();
-                    
                 }
             })
         })
@@ -132,17 +107,37 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
         if (!CurrentSelection || !CurrentAnchorNode) return;
         
-        const currentRange = CurrentSelection.getRangeAt(0);
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) MoveCaretToNode(GetFirstTextNode(WholeElementRef.current), 0);
         
-        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) return MoveCaretToNode(GetFirstTextNode(WholeElementRef.current), 0);
-        
-        if (PrecedingText.trim() === '' && currentRange.startOffset === 0) return true;
+        // Add new line before the blockquote
+        if (PrecedingText.trim() === '') {
+            
+            const BlockQuoteElement = WholeElementRef.current.parentNode;
+            if (!BlockQuoteElement) return;
+            
+            // A new line with only a br
+            const lineBreakElement: HTMLBRElement = document.createElement("br");
+            const NewLine = document.createElement("p");  // The new line
+            NewLine.appendChild(lineBreakElement);
+            
+            daemonHandle.AddToOperations({
+                type: "ADD",
+                newNode: NewLine,
+                siblingNode: BlockQuoteElement,
+                parentXP: "//body"
+            });
+            daemonHandle.SetFutureCaret("NextLine");
+            daemonHandle.SyncNow();
+            
+            return;
+        }
+        // reuse editor default, this will add p tag after block quote
         if (RemainingText.trim() === '') return true;
         
         // mid-line enter key
+        // only Move caret to the end of the last text node.
         if (!WholeElementRef.current.childNodes || !WholeElementRef.current.childNodes.length) return;
         
-        // Move caret to the end of the last text node.
         let TargetNode: Node | null = GetLastTextNode(WholeElementRef.current);
         
         if (!TargetNode || !TargetNode.textContent) return;
@@ -165,7 +160,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     }, [
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
-            key: 'HeaderSyntaxLead',
+            key: 'QuoteSyntaxLead',
             ref: QuoteSyntaxFiller,
             contentEditable: false,
             className: ` ${isEditing ? '' : 'Hide-It'}`

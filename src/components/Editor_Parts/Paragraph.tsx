@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {ExtraRealChild, GetChildNodesAsHTMLString, GetChildNodesTextContent} from '../Helpers'
+import {TActivationReturn} from "../Editor_Types";
 
 export default function Paragraph({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -10,27 +11,8 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
     daemonHandle: TDaemonReturn; // replace Function with a more specific function type if necessary
     [key: string]: any; // for otherProps
 }) {
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
-        return (state: boolean) => {
-            if (!state) {
-                ElementOBRef.current?.takeRecords();
-                ElementOBRef.current?.disconnect();
-                ElementOBRef.current = null;
-            }
-            if (state) {
-                
-                // FIXME:cause too much input interruption, need more testing.
-                // daemonHandle.SyncNow();
-                
-                if (typeof MutationObserver) {
-                    ElementOBRef.current = new MutationObserver(ObserverHandler);
-                    MainElementRef.current && ElementOBRef.current?.observe(MainElementRef.current, {
-                        childList: true
-                    });
-                }
-            }
-            setIsEditing(state);
-        }
+    const [SetActivation] = useState<(state: boolean) => TActivationReturn>(() => {
+        return ComponentActivation
     }); // the Meta state, called by parent via dom fiber
     const [isEditing, setIsEditing] = useState(false); //Not directly used, but VITAL
     
@@ -39,6 +21,31 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
     const SyntaxElementRef = useRef<HTMLElement>();  //filler element
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    function ComponentActivation(state: boolean): TActivationReturn {
+        
+        if (!state) {
+            ElementOBRef.current?.takeRecords();
+            ElementOBRef.current?.disconnect();
+            ElementOBRef.current = null;
+        }
+        if (state) {
+            
+            // FIXME:cause too much input interruption, need more testing.
+            // daemonHandle.SyncNow();
+            
+            if (typeof MutationObserver) {
+                ElementOBRef.current = new MutationObserver(ObserverHandler);
+                MainElementRef.current && ElementOBRef.current?.observe(MainElementRef.current, {
+                    childList: true
+                });
+            }
+        }
+        setIsEditing(state);
+        
+        // Paragraph no need for special handling for enter and dels
+        return {}
+    }
     
     function ObserverHandler(mutationList: MutationRecord[]) {
         mutationList.forEach((Record) => {
