@@ -74,8 +74,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
                         }
                     });
                     daemonHandle.SyncNow();
-                    // const TextContent = CompileAllTextNode();
-                    // UpdateComponentAndSync(TextContent, WholeElementRef.current);
                 }
             })
         })
@@ -95,11 +93,11 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         else if (RemainingText !== '')
             bShouldBreakLine = false;
         else
-            daemonHandle.SetFutureCaret("NextRealEditable");
+            daemonHandle.SetFutureCaret("NextElement");
         
         UpdateComponentAndSync(TextContent, WholeElementRef.current);
         
-        // FIXME: band-aid solution
+        // FIXME: band-aid solution, need parent fiber/special enter key handling tracking
         if (WholeElementRef.current?.parentNode && WholeElementRef.current.parentNode.nodeName.toLowerCase() !== 'p') {
             bShouldBreakLine = false;
         }
