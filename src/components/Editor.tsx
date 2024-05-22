@@ -31,8 +31,8 @@ type TActivationCache = {
     fiber: Object | null;
     func: ((arg: boolean) => TActivationReturn) | null | undefined;
     return: TActivationReturn | null;
-    anchor: Node | null;
-    wrapperFiber: any | null; //NOTE: due to how mapping converted component works, only the anonymous component one level higher have a valid key
+    id: null | string;
+    // wrapperFiber: any | null; //NOTE: due to how mapping converted component works, only the anonymous component one level higher have a valid key
 }
 
 const AutoCompleteSymbols = /([*~`"(\[{])/;
@@ -56,14 +56,9 @@ export default function Editor(
     
     const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
     
-    // Cache of the last activated component
-    let LastActivationCache = useRef<TActivationCache>({
-        fiber: null,
-        func: null,
-        return: null,
-        anchor: null,
-        wrapperFiber: null
-    });
+    // Cache of the last activated components
+    const LastActivationCache = useRef<TActivationCache[]>([]);
+    const LastActiveAnchor = useRef<Node | null>(null); //compare with this only works before page re-rendering
     
     // Subsequence reload
     async function ReloadEditorContent() {
@@ -212,59 +207,96 @@ export default function Editor(
         if (!selection) return;
         // Must be an editor element
         if (!EditorElementRef.current?.contains(selection?.anchorNode)) return;
+        
+        let ActiveComponentsStack = LastActivationCache.current;
+        if (!ActiveComponentsStack) return;
+        // The top most active component, used for comparing
+        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
         // Must not contains multiple elements
         if (!selection.isCollapsed) {
             if (selection.anchorNode === selection.focusNode)
                 return;
             
-            const LastActivationFunc = LastActivationCache.current.func;
-            if (typeof LastActivationFunc !== 'function') return;
+            // No active component
+            if (!ActiveComponentsStack.length) return;
+            
+            if (!TopActiveComponent || typeof TopActiveComponent.func !== 'function') return;
             
             // Switch off last activation if drag selection passed the last element
             const {
-                compFiber: ActiveComponentEndPoint
+                compFiber: endPointFiber
             }: any = FindActiveEditorComponentFiber(selection.focusNode! as HTMLElement);
             
-            if (ActiveComponentEndPoint && ActiveComponentEndPoint !== LastActivationFunc) {
-                LastActivationFunc(false);
-                LastActivationCache.current.func = undefined;
-                LastActivationCache.current.anchor = null;
-                LastActivationCache.current.wrapperFiber = null;
+            if (endPointFiber && endPointFiber !== TopActiveComponent.fiber) {
+                let ActiveComponent;
+                while (ActiveComponent = ActiveComponentsStack.pop()) {
+                    if (typeof ActiveComponent.func !== 'function') continue;
+                    ActiveComponent.func(false);
+                }
             }
             return;
         }
         
-        if (LastActivationCache.current.anchor === selection.anchorNode) return;
+        if (LastActiveAnchor.current === selection.anchorNode) return;
         // refresh the cache
-        LastActivationCache.current.anchor = selection.anchorNode;
+        LastActiveAnchor.current = selection.anchorNode;
         
         // retrieve the component, set the editing state
         const {
             compFiber: ActiveComponentFiber,
-            parentFiber
+            parentFibers
         }: any = FindActiveEditorComponentFiber(selection.anchorNode! as HTMLElement);
         // FIXME: This is VERY VERY VERY HACKY
         // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
         // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
         if (!ActiveComponentFiber) return;
-        if (LastActivationCache.current.fiber === ActiveComponentFiber) return;
+        if (TopActiveComponent === ActiveComponentFiber) return;
         
-        // Switch off the last
-        typeof LastActivationCache.current.func === 'function' && LastActivationCache.current.func(false);
-        LastActivationCache.current.func = null;
-        LastActivationCache.current.return = null;
-        LastActivationCache.current.wrapperFiber = null;
-        
-        
-        // Switch on the current, add to cache
-        LastActivationCache.current.fiber = ActiveComponentFiber;
-        if (ActiveComponentFiber.memoizedState && typeof ActiveComponentFiber.memoizedState.memoizedState === "function") {
-            LastActivationCache.current.func = ActiveComponentFiber.memoizedState.memoizedState;
-            LastActivationCache.current.return = ActiveComponentFiber.memoizedState.memoizedState(true);
-            LastActivationCache.current.wrapperFiber = parentFiber;
+        // Switch all of the currently actived
+        let ActiveComponent;
+        while (ActiveComponent = ActiveComponentsStack.pop()) {
+            if (typeof ActiveComponent.func !== 'function') continue;
+            ActiveComponent.func(false);
         }
         
-        // console.log("switching finished", selection.anchorNode, LastActivationCache.current.return)
+        let keyPathFull = '';
+        let keyLast: string | null = null;
+        // switch on the parent components first
+        parentFibers.forEach((fiber: any) => {
+            keyPathFull += fiber.key || "";
+            if (fiber.key && keyLast === null) keyLast = fiber.key //store the key so that it can be used latter
+            
+            if (!fiber.memoizedState || typeof fiber.memoizedState.memoizedState !== "function") return;
+            
+            let ID = fiber.key;
+            
+            if (!fiber.key && keyLast) {
+                ID = keyLast;
+                keyLast = null;
+            }
+            
+            const CachedItem: TActivationCache = {
+                fiber: fiber,
+                func: fiber.memoizedState.memoizedState,
+                return: fiber.memoizedState.memoizedState(true),
+                id: ID
+            }
+            
+            ActiveComponentsStack.push(CachedItem);
+        })
+        
+        if (ActiveComponentFiber.memoizedState && typeof ActiveComponentFiber.memoizedState.memoizedState === "function") {
+            
+            ActiveComponentsStack.push({
+                fiber: ActiveComponentFiber,
+                func: ActiveComponentFiber.memoizedState.memoizedState,
+                return: ActiveComponentFiber.memoizedState.memoizedState(true),
+                id: ActiveComponentFiber.key ? ActiveComponentFiber.key : keyLast
+            });
+        }
+        
+        // console.log("switching finished:", ActiveComponentsStack)
     }
     // FIXME: Not in use, introduced too much side-effect. Keeping in case more optimization is needed
     // const DebouncedComponentActivationSwitch = _.debounce(ComponentActivationSwitch, 100);
@@ -371,13 +403,19 @@ export default function Editor(
         let LatestCallbackReturn: void | boolean = undefined;
         let bComponentEnterUsed = false;
         
+        let ActiveComponentsStack = LastActivationCache.current;
+        if (!ActiveComponentsStack) return;
+        // The top most active component, used for comparing
+        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
+        
         // Run "current component"'s enter key logic until there is none or encountered self again.
         // This is to deal with changed caret position and therefore changed active component after enter key.
-        while (typeof LastActivationCache.current.return?.enter === 'function' && (LastActivationCache.current.wrapperFiber && LastActivationCache.current.wrapperFiber.key !== LastComponentKey)) {
+        while (TopActiveComponent && typeof TopActiveComponent.return?.enter === 'function' && (TopActiveComponent.id && TopActiveComponent.id !== LastComponentKey)) {
             bComponentEnterUsed = true;
-            LastComponentKey = LastActivationCache.current.wrapperFiber.key;  //NOTE: due to how mapping converted component works, only the anonymous component one level higher have a valid key
+            LastComponentKey = TopActiveComponent.id;  //NOTE: this can be the key of the wrapping anonymous component
             console.log("Component Enter key ", LastComponentKey);
-            LatestCallbackReturn = await LastActivationCache.current.return?.enter(ev);
+            LatestCallbackReturn = await TopActiveComponent.return.enter(ev);
         }
         
         if (bComponentEnterUsed && LatestCallbackReturn !== true)
@@ -624,10 +662,13 @@ export default function Editor(
             return;
         }
         
+        const ActiveComponentsStack = LastActivationCache.current;
+        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
         // Run the component spec handler if present
-        if (typeof LastActivationCache.current.return?.backspace === 'function') {
+        if (TopActiveComponent && typeof TopActiveComponent.return?.backspace === 'function') {
             console.log("Backspace: Component Spec Logic");
-            if (LastActivationCache.current.return?.backspace(ev) !== true)
+            if (TopActiveComponent.return?.backspace(ev) !== true)
                 return;
         }
         
@@ -679,6 +720,8 @@ export default function Editor(
         let {RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         
         if (!CurrentAnchorNode) return;
+        
+        console.log(CurrentAnchorNode);
         
         let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
@@ -763,11 +806,14 @@ export default function Editor(
             return;
         }
         
+        const ActiveComponentsStack = LastActivationCache.current;
+        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
         // Run the component spec handler if present
-        if (typeof LastActivationCache.current.return?.del === 'function') {
+        if (TopActiveComponent && typeof TopActiveComponent.return?.del === 'function') {
             console.log("Del: Component Spec Deleting");
             
-            if (LastActivationCache.current.return?.del(ev) !== true)
+            if (TopActiveComponent.return.del(ev) !== true)
                 return
         }
         
@@ -930,8 +976,9 @@ function CommonRenderer(props: any) {
 
 /**
  * The hack func that retrieves the react fiber and thus the active component
+ * NOT: TraverseUp level set to 6, which means it will find parent component up to "3-levels up" eg: blockquote->p->strong
  */
-function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 1): any {
+function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 6): any {
     
     const NULL_RETURN = {compFiber: null, parentFiber: null};
     
@@ -961,19 +1008,20 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 1): a
         return parentFiber;
     };
     
-    // Get the component fiber
+    // Get the component fiber and parent fibers
     const compFiber = getCompFiber(domFiber);
     let parentFiber = getCompFiber(domFiber);
-    let compoundKeys = '';
-    //TODO: May be needed: get all valid parent fibers in an array, then store each parent's meta state return, peel each layer when needed (eg: inline component in LI instead of p)
+    let allParentFibers = [];
     for (let i = 0; i < TraverseUp; i++) {
         parentFiber = getCompFiber(parentFiber);
-        // compoundKeys += parentFiber.key ? String(parentFiber.key) : '';
+        
+        if (!parentFiber) break;
+        if (parentFiber.key && parentFiber.key.toLowerCase().includes('editor')) break; //reached editor level
+        
+        allParentFibers.push(parentFiber);
     }
     
-    // return compFiber.stateNode; // if dealing with class component, in that case "setState" can be called from this directly.
-    
-    return {compFiber: compFiber, parentFiber: parentFiber};
+    return {compFiber: compFiber, parentFibers: allParentFibers};
 }
 
 /**
