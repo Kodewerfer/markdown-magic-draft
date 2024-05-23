@@ -205,7 +205,7 @@ export default function Editor(
     const ComponentActivationSwitch = () => {
         const selection: Selection | null = window.getSelection();
         if (!selection) return;
-        // Must be an editor element
+        // Must be an element of the current editor
         if (!EditorElementRef.current?.contains(selection?.anchorNode)) return;
         
         let ActiveComponentsStack = LastActivationCache.current;
@@ -251,9 +251,11 @@ export default function Editor(
         // right now the logic is - for a editor component, the very first state need to be a function that handles all logic for "mark as active"
         // with the old class components, after gettng the components from dom, you can get the "stateNode" and actually call the setState() from there
         if (!ActiveComponentFiber) return;
-        if (TopActiveComponent === ActiveComponentFiber) return;
+        if (TopActiveComponent && (TopActiveComponent.fiber === ActiveComponentFiber)) return;
         
-        // Switch all of the currently actived
+        // console.log("Active fiber ", ActiveComponentFiber, " ", selection.anchorNode);
+        
+        // Switch off all currently activated
         let ActiveComponent;
         while (ActiveComponent = ActiveComponentsStack.pop()) {
             if (typeof ActiveComponent.func !== 'function') continue;
@@ -263,7 +265,7 @@ export default function Editor(
         let keyPathFull = '';
         let keyLast: string | null = null;
         
-        // switch on the parent components first
+        // switch on the new ones, parent components first
         parentFibers.forEach((fiber: any) => {
             keyPathFull += fiber.key || "";
             if (fiber.key && keyLast === null) keyLast = fiber.key //store the key so that it can be used latter
@@ -286,7 +288,7 @@ export default function Editor(
             
             ActiveComponentsStack.push(CachedItem);
         })
-        
+        // the top-level component
         if (ActiveComponentFiber.memoizedState && typeof ActiveComponentFiber.memoizedState.memoizedState === "function") {
             
             ActiveComponentsStack.push({
@@ -299,8 +301,6 @@ export default function Editor(
         
         // console.log("switching finished:", ActiveComponentsStack)
     }
-    // FIXME: Not in use, introduced too much side-effect. Keeping in case more optimization is needed
-    // const DebouncedComponentActivationSwitch = _.debounce(ComponentActivationSwitch, 100);
     
     // Functionalities such as wrapping selected text with certain symbols or brackets
     function AutocompleteHandler(KeyboardInput: string) {
@@ -909,8 +909,12 @@ export default function Editor(
     
     // Editor level selection status monitor
     useLayoutEffect(() => {
-        const OnSelectionChange = () => ComponentActivationSwitch();
-        const OnSelectStart = () => ComponentActivationSwitch();
+        const OnSelectionChange = () => {
+            ComponentActivationSwitch();
+        }
+        const OnSelectStart = () => {
+            ComponentActivationSwitch();
+        }
         
         document.addEventListener("selectstart", OnSelectStart);
         document.addEventListener("selectionchange", OnSelectionChange);
@@ -964,6 +968,10 @@ export default function Editor(
     // Force refreshing the activated component after reloading and caret is restored, needed to be after DaemonHandle's layout effect
     useLayoutEffect(() => {
         ComponentActivationSwitch();
+        return () => {
+            LastActiveAnchor.current = null;
+            LastActivationCache.current = [];
+        }
     });
     
     return (
@@ -997,7 +1005,7 @@ function CommonRenderer(props: any) {
  */
 function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 6): any {
     
-    const NULL_RETURN = {compFiber: null, parentFiber: null};
+    const NULL_RETURN = {compFiber: null, parentFiber: null, keyPath: []};
     
     if (DomNode.nodeType === Node.TEXT_NODE) {
         if (DomNode.parentNode)
@@ -1028,7 +1036,9 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 6): a
     // Get the component fiber and parent fibers
     const compFiber = getCompFiber(domFiber);
     let parentFiber = getCompFiber(domFiber);
+    
     let allParentFibers = [];
+    
     for (let i = 0; i < TraverseUp; i++) {
         parentFiber = getCompFiber(parentFiber);
         
@@ -1037,8 +1047,6 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 6): a
         
         allParentFibers.push(parentFiber);
     }
-    
-    // console.log(allParentFibers);
     
     return {compFiber: compFiber, parentFibers: allParentFibers.reverse()};
 }
