@@ -198,9 +198,11 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             
             return;
         }
-        // End of the line, Only add empty line after container if first element of the first item list
+        
+        const FollowingNodes = GetNextSiblings(CurrentAnchorNode);
+        // End of the line, Only add empty line after the ul container if last element of the last item list
         // otherwise, move caret to the next line
-        if (RemainingText.trim() === '') {
+        if (RemainingText.trim() === '' && !FollowingNodes.length) {
             console.log("Breaking - List EOL");
             const ListContainer = CurrentListItemRef.current?.parentNode;
             if (ListContainer && ListContainer.lastElementChild === CurrentListItemRef.current)
@@ -226,7 +228,6 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         if (!CurrentListItemRef.current) return;
         if (!CurrentListItemRef.current.childNodes || !CurrentListItemRef.current.childNodes.length) return;
         
-        const FollowingNodes = GetNextSiblings(CurrentAnchorNode);
         // No following element or text content
         if ((!RemainingText || RemainingText.trim() === '') && !FollowingNodes.length) {
             // Move caret to the end of the last text node.
@@ -270,7 +271,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             parentNode: CurrentListItemRef.current?.parentNode!
         });
         
-        daemonHandle.SetFutureCaret('NextEditable');
+        daemonHandle.SetFutureCaret('NextElement');
         daemonHandle.SyncNow();
         
         return;

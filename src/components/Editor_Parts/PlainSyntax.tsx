@@ -1,6 +1,7 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
+    GetAllSurroundingText,
     GetCaretContext,
     GetChildNodesTextContent, GetFirstTextNode,
     TextNodeProcessor
@@ -82,25 +83,22 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     function EnterKeyHandler(ev: Event) {
         ev.preventDefault();
         
-        const {PrecedingText, RemainingText} = GetCaretContext();
+        const {CurrentSelection} = GetCaretContext();
         
         let bShouldBreakLine = true;
         
         const TextContent = CompileAllTextNode();
         
-        if (PrecedingText === '')
-            daemonHandle.SetFutureCaret("zero");
-        else if (RemainingText !== '')
+        const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, WholeElementRef.current!);
+        
+        if (precedingText.trim() === '' || precedingText.trim() === propSyntaxData)
+            daemonHandle.SetFutureCaret("PrevElement");
+        else if (followingText.trim() !== '')
             bShouldBreakLine = false;
         else
             daemonHandle.SetFutureCaret("NextElement");
         
         UpdateComponentAndSync(TextContent, WholeElementRef.current);
-        
-        // FIXME: band-aid solution, need parent fiber/special enter key handling tracking
-        if (WholeElementRef.current?.parentNode && WholeElementRef.current.parentNode.nodeName.toLowerCase() !== 'p') {
-            bShouldBreakLine = false;
-        }
         
         return Promise.resolve(bShouldBreakLine);
     }
@@ -115,7 +113,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         while (node = elementWalker.nextNode()) {
             textContent += node.textContent === '\u00A0' ? "" : node.textContent;
         }
-        
         
         return textContent;
     }
