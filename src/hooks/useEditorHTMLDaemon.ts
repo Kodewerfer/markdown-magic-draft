@@ -76,7 +76,7 @@ type THookOptions = {
     
 }
 
-type TCaretToken = 'zero' | 'PrevLine' | 'NextLine' | 'NextEditable' | 'NextElement' | null;
+type TCaretToken = 'zero' | 'PrevElement' | 'PrevLine' | 'NextLine' | 'NextEditable' | 'NextElement' | null;
 
 export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
@@ -1136,6 +1136,29 @@ export default function useEditorHTMLDaemon(
                         
                         FocusNode = null;
                         StartingOffset = 0;
+                        break;
+                    }
+                    break;
+                }
+                case 'PrevElement': {
+                    //first walk the to the container element
+                    while (AnchorNode = Walker.previousNode()) {
+                        
+                        if (AnchorNode.parentNode && DaemonOptions.ParagraphTags.test(AnchorNode.parentNode.nodeName.toLowerCase()))
+                            break;
+                    }
+                    
+                    console.log("started:", AnchorNode)
+                    while (AnchorNode = Walker.previousNode()) {
+                        console.log("past:", AnchorNode)
+                        // if (AnchorNode.nodeType !== Node.TEXT_NODE) continue;
+                        if (AnchorNode.textContent === "\n") continue;
+                        if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
+                        if (AnchorNode.parentNode && (AnchorNode.parentNode as HTMLElement).hasAttribute("data-is-generated")) continue;
+                        
+                        FocusNode = null;
+                        StartingOffset = AnchorNode.textContent && !DaemonOptions.ParagraphTags.test(AnchorNode.nodeName.toLowerCase()) ? AnchorNode.textContent.length : 0;
+                        
                         break;
                     }
                     break;
