@@ -431,6 +431,21 @@ export default function Editor(
         //         return
         // }
         
+        // run parent-level enter key handling
+        // container-like parent usually have special handling for enter key, in case of multi-level component with those containers, this is acts as "failsafe"
+        // starts from second to last element
+        for (let i = ActiveComponentsStack.length - 2; i >= 0; i--) {
+            const parentComponent = ActiveComponentsStack[i];
+            
+            if (typeof parentComponent.return?.enter === 'function') {
+                
+                console.log("Parent level Enter key ", parentComponent.id);
+                
+                if (parentComponent.return.enter(ev) !== true) return;
+            }
+            
+        }
+        
         ev.preventDefault();
         ev.stopPropagation();
         
