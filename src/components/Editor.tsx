@@ -262,12 +262,11 @@ export default function Editor(
         
         let keyPathFull = '';
         let keyLast: string | null = null;
+        
         // switch on the parent components first
         parentFibers.forEach((fiber: any) => {
             keyPathFull += fiber.key || "";
             if (fiber.key && keyLast === null) keyLast = fiber.key //store the key so that it can be used latter
-            
-            if (!fiber.memoizedState || typeof fiber.memoizedState.memoizedState !== "function") return;
             
             let ID = fiber.key;
             
@@ -275,6 +274,8 @@ export default function Editor(
                 ID = keyLast;
                 keyLast = null;
             }
+            
+            if (!fiber.memoizedState || typeof fiber.memoizedState.memoizedState !== "function") return;
             
             const CachedItem: TActivationCache = {
                 fiber: fiber,
@@ -406,8 +407,7 @@ export default function Editor(
         let ActiveComponentsStack = LastActivationCache.current;
         if (!ActiveComponentsStack) return;
         // The top most active component, used for comparing
-        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
-        
+        let TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         
         // Run "current component"'s enter key logic until there is none or encountered self again.
         // This is to deal with changed caret position and therefore changed active component after enter key.
@@ -416,6 +416,8 @@ export default function Editor(
             LastComponentKey = TopActiveComponent.id;  //NOTE: this can be the key of the wrapping anonymous component
             console.log("Component Enter key ", LastComponentKey);
             LatestCallbackReturn = await TopActiveComponent.return.enter(ev);
+            
+            TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         }
         
         if (bComponentEnterUsed && LatestCallbackReturn !== true)
@@ -1021,7 +1023,9 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 6): a
         allParentFibers.push(parentFiber);
     }
     
-    return {compFiber: compFiber, parentFibers: allParentFibers};
+    // console.log(allParentFibers);
+    
+    return {compFiber: compFiber, parentFibers: allParentFibers.reverse()};
 }
 
 /**
