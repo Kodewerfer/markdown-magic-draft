@@ -349,3 +349,52 @@ export function GetFirstTextNode(ContainerNode: Node | HTMLElement): Node | null
     
     return firstTextNode;
 }
+
+export function GetAllSurroundingText(CurrentSelection: Selection, ContainerLimit?: Node | HTMLElement, HardLimit = 3) {
+    let node: Node | null = CurrentSelection.focusNode;
+    let precedingText: string[] = [];
+    let followingText: string[] = [];
+    let iterationCount = 0;
+    
+    if (!node) {
+        return {precedingText: '', followingText: ''};
+    }
+    
+    // Add current node's text if it's a text node
+    if (node.nodeType === Node.TEXT_NODE) {
+        const contents = node.textContent || '';
+        precedingText.push(contents.slice(0, CurrentSelection.focusOffset));
+        followingText.push(contents.slice(CurrentSelection.focusOffset));
+    }
+    
+    while (node && iterationCount < HardLimit && node !== ContainerLimit) {
+        // Get preceding sibling node text
+        let previousNode = node.previousSibling;
+        while (previousNode) {
+            let text = previousNode.textContent;
+            if (text) {
+                precedingText.unshift(text);
+            }
+            previousNode = previousNode.previousSibling;
+        }
+        
+        // Get next sibling node text
+        let nextNode = node.nextSibling;
+        while (nextNode) {
+            let text = nextNode.textContent;
+            if (text) {
+                followingText.push(text);
+            }
+            nextNode = nextNode.nextSibling;
+        }
+        
+        // Move to the parent level
+        node = node.parentNode;
+        iterationCount += 1;
+    }
+    
+    return {
+        precedingText: precedingText.join(''),
+        followingText: followingText.join(''),
+    };
+}
