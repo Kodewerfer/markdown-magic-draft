@@ -1,9 +1,9 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetAllSurroundingText,
     GetCaretContext,
-    GetChildNodesTextContent, GetFirstTextNode,
+    GetChildNodesTextContent,
     TextNodeProcessor
 } from '../Helpers'
 import {TActivationReturn} from "../Editor_Types";
@@ -25,7 +25,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     
     const SyntaxElementRefFront = useRef<HTMLElement | null>(null);
     const SyntaxElementRefRear = useRef<HTMLElement | null>(null);
-    const MainTextNodeRef = useRef<HTMLElement | null>(null);
+    const TextContentMapRef = useRef(new Map<HTMLElement | Node, boolean>())
     
     // the element tag
     const WholeElementRef = useRef<HTMLElement | null>(null);
@@ -65,7 +65,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             if (!Record.removedNodes.length) return;
             
             Record.removedNodes.forEach((Node) => {
-                if (Node === SyntaxElementRefFront.current || SyntaxElementRefRear.current || MainTextNodeRef.current) {
+                if (Node === SyntaxElementRefFront.current || SyntaxElementRefRear.current || TextContentMapRef.current.get(Node)) {
                     
                     daemonHandle.AddToOperations({
                         type: "REPLACE",
@@ -139,9 +139,26 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     useLayoutEffect(() => {
         if (WholeElementRef.current && WholeElementRef.current.childNodes) {
             daemonHandle.AddToIgnore([...WholeElementRef.current.childNodes], "any", true);
-            MainTextNodeRef.current = GetFirstTextNode(WholeElementRef.current) as HTMLElement;
         }
-        
+    });
+    
+    useLayoutEffect(() => {
+        if (WholeElementRef.current && WholeElementRef.current.childNodes.length) {
+            Array.from(WholeElementRef.current.childNodes).some((child) => {
+                if (child.nodeType === Node.ELEMENT_NODE && !(child as HTMLElement).hasAttribute("data-is-generated")) {
+                    TextContentMapRef.current.set(child as HTMLElement, true);
+                    return true;
+                }
+                
+                if (child.nodeType === Node.TEXT_NODE) {
+                    TextContentMapRef.current.set(child as HTMLElement, true);
+                    return true;
+                }
+            })
+        }
+        return () => {
+            TextContentMapRef.current.clear();
+        }
     });
     
     return React.createElement(tagName, {
