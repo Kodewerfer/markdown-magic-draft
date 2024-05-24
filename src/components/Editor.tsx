@@ -595,6 +595,14 @@ export default function Editor(
     }
     
     function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        const ActiveComponentsStack = LastActivationCache.current;
+        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
+        if (TopActiveComponent && typeof TopActiveComponent.return?.backspaceOverride === 'function') {
+            console.log("Backspace: Component Spec Override");
+            return TopActiveComponent.return?.backspaceOverride(ev);
+        }
+        
         // basically a reverse of the "delete", but with key differences on "normal join line"
         let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
@@ -679,12 +687,9 @@ export default function Editor(
             return;
         }
         
-        const ActiveComponentsStack = LastActivationCache.current;
-        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
-        
         // Run the component spec handler if present
         if (TopActiveComponent && typeof TopActiveComponent.return?.backspaceJoining === 'function') {
-            console.log("Backspace: Component Spec Logic");
+            console.log("Backspace: Component line joining");
             if (TopActiveComponent.return?.backspaceJoining(ev) !== true)
                 return;
         }
@@ -733,6 +738,15 @@ export default function Editor(
     }
     
     function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+        const ActiveComponentsStack = LastActivationCache.current;
+        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
+        if (TopActiveComponent && typeof TopActiveComponent.return?.delOverride === 'function') {
+            console.log("Del: Component Spec Override");
+            
+            return TopActiveComponent.return.delOverride(ev);
+        }
+        
         
         let {RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         
@@ -821,12 +835,9 @@ export default function Editor(
             return;
         }
         
-        const ActiveComponentsStack = LastActivationCache.current;
-        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
-        
         // Run the component spec handler if present
         if (TopActiveComponent && typeof TopActiveComponent.return?.delJoining === 'function') {
-            console.log("Del: Component Spec Deleting");
+            console.log("Del: Component Spec line joining");
             
             if (TopActiveComponent.return.delJoining(ev) !== true)
                 return
@@ -993,7 +1004,7 @@ function CommonRenderer(props: any) {
     const {children, tagName, ParentAction, ...otherProps} = props;
     
     return React.createElement(tagName, otherProps, children);
-};
+}
 
 // Editor Spec helpers
 
