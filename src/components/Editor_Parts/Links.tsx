@@ -1,6 +1,16 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {GetCaretContext, TextNodeProcessor} from "../Helpers";
+import {
+    GetAllSurroundingText,
+    GetCaretContext,
+    TextNodeProcessor
+} from "../Helpers";
+import {TActivationReturn} from "../Editor_Types";
+
+/**
+ *  In current implementation, the Link component is a special kind of "plainSyntax" component which are in-line elements in nature
+ *  Many of the functionalities are the same, but since link have some specialities and may undergo changes, the code are kept seperated.
+ * */
 
 export default function Links({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -9,7 +19,7 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     [key: string]: any; // for otherProps
 }) {
     
-    const [SetActivation] = useState<(state: boolean) => void>(() => {
+    const [SetActivation] = useState<(state: boolean) => TActivationReturn>(() => {
         return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
     
@@ -17,90 +27,166 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     
     // the element tag
     const LinkElementRef = useRef<HTMLElement | null>(null);
+    const LinkAddrRef = useRef<HTMLElement | null>(null);
+    const LinkedContentMapRef = useRef(new Map<HTMLElement | Node, boolean>())
     
-    function ComponentActivation(state: boolean) {
+    const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    function ComponentActivation(state: boolean): TActivationReturn {
+        
+        const ComponentReturn = {
+            "enter": HandleEnter
+        }
+        
         // send whatever within the text node before re-rendering to the processor
         if (!state) {
-            if (LinkElementRef.current && LinkElementRef.current.firstChild) {
-                const textNodeResult = TextNodeProcessor(LinkElementRef.current.firstChild);
-                if (textNodeResult) {
-                    daemonHandle.AddToOperations({
-                        type: "REPLACE",
-                        targetNode: LinkElementRef.current,
-                        newNode: textNodeResult[0] //first result node only
-                    });
-                    daemonHandle.SyncNow();
-                }
+            
+            if (LinkElementRef.current) {
+                
+                ElementOBRef.current?.takeRecords();
+                ElementOBRef.current?.disconnect();
+                ElementOBRef.current = null;
+                
+                const TextContent = CompileAllTextNode();
+                UpdateComponentAndSync(TextContent, LinkElementRef.current);
+                
             }
         }
         if (state) {
             daemonHandle.SyncNow();
+            
+            if (typeof MutationObserver) {
+                ElementOBRef.current = new MutationObserver(ObserverHandler);
+                LinkElementRef.current && ElementOBRef.current?.observe(LinkElementRef.current, {
+                    childList: true,
+                    subtree: true
+                });
+            }
         }
         setIsEditing(state);
         
-        return {
-            "del": (ev: Event) => {
-                //Del line merge
-                return HandleLineJoining();
-            },
-            "backspace": (ev: Event) => {
-                //Del line merge
-                
-                return HandleLineJoining();
-            },
-            "enter": (ev: Event) => {
-                return HandleEnter();
-            }
-        }
+        return ComponentReturn;
     }
     
-    // Show when actively editing
-    const [GetEditingStateChild] = useState(() => {
-        return () => {
-            const textContent = LinkElementRef.current?.firstChild?.textContent;
-            const LinkText: string = String(textContent ?? " ");
-            const LinkTarget: string = otherProps['href'] || '';
-            const EditingStateContent = `[${LinkText}](${LinkTarget})`;
+    function ObserverHandler(mutationList: MutationRecord[]) {
+        mutationList.forEach((Record) => {
+            if (!Record.removedNodes.length) return;
             
-            return textContent === EditingStateContent ? textContent : EditingStateContent;
-        };
-    });
-    
-    function HandleLineJoining() {
-        // This is a somewhat band-aid solution aim to solve incorrect text content after joining line with del or backspace
-        // TODO:
-        if (!LinkElementRef.current || !LinkElementRef.current.firstChild) return false;
-        if (typeof children !== 'string') return false;
-        
-        LinkElementRef.current.firstChild.textContent = children;
-        
-        return true;
+            Record.removedNodes.forEach((Node) => {
+                if (Node === LinkAddrRef.current || LinkedContentMapRef.current.get(Node)) {
+                    
+                    const TextContent = CompileAllTextNode();
+                    UpdateComponentAndSync(TextContent, LinkElementRef.current);
+                }
+            })
+        })
     }
     
-    function HandleEnter() {
-        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
-        if (!CurrentSelection || !CurrentAnchorNode) return;
+    function CompileAllTextNode() {
+        if (!LinkElementRef.current) return;
+        let elementWalker = document.createTreeWalker(LinkElementRef.current, NodeFilter.SHOW_TEXT);
         
-        const range = CurrentSelection.getRangeAt(0);
+        let node;
+        let textContent = '';
+        while (node = elementWalker.nextNode()) {
+            textContent += node.textContent;
+        }
         
-        if (PrecedingText.trim() === '' && range.startOffset === 0) return true;
-        if (RemainingText.trim() === '') return true;
-        
-        //TODO: Turn off activation state
+        return textContent.trim();
     }
     
-    // The text node will be completely ignored, additional operation is passed to the Daemon in SetActivation
+    function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
+        if (!TextNodeContent || !ParentElement) return;
+        const textNodeResult = TextNodeProcessor(TextNodeContent);
+        
+        if (!textNodeResult) return;
+        
+        let documentFragment = document.createDocumentFragment();
+        textNodeResult?.forEach(item => documentFragment.appendChild(item));
+        
+        daemonHandle.AddToOperations({
+            type: "REPLACE",
+            targetNode: ParentElement,
+            newNode: documentFragment //first result node only
+        });
+        return daemonHandle.SyncNow();
+    }
+    
+    function HandleEnter(ev: Event) {
+        ev.preventDefault();
+        
+        const {CurrentSelection} = GetCaretContext();
+        
+        let bShouldBreakLine = true;
+        
+        const TextContent = CompileAllTextNode();
+        
+        const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, LinkElementRef.current!);
+        
+        if (precedingText.trim() === '')
+            daemonHandle.SetFutureCaret("PrevElement");
+        else if (followingText.trim() !== '')
+            bShouldBreakLine = false;
+        else
+            daemonHandle.SetFutureCaret("NextElement");
+        
+        UpdateComponentAndSync(TextContent, LinkElementRef.current);
+        
+        return Promise.resolve(bShouldBreakLine);
+    }
+    
+    // Like other in-line components, the component's node are exempt from ob, all updates are handled via addops in ComponentActivation
     useLayoutEffect(() => {
         
         if (typeof children === 'string') children = children.trim();
         
         if (LinkElementRef.current && LinkElementRef.current?.firstChild)
-            daemonHandle.AddToIgnore(LinkElementRef.current?.firstChild, "any");
+            daemonHandle.AddToIgnore([...LinkElementRef.current.childNodes], "any", true);
+    });
+    
+    // effectively add all "children" to LinkedContentMapRef.current
+    // Link can wrap other in-line elements
+    useLayoutEffect(() => {
+        if (LinkElementRef.current && LinkElementRef.current.childNodes.length) {
+            Array.from(LinkElementRef.current.childNodes).some((child) => {
+                if (child.nodeType === Node.ELEMENT_NODE && !(child as HTMLElement).hasAttribute("data-is-generated")) {
+                    LinkedContentMapRef.current.set(child as HTMLElement, true);
+                    return true;
+                }
+                
+                if (child.nodeType === Node.TEXT_NODE) {
+                    LinkedContentMapRef.current.set(child as HTMLElement, true);
+                    return true;
+                }
+            })
+        }
+        return () => {
+            LinkedContentMapRef.current.clear();
+        }
     });
     
     return React.createElement(tagName, {
         ...otherProps,
         ref: LinkElementRef,
-    }, isEditing ? GetEditingStateChild() : " " + children + " ");
+    }, [
+        <span className={`Text-Normal ${isEditing ? "" : 'Hide-It'}`}
+              data-is-generated={true}
+              key={'SyntaxFrontBracket'}>
+             {'\u00A0'}
+            <span contentEditable={false}>[</span>
+        </span>,
+        // link text
+        ...(Array.isArray(children) ? children : [children]),
+        
+        <span className={`Text-Normal ${isEditing ? "" : 'Hide-It'}`}
+              data-is-generated={true} contentEditable={false}
+              key={'SyntaxRearBracket'}>{']'}</span>,
+        // the link address
+        <span className={`Text-Normal ${isEditing ? "" : 'Hide-It'}`}
+              data-is-generated={true}
+              key={'SyntaxLinkAddr'}>
+            <span ref={LinkAddrRef}>{`(${otherProps['href'] || ''})\u00A0`}</span>
+        </span>,
+    ]);
     
 }
