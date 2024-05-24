@@ -2,6 +2,10 @@
     @apply invisible;
 }
 
+.Whole-Line {
+    @apply block;
+}
+
 .Hide-It {
     @apply hidden;
 }
