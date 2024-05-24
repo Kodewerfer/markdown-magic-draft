@@ -1,5 +1,5 @@
-import React, {useEffect, Children, useRef, useState, useLayoutEffect} from "react";
-import {TDaemonReturn, TSyncOperation} from "../../hooks/useEditorHTMLDaemon";
+import React, {useEffect, useRef, useState} from "react";
+import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
     GetChildNodesAsHTMLString, GetLastTextNode, GetNextSiblings,
@@ -61,7 +61,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         setIsEditing(state);
         return {
             "enter": EnterKeyHandler,
-            "del": DelKeyHandler,
+            "delJoining": DelKeyHandler,
         }
     }
     

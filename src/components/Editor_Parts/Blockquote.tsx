@@ -61,7 +61,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         setIsEditing(state);
         return {
             "enter": EnterKeyHandler,
-            "del": DelKeyHandler,
+            "delJoining": DelKeyHandler,
         }
     }
     

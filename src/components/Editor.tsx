@@ -683,9 +683,9 @@ export default function Editor(
         const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         
         // Run the component spec handler if present
-        if (TopActiveComponent && typeof TopActiveComponent.return?.backspace === 'function') {
+        if (TopActiveComponent && typeof TopActiveComponent.return?.backspaceJoining === 'function') {
             console.log("Backspace: Component Spec Logic");
-            if (TopActiveComponent.return?.backspace(ev) !== true)
+            if (TopActiveComponent.return?.backspaceJoining(ev) !== true)
                 return;
         }
         
@@ -737,8 +737,6 @@ export default function Editor(
         let {RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         
         if (!CurrentAnchorNode) return;
-        
-        console.log(CurrentAnchorNode);
         
         let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
@@ -827,10 +825,10 @@ export default function Editor(
         const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         
         // Run the component spec handler if present
-        if (TopActiveComponent && typeof TopActiveComponent.return?.del === 'function') {
+        if (TopActiveComponent && typeof TopActiveComponent.return?.delJoining === 'function') {
             console.log("Del: Component Spec Deleting");
             
-            if (TopActiveComponent.return.del(ev) !== true)
+            if (TopActiveComponent.return.delJoining(ev) !== true)
                 return
         }
         
