@@ -1386,6 +1386,14 @@ export default function useEditorHTMLDaemon(
             if (!bIncludeAllChild && !Array.isArray(Element))
                 return DaemonState.IgnoreMap.set(Element, TriggerType);
             
+            if (!bIncludeAllChild && Array.isArray(Element)) {
+                Element.slice().forEach(item => {
+                    DaemonState.IgnoreMap.set(item, TriggerType);
+                })
+                
+                return;
+            }
+            
             // Non-recursion func that add all child nodes to ignore too
             let queue;
             if (Array.isArray(Element)) {
