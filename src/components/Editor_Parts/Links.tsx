@@ -40,12 +40,11 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
         
         // send whatever within the text node before re-rendering to the processor
         if (!state) {
+            ElementOBRef.current?.takeRecords();
+            ElementOBRef.current?.disconnect();
+            ElementOBRef.current = null;
             
             if (LinkElementRef.current) {
-                
-                ElementOBRef.current?.takeRecords();
-                ElementOBRef.current?.disconnect();
-                ElementOBRef.current = null;
                 
                 const TextContent = CompileAllTextNode();
                 UpdateComponentAndSync(TextContent, LinkElementRef.current);
@@ -188,5 +187,4 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
             <span ref={LinkAddrRef}>{`(${otherProps['href'] || ''})\u00A0`}</span>
         </span>,
     ]);
-    
 }
