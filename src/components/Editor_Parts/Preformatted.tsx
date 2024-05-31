@@ -3,11 +3,21 @@
  * for a code element to be a "CodeItem", it must be under a pre element and have the correct attrs
  */
 
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {ReactNode, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
-import {GetCaretContext, GetChildNodesAsHTMLString, GetChildNodesTextContent, TextNodeProcessor,} from "../Helpers";
+import {
+    FindWrappingElementWithinContainer,
+    GetCaretContext,
+    GetChildNodesAsHTMLString,
+    GetChildNodesTextContent, GetNextSiblings, GetRealChildren,
+    MoveCaretIntoNode, MoveCaretToNode,
+    TextNodeProcessor,
+} from "../Helpers";
 import dedent from "dedent";
 import {TActivationReturn} from "../Editor_Types";
+
+type TMoveCaretDirection = "pre" | "aft";
+type TAddNewLineDirection = TMoveCaretDirection;
 
 //
 export function Preblock({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
@@ -19,15 +29,46 @@ export function Preblock({children, tagName, parentSetActivation, daemonHandle, 
 }) {
     const ContainerRef = useRef<HTMLElement | null>(null);
     
+    function MoveCaret(direction: TMoveCaretDirection) {
+        console.log("Preformatted: Moving caret", direction);
+        if (!ContainerRef.current) return;
+        switch (direction) {
+            case "pre":
+                MoveCaretIntoNode(ContainerRef.current.previousElementSibling);
+                break;
+            case "aft":
+                MoveCaretIntoNode(ContainerRef.current.nextElementSibling);
+                break;
+        }
+    }
+    
+    function AddEmptyLine(direction: TAddNewLineDirection) {
+        if (!ContainerRef.current) return;
+        const lineBreakElement: HTMLBRElement = document.createElement("br");
+        const NewLine = document.createElement("p");
+        NewLine.appendChild(lineBreakElement);
+        daemonHandle.AddToOperations({
+            type: "ADD",
+            newNode: NewLine,
+            siblingNode: direction === "pre" ? ContainerRef.current : ContainerRef.current.nextSibling,
+            parentXP: "//body"
+        });
+        
+        daemonHandle.SetFutureCaret("NextLine");
+        daemonHandle.SyncNow();
+    }
+    
     return React.createElement(tagName, {
         ref: ContainerRef,
         ...otherProps
-    }, children);
+    }, cloneChildrenWithProps(children, {"parentMoveCaret": MoveCaret, "parentAddLine": AddEmptyLine}));
 }
 
 // Only handle code blocks, inline codes are PlainSyntax component
-export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
+export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
+    parentMoveCaret: (direction: TMoveCaretDirection) => void;
+    parentAddLine: (direction: TAddNewLineDirection) => void;
     tagName: string;
     isHeader: boolean;
     headerSyntax: string;
@@ -40,6 +81,10 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     const [isEditing, setIsEditing] = useState(false);
     
     const CodeElementRef = useRef<HTMLElement | null>(null);
+    
+    
+    const SyntaxBlockFront = useRef<HTMLElement | null>(null);
+    const SyntaxBlockRear = useRef<HTMLElement | null>(null);
     const SyntaxFillerFront = useRef<HTMLElement | null>(null);
     const SyntaxFillerRear = useRef<HTMLElement | null>(null);
     
@@ -92,7 +137,10 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
             if (!Record.removedNodes.length) return;
             
             Record.removedNodes.forEach((Node) => {
-                if (TextBlocksMapRef.current.get(Node) || Node === SyntaxFillerFront.current || Node === SyntaxFillerRear.current) {
+                if (TextBlocksMapRef.current.get(Node)
+                    || Node === SyntaxFillerFront.current || Node === SyntaxFillerRear.current
+                    || Node === SyntaxBlockFront.current || Node === SyntaxBlockRear.current
+                ) {
                     
                     if (CodeElementRef.current && CodeElementRef.current.textContent
                         && CodeElementRef.current.parentNode && CodeElementRef.current.parentNode.nodeName.toLowerCase() === 'pre') {
@@ -151,30 +199,110 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
     
     function BackspaceHandler(ev: Event) {
         ev.stopImmediatePropagation();
+        
+        let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        
+        const PrevSibling = GetPrevValidSibling(CurrentAnchorNode);
+        
+        // when caret at the very beginning of the front syntax span, will remove the pre if unhandled.
+        if (!GetPrevValidSibling(CurrentAnchorNode) && PrecedingText === '') {
+            ev.preventDefault();
+            parentMoveCaret("pre");
+        }
+        
+        // Likely backspacing in the rear syntax block
+        if (PrevSibling && TextBlocksMapRef.current.get(PrevSibling) && CurrentSelection?.isCollapsed) {
+            ev.preventDefault();
+            let offset = PrevSibling.textContent ? PrevSibling.textContent.length - 1 : 0;
+            MoveCaretToNode(PrevSibling, offset);
+        }
     }
     
     function DelKeyHandler(ev: Event) {
         ev.stopImmediatePropagation();
+        
+        let {TextAfterSelection, RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        
+        if (!CurrentAnchorNode || !CodeElementRef.current || !CurrentSelection) return;
+        
+        const elementWithin = FindWrappingElementWithinContainer(CurrentAnchorNode, CodeElementRef.current);
+        if (!elementWithin) return; //type narrowing, very very unlikely
+        
+        const followingElements = GetNextSiblings(CurrentAnchorNode);
+        
+        // Handling trailing delete, in syntax block
+        const bCaretInSyntaxBlocks = elementWithin === SyntaxBlockRear.current || elementWithin === SyntaxBlockFront.current;
+        
+        if (bCaretInSyntaxBlocks) {
+            
+            const blockFollowingElements = GetNextSiblings(elementWithin);
+            
+            // caret on the syntax block itself, likely due to caret on the rear block that doesn't come with a text node
+            if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE && (CurrentSelection.anchorOffset && CurrentSelection?.anchorOffset > 0)) {
+                ev.preventDefault();
+                parentMoveCaret("aft");
+                return;
+            }
+            // likely when editing the language for code element, or user added extra elements
+            if (TextAfterSelection === '') {
+                ev.preventDefault();
+                if (blockFollowingElements.length)
+                    MoveCaretToNode(blockFollowingElements[0]);
+                else
+                    parentMoveCaret("aft");
+                return;
+            }
+        }
+        
     }
     
     function EnterKeyHandler(ev: Event) {
         
         ev.stopPropagation();
         
-        let {
-            TextAfterSelection,
-            CurrentSelection,
-            CurrentAnchorNode
-        } = GetCaretContext();
+        let {TextAfterSelection, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        if (!CurrentAnchorNode || !CodeElementRef.current || !CurrentSelection) return;
         
-        if (!CurrentAnchorNode || !CurrentSelection) return;
+        const elementWithin = FindWrappingElementWithinContainer(CurrentAnchorNode, CodeElementRef.current);
+        if (!elementWithin) return; //type narrowing, very very unlikely
         
-        // Add a new line after, use generic logic from editor
-        if (TextAfterSelection?.trim() === "" || !TextAfterSelection)
-            return false;
+        const bCaretInSyntaxBlocks = elementWithin === SyntaxBlockRear.current || elementWithin === SyntaxBlockFront.current;
         
+        // similar to del, moving caret but also add new line as pre element level sibling
+        if (bCaretInSyntaxBlocks) {
+            ev.preventDefault();
+            const blockFollowingElements = GetNextSiblings(elementWithin);
+            
+            // caret on the syntax block itself, likely due to caret on the rear block that doesn't come with a text node
+            if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE && (CurrentSelection.anchorOffset && CurrentSelection?.anchorOffset > 0)) {
+                const blockChildren = GetRealChildren(elementWithin);
+                if (blockChildren.length > 1)
+                    MoveCaretToNode(blockChildren[1]);
+                else
+                    parentAddLine("aft");
+                return;
+            }
+            
+            // caret is on the beginning of the syntax filler
+            if (CurrentAnchorNode === elementWithin && CurrentSelection.anchorOffset === 0) {
+                if (!elementWithin.previousSibling || elementWithin.previousSibling.textContent === "\n")
+                    parentAddLine("pre");
+                else
+                    MoveCaretToNode(elementWithin.previousSibling)
+            }
+            
+            // likely when editing the language for code element, or user added extra elements
+            if (TextAfterSelection === '') {
+                if (blockFollowingElements.length)
+                    MoveCaretToNode(blockFollowingElements[0]);
+                else
+                    parentAddLine("aft");
+                return;
+            }
+            
+            return;
+        }
         
-        return;
     }
     
     // keep track of code's language
@@ -206,6 +334,12 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
             CodeElementRef.current.contentEditable = "plaintext-only";
             daemonHandle.AddToIgnore(CodeElementRef.current, "any");
         }
+        if (SyntaxBlockFront.current) {
+            SyntaxBlockFront.current.contentEditable = "true";
+        }
+        if (SyntaxBlockRear.current) {
+            SyntaxBlockRear.current.contentEditable = "true";
+        }
         // Add all child element to ignore, add all text nodes to TextBlocksMapRef
         if (CodeElementRef.current?.childNodes) {
             daemonHandle.AddToIgnore(Array.from(CodeElementRef.current.childNodes), "any", true);
@@ -226,21 +360,47 @@ export function CodeItem({children, tagName, daemonHandle, ...otherProps}: {
         ...otherProps,
         ref: CodeElementRef,
     }, [
-        <span className={`Text-Normal Whole-Line ${isEditing ? "" : 'Hide-It'}`}
-              data-is-generated={true}
-              key={'SyntaxFront'}>
-            <span contentEditable={false} ref={SyntaxFillerFront}>{syntaxData}</span>
+        <section className={`Text-Normal Whole-Line ${isEditing ? "" : 'Hide-It'}`}
+                 ref={SyntaxBlockFront}
+                 data-is-generated={true}
+                 key={'SyntaxFront'}>
+            <span data-is-generated={true} contentEditable={false} ref={SyntaxFillerFront}>{syntaxData}</span>
             {CodeLangTextRef.current === "" ? '\u00A0' : CodeLangTextRef.current}
             {'\n'}
-        </span>,
+        </section>,
         
         ...(Array.isArray(children) ? children : [children]),
         
-        <span className={`Text-Normal Whole-Line ${isEditing ? "" : 'Hide-It'}`}
-              data-is-generated={true}
-              key={'SyntaxRear'}>
-            <span contentEditable={false} ref={SyntaxFillerRear}>{syntaxData}</span>
-        </span>,
+        <section className={`Text-Normal Whole-Line ${isEditing ? "" : 'Hide-It'}`}
+                 ref={SyntaxBlockRear}
+                 data-is-generated={true}
+                 key={'SyntaxRear'}>
+            <span data-is-generated={true} contentEditable={false} ref={SyntaxFillerRear}>{syntaxData}</span>
+        </section>,
     ]);
     
+}
+
+// Component specific, add more props to children
+function cloneChildrenWithProps(children: ReactNode, newProps?: object) {
+    return React.Children.map(children, (child: ReactNode | null) => {
+        // If child isn't a valid React Element or null, return it without any modification
+        if (!React.isValidElement(child)) return child;
+        
+        return React.cloneElement(child, newProps);
+    });
+}
+
+// Used in backspace handling
+function GetPrevValidSibling(node: Node): Node | null {
+    let current: Node | null = node;
+    let sibling = null;
+    while (current) {
+        sibling = current.previousSibling;
+        if (!sibling) break;
+        if (sibling.nodeType === Node.TEXT_NODE && sibling.textContent !== '\n') break;
+        if (sibling.nodeType === Node.ELEMENT_NODE) break;
+        current = sibling;
+    }
+    return sibling;
 }
