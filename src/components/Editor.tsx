@@ -462,7 +462,6 @@ export default function Editor(
             DaemonHandle.SyncNow();
             return;
         }
-        
         let NearestContainer: HTMLElement | null = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!);
         if (!NearestContainer) return; //unlikely
         
@@ -480,8 +479,15 @@ export default function Editor(
         let Current_ElementNode = FindWrappingElementWithinContainer(CurrentAnchorNode, NearestContainer);
         if (!Current_ElementNode) return; //unlikly
         
-        // if landed on a non-editble content, do nothing
-        if (Current_ElementNode.contentEditable === 'false') return;
+        // if landed on a non-editble content, move caret to maintain the smoothness
+        if (Current_ElementNode.contentEditable === 'false') {
+            const followingElements = GetNextSiblings(Current_ElementNode);
+            const moveToNode = followingElements.find(element => {
+                return (element as HTMLElement).contentEditable !== 'false'
+            })
+            MoveCaretToNode(moveToNode);
+            return;
+        }
         
         // Breaking in an empty line
         if (bEmptyLine && CurrentAnchorNode.nodeName.toLowerCase() === 'br') {
@@ -641,8 +647,16 @@ export default function Editor(
         // when there is still content that could be deleted, but caret lands on the wrong element
         // FIXME: may be buggy, need more testing
         if (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling !== previousElementSibling) {
-            console.log("Backspace: Invalid Caret, moving Caret to ", CurrentAnchorNode);
-            MoveCaretIntoNode(CurrentAnchorNode);
+            if (previousElementSibling) {
+                console.log("Backspace: Invalid Caret, moving Caret to ", previousElementSibling);
+                MoveCaretToLastEOL(window.getSelection(), EditorElementRef.current!);
+                
+            } else {
+                
+                console.log("Backspace: Invalid Caret, moving Caret to ", CurrentAnchorNode);
+                MoveCaretIntoNode(CurrentAnchorNode);
+            }
+            
             return
         }
         
