@@ -985,6 +985,7 @@ export default function useEditorHTMLDaemon(
         // Ensure that the caret will land on an editable node
         while ((AnchorNode as HTMLElement).contentEditable === 'false' || (AnchorNode!.parentNode && (AnchorNode!.parentNode as HTMLElement).contentEditable === 'false')) {
             AnchorNode = NodeWalker.nextNode();
+            if (!AnchorNode) break;
         }
         
         if (!AnchorNode) return;
