@@ -985,7 +985,10 @@ export default function useEditorHTMLDaemon(
         // Ensure that the caret will land on an editable node
         while ((AnchorNode as HTMLElement).contentEditable === 'false' || (AnchorNode!.parentNode && (AnchorNode!.parentNode as HTMLElement).contentEditable === 'false')) {
             AnchorNode = NodeWalker.nextNode();
-            if (!AnchorNode) break;
+            if (!AnchorNode) {
+                AnchorNode = NodeWalker.previousNode();
+                break
+            }
         }
         
         if (!AnchorNode) return;
@@ -1028,6 +1031,10 @@ export default function useEditorHTMLDaemon(
          *       this works regardless if it was an expanded selection. But on expanded selection, the selection will extend to the new line and may cause problems especially with tokens
          */
         const OverrideToken = DaemonState.CaretOverrideTokens;
+        const PreTokenAnchor = AnchorNode;
+        const PreTokenStartingOffset = StartingOffset;
+        const PreTokenFocusNode = FocusNode;
+        const PreTokenEndOffset = EndOffset;
         if (OverrideToken.length) {
             ({
                 AnchorNode, StartingOffset, FocusNode, EndOffset
@@ -1046,7 +1053,12 @@ export default function useEditorHTMLDaemon(
                     EndOffset: EndOffset
                 });
         }
-        if (!AnchorNode) return;
+        if (!AnchorNode) {
+            AnchorNode = PreTokenAnchor;
+            StartingOffset = PreTokenStartingOffset;
+            FocusNode = PreTokenFocusNode;
+            EndOffset = PreTokenEndOffset;
+        }
         
         if (AnchorNode.textContent && AnchorNode.textContent.length < StartingOffset)
             StartingOffset = AnchorNode.textContent.length;
