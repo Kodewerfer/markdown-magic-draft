@@ -146,6 +146,17 @@ export function GetNextSiblings(node: Node): Node[] {
     return siblings;
 }
 
+export function GetRealChildren(node: Node | HTMLElement) {
+    let RealChildren: Node[] = [];
+    if (!node || !node.childNodes.length) return RealChildren;
+    
+    RealChildren = Array.from(node.childNodes).filter(item => {
+        return item.textContent !== '\n';
+    })
+    
+    return RealChildren;
+}
+
 /**
  * Retrieves the context of the caret within the current selection.
  *
