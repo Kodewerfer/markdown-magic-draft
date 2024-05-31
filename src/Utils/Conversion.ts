@@ -20,6 +20,7 @@ import {AddSyntaxInAttribute} from "../UnifiedPlugins/AddSyntaxInAttribute";
 import {CleanupExtraTags} from "../UnifiedPlugins/CleanupExtraTags";
 import {CleanupEmptyElements} from "../UnifiedPlugins/CleanupEmptyElements";
 import {ListElementHandler} from "../UnifiedPlugins/ListElementHandler";
+import {EmptyCodeHandler} from "../UnifiedPlugins/EmptyCodeHandler";
 
 function MDProcess() {
     return unified()
@@ -85,6 +86,7 @@ export function HTMLCleanUP(HTMLContent: Compatible, componentOptions?: Record<s
         .use(CleanupExtraTags)
         .use(CleanupEmptyElements)
         .use(ListElementHandler)
+        .use(EmptyCodeHandler)
         .use(rehypeStringify)
         .processSync(HTMLContent);
 }
