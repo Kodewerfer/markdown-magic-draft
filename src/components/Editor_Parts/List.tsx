@@ -2,7 +2,7 @@ import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
 import {
     GetCaretContext,
-    GetChildNodesAsHTMLString, GetLastTextNode, GetNextSiblings,
+    GetChildNodesAsHTMLString, GetLastTextNode, GetNextSiblings, MoveCaretIntoNode,
     MoveCaretToNode
 } from "../Helpers";
 import {TActivationReturn} from "../Editor_Types";
@@ -112,9 +112,18 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         
         if (!CurrentListItemRef.current) return;
         
-        // Not having one more list item following it
-        const nextElementSibling = CurrentListItemRef.current?.nextElementSibling;
-        if (nextElementSibling?.tagName.toLowerCase() !== 'li') return;
+        // Check for next element sibling, if last, check for parent level sibling
+        let nextElementSibling = CurrentListItemRef.current?.nextElementSibling;
+        if (!nextElementSibling && CurrentListItemRef.current.parentNode) {
+            nextElementSibling = (CurrentListItemRef.current.parentNode as HTMLElement).nextElementSibling;
+        }
+        if (!nextElementSibling) return;
+        
+        // Not a li, move caret only
+        if (nextElementSibling.tagName.toLowerCase() !== 'li') {
+            MoveCaretIntoNode(nextElementSibling);
+            return;
+        }
         
         // End of line, join with the next list item
         let MergedListItem = CurrentListItemRef.current.cloneNode(true);
