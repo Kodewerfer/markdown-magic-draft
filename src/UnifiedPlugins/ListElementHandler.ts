@@ -13,6 +13,14 @@ function ListElementTransformer(ast: object) {
         
         const NodeProps = node.properties || (node.properties = {});
         
+        // Remove Empty
+        if (Array.isArray(node.children)) {
+            const bHasSubElements = node.children.some((child: any) => {
+                return String(child.type).toLowerCase() === 'element';
+            })
+            if (!bHasSubElements) return remove(node);
+        }
+        
         // No surrounding Ul element
         // Add data-list-merge-valid attr to indicate this is an "OG" ul that can be merged
         const NextSibling: any = findAfter(parent, node, (node: any) => node.value !== '\n'); // filters line break chars out with test funcs
