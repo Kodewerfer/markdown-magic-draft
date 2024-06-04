@@ -21,6 +21,7 @@ import {CleanupExtraTags} from "../UnifiedPlugins/CleanupExtraTags";
 import {CleanupEmptyElements} from "../UnifiedPlugins/CleanupEmptyElements";
 import {ListElementHandler} from "../UnifiedPlugins/ListElementHandler";
 import {EmptyCodeHandler} from "../UnifiedPlugins/EmptyCodeHandler";
+import {CleanUpExtraText} from "../UnifiedPlugins/CleanupExtraText";
 
 function MDProcess() {
     return unified()
@@ -53,6 +54,7 @@ export async function HTML2React(HTMLContent: Compatible, componentOptions?: Rec
     return await unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
+        .use(CleanUpExtraText)
         .use(CleanupExtraTags)
         .use(CleanupEmptyElements)
         .use(AddSyntaxInAttribute)
@@ -68,6 +70,7 @@ export function HTML2ReactSnyc(HTMLContent: Compatible, componentOptions?: Recor
     return unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
+        .use(CleanUpExtraText)
         .use(CleanupExtraTags)
         .use(CleanupEmptyElements)
         .use(AddSyntaxInAttribute)
@@ -83,6 +86,7 @@ export function HTMLCleanUP(HTMLContent: Compatible, componentOptions?: Record<s
     return unified()
         .use(rehypeParse, {fragment: true})
         .use(rehypeSanitize, GetSanitizeSchema()) //this plug remove some attrs/aspects that may be important.
+        .use(CleanUpExtraText)
         .use(CleanupExtraTags)
         .use(CleanupEmptyElements)
         .use(ListElementHandler)
