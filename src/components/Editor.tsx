@@ -320,7 +320,7 @@ export default function Editor(
         // TODO: could cause non-responsiveness, need more testing
         if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || CurrentAnchorNode.textContent === null) return;
         
-        // Prep the symbol
+        // Prep the symbol,"pair" for parentheses or brackets
         let KeyboardInputPair = AutoCompletePairsMap.get(KeyboardInput);
         if (!KeyboardInputPair) KeyboardInputPair = KeyboardInput;
         
@@ -537,6 +537,7 @@ export default function Editor(
         // Breaking anywhere in the middle of the line
         if (RemainingText !== '' || FollowingNodes.length > 1 || (FollowingNodes.length === 1 && FollowingNodes[0].textContent !== '\n')) {
             console.log("Breaking - Mid line");
+            
             // Exception, when caret is on the element tag itself, and didn't fit the previous cases (happens on PlainSyntax primarily)
             if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE) {
                 console.warn("Enter Key Exception, move caret to", NearestContainer);
@@ -633,10 +634,24 @@ export default function Editor(
         const bPrecedingValid = PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n');
         const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
         
+        
         // Run the normal key press on in-line editing
         if (bPrecedingValid && bAnchorIsTextNode) return;
         if (CurrentSelection && !CurrentSelection.isCollapsed) return;
         
+        // Handle empty container type
+        if (CurrentAnchorNode.childNodes.length) {
+            const bHaveOtherElement = Array.from(CurrentAnchorNode.childNodes).some((childNode: any) => {
+                if (childNode.nodeType === Node.TEXT_NODE && childNode.textContent !== '\n')
+                    return true;
+                if (childNode.nodeType === Node.ELEMENT_NODE && (!(childNode as HTMLElement).hasAttribute("data-is-generated") && (childNode as HTMLElement).contentEditable !== 'false'))
+                    return true;
+                
+                return false;
+            });
+            if (!bHaveOtherElement) console.log("Backspace: container empty, removing");
+            if (!bHaveOtherElement) return;
+        }
         // line joining
         ev.preventDefault();
         ev.stopPropagation();
@@ -647,6 +662,7 @@ export default function Editor(
         // when there is still content that could be deleted, but caret lands on the wrong element
         // FIXME: may be buggy, need more testing
         if (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling !== previousElementSibling) {
+            // console.log(CurrentAnchorNode.previousSibling, NearestContainer)
             if (previousElementSibling) {
                 console.log("Backspace: Invalid Caret, moving Caret to ", previousElementSibling);
                 MoveCaretToLastEOL(window.getSelection(), EditorElementRef.current!);
@@ -776,6 +792,20 @@ export default function Editor(
         // Expanded selection, use browser defualt logic
         if (CurrentSelection && !CurrentSelection.isCollapsed) return;
         if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;   // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
+        
+        // Handle empty container type
+        if (CurrentAnchorNode.childNodes.length) {
+            const bHaveOtherElement = Array.from(CurrentAnchorNode.childNodes).some((childNode: any) => {
+                if (childNode.nodeType === Node.TEXT_NODE && childNode.textContent !== '\n')
+                    return true;
+                if (childNode.nodeType === Node.ELEMENT_NODE && (!(childNode as HTMLElement).hasAttribute("data-is-generated") && (childNode as HTMLElement).contentEditable !== 'false'))
+                    return true;
+                
+                return false;
+            });
+            if (!bHaveOtherElement) console.log("Del: container empty, removing");
+            if (!bHaveOtherElement) return;
+        }
         
         // line joining
         ev.preventDefault();
