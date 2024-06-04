@@ -141,7 +141,6 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
                     || Node === SyntaxFillerFront.current || Node === SyntaxFillerRear.current
                     || Node === SyntaxBlockFront.current || Node === SyntaxBlockRear.current
                 ) {
-                    
                     if (CodeElementRef.current && CodeElementRef.current.textContent
                         && CodeElementRef.current.parentNode && CodeElementRef.current.parentNode.nodeName.toLowerCase() === 'pre') {
                         
@@ -163,7 +162,6 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         while (node = elementWalker.nextNode()) {
             textContent += node.textContent;
         }
-        
         return textContent.trim();
     }
     
@@ -176,7 +174,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         // NOTE: converter's quirk, element will still be converted even if the ending half of the syntax is missing
         // NOTE: due to the particularity of the pre element(can contain syntax that should be converted to element),
         // only send to convert if only the result will still be a pre
-        if (NewCodeContent.startsWith(syntaxData) && NewCodeContent.endsWith(syntaxData)) {
+        if (NewCodeContent.startsWith(syntaxData) && NewCodeContent.endsWith(syntaxData) && NewCodeContent !== "```") {
             
             const textNodeResult = TextNodeProcessor(NewCodeContent);
             ReplacementNode = textNodeResult?.length ? textNodeResult[0] : null;
@@ -205,13 +203,30 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         const PrevSibling = GetPrevValidSibling(CurrentAnchorNode);
         
         // when caret at the very beginning of the front syntax span, will remove the pre if unhandled.
-        if (!GetPrevValidSibling(CurrentAnchorNode) && PrecedingText === '') {
+        if (PrecedingText === '' && !PrevSibling) {
             ev.preventDefault();
             parentMoveCaret("pre");
         }
         
-        // Likely backspacing in the rear syntax block
-        if (PrevSibling && TextBlocksMapRef.current.get(PrevSibling) && CurrentSelection?.isCollapsed) {
+        // about to "merge" to syntax block, halted.
+        if (PrecedingText === ""
+            && (PrevSibling === SyntaxBlockFront.current || PrevSibling === SyntaxBlockRear.current)
+            && TextBlocksMapRef.current.get(CurrentAnchorNode)) {
+            ev.preventDefault();
+            MoveCaretToNode(PrevSibling);
+        }
+        
+        // This is needed to handle empty code element, backspace key may have trouble deleting the syntax element otherwise
+        if (CurrentAnchorNode.nodeType === Node.TEXT_NODE && CurrentAnchorNode.textContent === '\n') {
+            const NearestWrapper = FindWrappingElementWithinContainer(CurrentAnchorNode, CodeElementRef.current!)
+            if (NearestWrapper === SyntaxBlockFront.current || NearestWrapper === SyntaxBlockRear.current) {
+                // "simulate" the delete from user so that the OB's api can be fired
+                CodeElementRef.current?.removeChild(NearestWrapper!);
+            }
+        }
+        
+        // Likely backspacing in the  rear syntax block
+        if (CurrentSelection?.anchorOffset === 0 && PrevSibling && TextBlocksMapRef.current.get(PrevSibling) && CurrentSelection?.isCollapsed) {
             ev.preventDefault();
             let offset = PrevSibling.textContent ? PrevSibling.textContent.length - 1 : 0;
             MoveCaretToNode(PrevSibling, offset);
@@ -230,9 +245,14 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         
         const followingElements = GetNextSiblings(CurrentAnchorNode);
         
+        // about to "merge" to the syntax block, move caret to the block
+        if (followingElements[0] === SyntaxBlockFront.current || followingElements[0] === SyntaxBlockRear.current) {
+            ev.preventDefault();
+            MoveCaretToNode(followingElements[0]);
+        }
+        
         // Handling trailing delete, in syntax block
         const bCaretInSyntaxBlocks = elementWithin === SyntaxBlockRear.current || elementWithin === SyntaxBlockFront.current;
-        
         if (bCaretInSyntaxBlocks) {
             
             const blockFollowingElements = GetNextSiblings(elementWithin);
@@ -302,7 +322,6 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
             
             return;
         }
-        
     }
     
     // keep track of code's language
