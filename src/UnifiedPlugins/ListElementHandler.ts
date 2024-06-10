@@ -13,12 +13,14 @@ function ListElementTransformer(ast: object) {
         
         const NodeProps = node.properties || (node.properties = {});
         
-        // Remove Empty
+        // Remove Empty UL
+        // NOTE: when conversion is finished, sub-elements will be wrapped by text nodes with the value "\n", this step remove all of them as well.
         if (Array.isArray(node.children)) {
-            const bHasSubElements = node.children.some((child: any) => {
-                return String(child.type).toLowerCase() === 'element';
+            const ValidChildren = node.children.filter((child: any) => {
+                return child.type === "element";
             })
-            if (!bHasSubElements) return remove(node);
+            if (!ValidChildren.length) return remove(node);
+            node.children = ValidChildren;
         }
         
         // No surrounding Ul element
