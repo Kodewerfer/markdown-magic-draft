@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "../Utils/Conversion";
-import useEditorHTMLDaemon from "../hooks/useEditorHTMLDaemon";
+import useEditorHTMLDaemon, {ParagraphTest} from "../hooks/useEditorHTMLDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 
@@ -41,6 +41,7 @@ const AutoCompletePairsMap = new Map([
     ["(", ")"],
     ["{", "}"]
 ]);
+
 
 export default function Editor(
     {SourceData}: TEditorProps
@@ -303,7 +304,7 @@ export default function Editor(
     }
     
     // Functionalities such as wrapping selected text with certain symbols or brackets
-    function AutocompleteHandler(KeyboardInput: string) {
+    function AutocompleteHandler(KeyboardInput: string, ev: Event) {
         let {
             PrecedingText,
             SelectedText,
@@ -318,77 +319,97 @@ export default function Editor(
         if (!NearestContainer) return;
         
         // TODO: could cause non-responsiveness, need more testing
-        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE || CurrentAnchorNode.textContent === null) return;
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE && CurrentAnchorNode !== NearestContainer) return;
         
         // Prep the symbol,"pair" for parentheses or brackets
         let KeyboardInputPair = AutoCompletePairsMap.get(KeyboardInput);
         if (!KeyboardInputPair) KeyboardInputPair = KeyboardInput;
         
-        // When multi-selecting
+        if (CurrentSelection.isCollapsed || !SelectedText) return;
+        
+        // The "wrapping" functionality only handles selected text to save confusion
         // Wrap the selected content
-        if (!CurrentSelection.isCollapsed && SelectedText) {
-            let OldRange = {
-                startOffset: CurrentSelection.getRangeAt(0).startOffset || 0,
-                endOffset: CurrentSelection.getRangeAt(0).endOffset || 0,
-            };
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+        
+        let OldRange = {
+            startOffset: CurrentSelection.getRangeAt(0).startOffset || 0,
+            endOffset: CurrentSelection.getRangeAt(0).endOffset || 0,
+        };
+        
+        /**
+         *  When double click to select text, the selection may include preceding or tailing whitespace,
+         *  the extra ws will break the conversion. eg: *strong* is fine, but *strong * will not immediately convert to strong tag.
+         *  in this case, remove the ws from selection, and then add them back in their original position
+         */
             
-            /**
-             *  When double click to select text, the selection may include preceding or tailing whitespace,
-             *  the extra ws will break the conversion. eg: *strong* is fine, but *strong * will not immediately convert to strong tag.
-             *  in this case, remove the ws from selection, and then add them back in their original position
-             */
-                
-                
-                // Padding for whitespace that was removed
-            let LeftPadding = '';
-            let RightPadding = '';
-            
-            if (SelectedText.trim() !== SelectedText) {
-                if (SelectedText.startsWith(" ")) {
-                    LeftPadding = " ";
-                    OldRange.startOffset += 1;
-                }
-                if (SelectedText.endsWith(" ")) {
-                    RightPadding = " ";
-                    OldRange.startOffset -= 1;
-                }
+            // Padding for whitespace that was removed
+        let LeftPadding = '';
+        let RightPadding = '';
+        
+        if (SelectedText.trim() !== SelectedText) {
+            if (SelectedText.startsWith(" ")) {
+                LeftPadding = " ";
+                OldRange.startOffset += 1;
             }
-            
-            CurrentAnchorNode.textContent = PrecedingText + LeftPadding + KeyboardInput + SelectedText.trim() + KeyboardInputPair;
-            if (TextAfterSelection) {
-                CurrentAnchorNode.textContent += (RightPadding + TextAfterSelection);
+            if (SelectedText.endsWith(" ")) {
+                RightPadding = " ";
+                OldRange.startOffset -= 1;
             }
-            
-            const selection = window.getSelection();
-            if (!selection) return;
-            
-            let NewRange = document.createRange();
-            
-            try {
-                NewRange.setStart(CurrentAnchorNode, OldRange.startOffset + KeyboardInput.length || 0);
-                
-                if (TextAfterSelection) {
-                    NewRange.setEnd(CurrentAnchorNode, OldRange.endOffset + KeyboardInputPair.length || 0);
-                } else {
-                    NewRange.setEnd(CurrentAnchorNode, CurrentAnchorNode.textContent.length - KeyboardInputPair.length);
-                }
-                
-                selection.removeAllRanges()
-                selection.addRange(NewRange);
-                
-            } catch (e) {
-                console.warn(e);
-            }
-            
-            return;
         }
         
-        // Single selection only, add symbol in pair
-        let currentSelectionStartOffset = CurrentSelection?.getRangeAt(0).startOffset || 0;
-        CurrentAnchorNode.textContent = PrecedingText + KeyboardInput + KeyboardInputPair + RemainingText;
+        CurrentAnchorNode.textContent = PrecedingText + LeftPadding + KeyboardInput + SelectedText.trim() + KeyboardInputPair;
+        if (TextAfterSelection) {
+            CurrentAnchorNode.textContent += (RightPadding + TextAfterSelection);
+        }
         
-        MoveCaretToNode(CurrentAnchorNode, currentSelectionStartOffset + KeyboardInput.length);
+        const selection = window.getSelection();
+        if (!selection) return;
         
+        let NewRange = document.createRange();
+        
+        try {
+            NewRange.setStart(CurrentAnchorNode, OldRange.startOffset + KeyboardInput.length || 0);
+            
+            if (TextAfterSelection) {
+                NewRange.setEnd(CurrentAnchorNode, OldRange.endOffset + KeyboardInputPair.length || 0);
+            } else {
+                NewRange.setEnd(CurrentAnchorNode, CurrentAnchorNode.textContent.length - KeyboardInputPair.length);
+            }
+            
+            selection.removeAllRanges()
+            selection.addRange(NewRange);
+            
+        } catch (e) {
+            console.warn(e);
+        }
+        
+        return;
+    }
+    
+    // TODO: May not be needed, delete later
+    function CheckForInputTriggers(KeyboardInput: string) {
+        
+        let {
+            PrecedingText,
+            SelectedText,
+            RemainingText,
+            TextAfterSelection,
+            CurrentSelection,
+            CurrentAnchorNode
+        } = GetCaretContext();
+        if (!CurrentAnchorNode || !CurrentSelection) return;
+        
+        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
+        if (!NearestContainer) return;
+        
+        const bContainerIsParagraph = NearestContainer.nodeName.toLowerCase() === 'p' && NearestContainer.parentNode === EditorElementRef.current;
+        
+        if (KeyboardInput === "`" && bContainerIsParagraph && NearestContainer.textContent === "``") {
+            console.log("SYNCED")
+            DaemonHandle.SyncNow();
+        }
     }
     
     /**
@@ -652,6 +673,7 @@ export default function Editor(
             if (!bHaveOtherElement) console.log("Backspace: container empty, removing");
             if (!bHaveOtherElement) return;
         }
+        
         // line joining
         ev.preventDefault();
         ev.stopPropagation();
@@ -676,13 +698,20 @@ export default function Editor(
             return
         }
         
-        // Moves caret, This may not be needed for "deleting forward", but added for good measure.
+        // Moves caret or delete non-editable
         let anchorParent = CurrentAnchorNode.parentNode;
         if (CurrentAnchorNode.parentNode && anchorParent !== NearestContainer) {
             const nearestSibling = GetPrevAvailableSibling(CurrentAnchorNode, NearestContainer);
             if (nearestSibling) {
+                
+                if ((nearestSibling as HTMLElement).contentEditable === 'false' && nearestSibling.parentNode) {
+                    console.log("Backspace: removing non-editable child ", nearestSibling, " from ", nearestSibling.parentNode);
+                    nearestSibling.parentNode.removeChild(nearestSibling);
+                    return;
+                }
+                
                 console.log("Backspace: Moving Caret to ", nearestSibling);
-                MoveCaretToNode(nearestSibling, 0);
+                MoveCaretToNode(nearestSibling, nearestSibling.textContent ? nearestSibling.textContent.length : 0);
                 return;
             }
         }
@@ -789,8 +818,18 @@ export default function Editor(
         const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
         const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
         
+        // Mainly dealing with li elements, after placing the caret on "the dash", anchor will be on the li itself due to the leading span is non-editable,
+        // thus this is needed to remove the span so that the operation seemed more natural
+        //TODO: May be buggy, need more testing
+        if (ParagraphTest.test(CurrentAnchorNode.nodeName)) {
+            if (CurrentAnchorNode.childNodes && (CurrentAnchorNode.childNodes[0] as HTMLElement).contentEditable === 'false')
+                return CurrentAnchorNode.removeChild(CurrentAnchorNode.childNodes[0]);
+            
+            return MoveCaretIntoNode(CurrentAnchorNode);
+        }
         // Expanded selection, use browser defualt logic
         if (CurrentSelection && !CurrentSelection.isCollapsed) return;
+        //
         if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;   // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
         
         // Handle empty container type
@@ -850,6 +889,13 @@ export default function Editor(
         if (CurrentAnchorNode.parentNode && anchorParent !== NearestContainer) {
             const nearestSibling = GetNextAvailableSibling(CurrentAnchorNode, NearestContainer);
             if (nearestSibling) {
+                
+                if ((nearestSibling as HTMLElement).contentEditable === 'false' && nearestSibling.parentNode) {
+                    console.log("Del: removing non-editable child ", nearestSibling, " from ", nearestSibling.parentNode);
+                    nearestSibling.parentNode.removeChild(nearestSibling);
+                    return;
+                }
+                
                 console.log("Del: Moving Caret to ", nearestSibling);
                 MoveCaretToNode(nearestSibling, 0);
                 return;
@@ -979,7 +1025,8 @@ export default function Editor(
         
     }, [EditorElementRef.current, document]);
     
-    // Override keys
+    // Editor level Key handlers, Override keys
+    // NOTE: these will fire after daemon's
     useLayoutEffect(() => {
         
         function EditorKeydown(ev: HTMLElementEventMap['keydown']) {
@@ -996,16 +1043,21 @@ export default function Editor(
                 return;
             }
             if (AutoCompleteSymbols.test(ev.key)) {
-                ev.stopPropagation();
-                ev.stopImmediatePropagation();
-                ev.preventDefault();
-                AutocompleteHandler(ev.key);
+                AutocompleteHandler(ev.key, ev);
             }
+            // TODO:When there is keywords for li and pre, triggers sync immediately
+        }
+        
+        function EditorKeyUp(ev: HTMLElementEventMap['keyup']) {
+            // CheckForInputTriggers(ev.key);
+            // TODO: May not be needed, delete later
         }
         
         EditorElementRef.current?.addEventListener("keydown", EditorKeydown);
+        EditorElementRef.current?.addEventListener("keyup", EditorKeyUp);
         return () => {
             EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
+            EditorElementRef.current?.removeEventListener("keyup", EditorKeyUp);
         }
     }, [EditorElementRef.current])
     
