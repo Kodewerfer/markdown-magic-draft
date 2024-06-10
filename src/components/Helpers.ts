@@ -240,13 +240,16 @@ export function MoveCaretToNode(TargetNode: Node | null | undefined, Offset = 0)
     
     
     const range = document.createRange();
+    
     try {
         range.setStart(TargetNode, Offset);
+    } catch (e: any) {
+        console.warn("MoveCaretToNode: ", e.message);
+        range.setStart(TargetNode, 0);
+    } finally {
         range.collapse(true);
         currentSelection.removeAllRanges();
         currentSelection.addRange(range);
-    } catch (e: any) {
-        console.warn("MoveCaretToNode: ", e.message);
     }
     
 }
