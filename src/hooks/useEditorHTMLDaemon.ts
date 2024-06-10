@@ -180,7 +180,6 @@ export default function useEditorHTMLDaemon(
             WatchElementRef.current!.contentEditable = 'false';
         }
         
-        
         let {OperationLogs, BindOperationLogs} = RollbackAndBuildOps();
         /**
          * The order of execution for the operations is:
@@ -1066,6 +1065,12 @@ export default function useEditorHTMLDaemon(
         try {
             NewRange.setStart(AnchorNode, StartingOffset);
             NewRange.collapse(true);
+        } catch (e) {
+            console.warn("StartingOffset error");
+            NewRange.setStart(AnchorNode, 0);
+        }
+        
+        try {
             if (FocusNode && SavedState.SelectionExtent > 0) {
                 NewRange.collapse(false);
                 NewRange.setEnd(FocusNode, EndOffset || 0);
@@ -1075,7 +1080,7 @@ export default function useEditorHTMLDaemon(
             CurrentSelection.addRange(NewRange);
             
         } catch (e) {
-            console.warn(e);
+            console.warn("EndOffset error");
         }
     }
     
@@ -1386,6 +1391,7 @@ export default function useEditorHTMLDaemon(
                 console.log("DiscardHistory: ", DiscardCountActual, " Removed")
         },
         SyncNow(): Promise<void> {
+            
             return new Promise((resolve, reject) => {
                 DaemonState.SelectionStatusCache = GetSelectionStatus();
                 FlushAllRecords();
