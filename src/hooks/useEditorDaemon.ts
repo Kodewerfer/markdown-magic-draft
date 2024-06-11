@@ -8,7 +8,7 @@
  *  So, the original DOM needs to be kept as-is; the changes will be made on the other DOM ref instead, which will later be turned to React components so that React can do proper diffing and DOM manipulation.
  */
 
-import {useEffect, useLayoutEffect, useState} from "react";
+import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
 import {CreateAndWalkToNode} from "../components/Helpers";
 
@@ -87,7 +87,7 @@ export type TDaemonReturn = {
     AddToOperations: (Operation: TSyncOperation | TSyncOperation[], ShouldLockPage?: boolean) => void;
 }
 
-export default function useEditorHTMLDaemon(
+export default function useEditorDaemon(
     WatchElementRef: { current: HTMLElement | undefined | null },
     MirrorDocumentRef: { current: Document | undefined | null },
     FinalizeChanges: Function,
@@ -802,7 +802,7 @@ export default function useEditorHTMLDaemon(
                 return;
             }
             
-            const regexp = /\/node\(\)\[\d+\]$/;
+            const regexp = /\/node\(\)\[\d+]$/;
             if (regexp.test(XPathParent) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy REMOVE node Parent:", parentNode);
             
@@ -828,7 +828,7 @@ export default function useEditorHTMLDaemon(
             
             const parentNode = GetNodeFromXPathInDoc(MirrorDocumentRef.current!, XPathParent);
             if (!parentNode) throw "UpdateMirrorDocument.Add: No parentNode";
-            const regexp = /\/node\(\)\[\d+\]$/;
+            const regexp = /\/node\(\)\[\d+]$/;
             if (regexp.test(XPathParent) && DaemonOptions.ShouldLog)
                 console.log("Fuzzy ADD node Parent:", parentNode)
             
@@ -889,7 +889,7 @@ export default function useEditorHTMLDaemon(
         },
     }
     
-    function GetSelectionStatus(targetElement: Element = WatchElementRef.current as Element): TSelectionStatus | null {
+    function GetSelectionStatus(): TSelectionStatus | null {
         const CurrentSelection = window.getSelection();
         
         if (!CurrentSelection || !CurrentSelection.anchorNode) return null;
@@ -1193,9 +1193,6 @@ export default function useEditorHTMLDaemon(
     const debounceRollbackAndSync = _.debounce(FlushAllRecords, 500);
     
     const throttledFuncDelay = 200;
-    const throttledSelectionStatus = _.throttle(() => {
-        DaemonState.SelectionStatusCache = GetSelectionStatus();
-    }, throttledFuncDelay);
     const throttledRollbackAndSync = _.throttle(FlushAllRecords, throttledFuncDelay);
     
     // Primary entry point to supporting functionalities such as restoring selection.
@@ -1238,7 +1235,7 @@ export default function useEditorHTMLDaemon(
             ToggleObserve(false);
             
             if (DaemonState.SelectionStatusCache === null) {
-                DaemonState.SelectionStatusCache = GetSelectionStatus(WatchedElement);
+                DaemonState.SelectionStatusCache = GetSelectionStatus();
             }
         }
     });
@@ -1303,12 +1300,12 @@ export default function useEditorHTMLDaemon(
         const SelectionHandler = (ev: Event) => {
             DaemonState.SelectionStatusCache =
                 window.getSelection()!.rangeCount && ev.target === WatchedElement
-                    ? GetSelectionStatus(WatchedElement)
+                    ? GetSelectionStatus()
                     : null;
         }
         
         const BlurHandler = () => {
-            DaemonState.SelectionStatusCachePreBlur = GetSelectionStatus((WatchElementRef.current as Element));
+            DaemonState.SelectionStatusCachePreBlur = GetSelectionStatus();
         }
         
         const DoNothing = (ev: Event) => {
@@ -1342,7 +1339,7 @@ export default function useEditorHTMLDaemon(
                 currentSelection.removeAllRanges();
                 currentSelection.addRange(range);
                 
-                DaemonState.SelectionStatusCache = GetSelectionStatus(WatchedElement);
+                DaemonState.SelectionStatusCache = GetSelectionStatus();
             }
             
         }
@@ -1476,7 +1473,7 @@ function ParseXPath(xpath: string) {
         let nodePath = pathElement;
         let index: number | null = null;
         
-        const indexMatch = pathElement.match(/(.*)\[(\d+)\]/);
+        const indexMatch = pathElement.match(/(.*)\[(\d+)]/);
         if (indexMatch) {
             nodePath = indexMatch[1];
             index = Number(indexMatch[2]) || null;

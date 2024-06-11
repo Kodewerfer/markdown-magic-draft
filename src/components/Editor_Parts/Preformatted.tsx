@@ -4,7 +4,7 @@
  */
 
 import React, {ReactNode, useEffect, useLayoutEffect, useRef, useState} from "react";
-import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
+import {TDaemonReturn} from "../../hooks/useEditorDaemon";
 import {
     FindWrappingElementWithinContainer,
     GetCaretContext,

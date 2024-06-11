@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from "react";
-import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
+import {TDaemonReturn} from "../../hooks/useEditorDaemon";
 import {
     GetCaretContext,
     GetChildNodesAsHTMLString, GetFirstTextNode, GetLastTextNode,

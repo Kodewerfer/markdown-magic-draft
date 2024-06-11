@@ -1,6 +1,6 @@
 import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "../Utils/Conversion";
-import useEditorHTMLDaemon, {ParagraphTest} from "../hooks/useEditorHTMLDaemon";
+import useEditorDaemon, {ParagraphTest} from "../hooks/useEditorDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 
@@ -1061,7 +1061,7 @@ export default function Editor(
         }
     }, [EditorElementRef.current])
     
-    const DaemonHandle = useEditorHTMLDaemon(EditorElementRef, EditorSourceDOCRef, ReloadEditorContent,
+    const DaemonHandle = useEditorDaemon(EditorElementRef, EditorSourceDOCRef, ReloadEditorContent,
         {
             OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeProcessor,

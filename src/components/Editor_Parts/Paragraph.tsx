@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from "react";
-import {TDaemonReturn} from "../../hooks/useEditorHTMLDaemon";
+import {TDaemonReturn} from "../../hooks/useEditorDaemon";
 import {ExtraRealChild, GetChildNodesAsHTMLString, GetChildNodesTextContent} from '../Helpers'
 import {TActivationReturn} from "../Editor_Types";
 
