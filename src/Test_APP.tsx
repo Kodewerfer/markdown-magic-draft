@@ -2,7 +2,7 @@ import React from "react";
 import "./App.css";
 import dedent from "dedent";
 
-import Editor from "./components/Editor";
+import Editor from "./Editor";
 
 /**
  *
@@ -97,7 +97,7 @@ Normal text test three
 
 `
 
-export default function App() {
+export default function Test_APP() {
     return (
         <div className="App">
             <header></header>

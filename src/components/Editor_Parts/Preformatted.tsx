@@ -8,12 +8,10 @@ import {TDaemonReturn} from "../../hooks/useEditorDaemon";
 import {
     FindWrappingElementWithinContainer,
     GetCaretContext,
-    GetChildNodesAsHTMLString,
     GetChildNodesTextContent, GetNextSiblings, GetRealChildren,
     MoveCaretIntoNode, MoveCaretToNode,
     TextNodeProcessor,
 } from "../Helpers";
-import dedent from "dedent";
 import {TActivationReturn} from "../Editor_Types";
 
 type TMoveCaretDirection = "pre" | "aft";
@@ -169,7 +167,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         
         if (!CodeElementRef.current || !CodeElementRef.current.parentNode) return;
         
-        let ReplacementNode = null;
+        let ReplacementNode;
         
         // NOTE: converter's quirk, element will still be converted even if the ending half of the syntax is missing
         // NOTE: due to the particularity of the pre element(can contain syntax that should be converted to element),
@@ -195,6 +193,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         }
     }
     
+    // The del and backspace handlers are complete overrides
     function BackspaceHandler(ev: Event) {
         ev.stopImmediatePropagation();
         
@@ -236,12 +235,12 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
     function DelKeyHandler(ev: Event) {
         ev.stopImmediatePropagation();
         
-        let {TextAfterSelection, RemainingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        let {TextAfterSelection, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         
         if (!CurrentAnchorNode || !CodeElementRef.current || !CurrentSelection) return;
         
         const elementWithin = FindWrappingElementWithinContainer(CurrentAnchorNode, CodeElementRef.current);
-        if (!elementWithin) return; //type narrowing, very very unlikely
+        if (!elementWithin) return; //type narrowing, very unlikely
         
         const followingElements = GetNextSiblings(CurrentAnchorNode);
         
@@ -284,7 +283,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         if (!CurrentAnchorNode || !CodeElementRef.current || !CurrentSelection) return;
         
         const elementWithin = FindWrappingElementWithinContainer(CurrentAnchorNode, CodeElementRef.current);
-        if (!elementWithin) return; //type narrowing, very very unlikely
+        if (!elementWithin) return; //type narrowing, very unlikely
         
         const bCaretInSyntaxBlocks = elementWithin === SyntaxBlockRear.current || elementWithin === SyntaxBlockFront.current;
         

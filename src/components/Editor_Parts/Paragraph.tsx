@@ -31,7 +31,7 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         }
         if (state) {
             
-            // FIXME:cause too much input interruption, need more testing.
+            // FIXME:caused too much input interruption, need more testing.
             // daemonHandle.SyncNow();
             
             if (typeof MutationObserver) {

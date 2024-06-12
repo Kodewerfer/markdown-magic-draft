@@ -251,7 +251,6 @@ export default function useEditorDaemon(
                     continue;
                 
                 // Get the original value for the text node. used in undo
-                // FIXME: loop within loop
                 let TextNodeOriginalValue = mutation.oldValue;
                 if (DaemonState.MutationQueue.length >= 1) {
                     DaemonState.MutationQueue.slice().reverse().some((mutationData) => {
@@ -1250,7 +1249,7 @@ export default function useEditorDaemon(
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            // FIXME: test purpose only
+            // FIXME: for test purpose
             // if (ev.key === "t") {
             //     ev.preventDefault();
             //     console.log("testing...")
