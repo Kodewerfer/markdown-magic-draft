@@ -1,5 +1,5 @@
 import React, {useLayoutEffect, useRef, useState} from "react";
-import {TDaemonReturn} from "../../hooks/useEditorDaemon";
+import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {
     GetAllSurroundingText,
     GetCaretContext,

@@ -2,7 +2,7 @@ import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "./Utils/Conversion";
 import useEditorDaemon, {ParagraphTest} from "./hooks/useEditorDaemon";
 import {Compatible} from "unified/lib";
-import "./components/Editor.css";
+import "./Editor.css";
 
 // helper
 import {
@@ -12,16 +12,16 @@ import {
     MoveCaretIntoNode,
     GetNextSiblings,
     MoveCaretToNode
-} from "./components/Helpers";
+} from "./Helpers";
 // Editor Components
-import Paragraph from './components/Editor_Parts/Paragraph';
-import PlainSyntax from "./components/Editor_Parts/PlainSyntax";
-import Links from "./components/Editor_Parts/Links";
-import {Blockquote, QuoteItem} from "./components/Editor_Parts/Blockquote";
-import {ListContainer, ListItem} from "./components/Editor_Parts/List";
-import {CodeItem, Preblock} from "./components/Editor_Parts/Preformatted";
-import {TActivationReturn} from "./components/Editor_Types";
-import SpecialLink from "./components/Editor_Parts/SpecialLink";
+import Paragraph from './Editor_Parts/Paragraph';
+import PlainSyntax from "./Editor_Parts/PlainSyntax";
+import Links from "./Editor_Parts/Links";
+import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
+import {ListContainer, ListItem} from "./Editor_Parts/List";
+import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
+import {TActivationReturn} from "./Editor_Types";
+import SpecialLink from "./Editor_Parts/SpecialLink";
 
 type TEditorProps = {
     SourceData?: string | undefined

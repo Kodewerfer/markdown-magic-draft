@@ -2,7 +2,7 @@ import React from "react";
 import "./App.css";
 import dedent from "dedent";
 
-import Editor from "./Editor";
+import Editor from "./components/Editor";
 
 /**
  *
