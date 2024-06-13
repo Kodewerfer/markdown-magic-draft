@@ -4,7 +4,7 @@ import {
     GetCaretContext,
     GetChildNodesAsHTMLString, GetFirstTextNode, GetLastTextNode,
     MoveCaretToNode
-} from "../Helpers";
+} from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {

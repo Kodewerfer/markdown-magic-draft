@@ -5,7 +5,7 @@ import {
     GetCaretContext,
     GetChildNodesTextContent,
     TextNodeProcessor
-} from '../Helpers'
+} from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {

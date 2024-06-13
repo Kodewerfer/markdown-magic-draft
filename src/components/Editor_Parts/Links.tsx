@@ -4,7 +4,7 @@ import {
     GetAllSurroundingText,
     GetCaretContext,
     TextNodeProcessor
-} from "../Helpers";
+} from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
 
 /**

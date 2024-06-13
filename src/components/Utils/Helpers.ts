@@ -1,6 +1,6 @@
 import React from "react";
 import {renderToString} from "react-dom/server";
-import {MD2HTMLSync} from "./Utils/Conversion";
+import {MD2HTMLSync} from "./Conversion";
 
 /**
  * Run a html text node through the conversion, may result in a mixture of text and element nodes.

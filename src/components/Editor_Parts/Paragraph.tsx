@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
-import {ExtraRealChild, GetChildNodesAsHTMLString, GetChildNodesTextContent} from '../Helpers'
+import {ExtraRealChild, GetChildNodesAsHTMLString, GetChildNodesTextContent} from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
 
 export default function Paragraph({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {

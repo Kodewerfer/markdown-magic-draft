@@ -12,7 +12,7 @@ import {
     MoveCaretIntoNode,
     GetNextSiblings,
     MoveCaretToNode
-} from "./Helpers";
+} from "./Utils/Helpers";
 // Editor Components
 import Paragraph from './Editor_Parts/Paragraph';
 import PlainSyntax from "./Editor_Parts/PlainSyntax";

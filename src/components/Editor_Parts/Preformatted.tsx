@@ -11,7 +11,7 @@ import {
     GetChildNodesTextContent, GetNextSiblings, GetRealChildren,
     MoveCaretIntoNode, MoveCaretToNode,
     TextNodeProcessor,
-} from "../Helpers";
+} from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
 
 type TMoveCaretDirection = "pre" | "aft";

@@ -10,7 +10,7 @@
 
 import {useLayoutEffect, useState} from "react";
 import _ from 'lodash';
-import {CreateAndWalkToNode} from "../Helpers";
+import {CreateAndWalkToNode} from "../Utils/Helpers";
 
 export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section|hr)$/i;
 // Instructions for DOM manipulations on the mirror document

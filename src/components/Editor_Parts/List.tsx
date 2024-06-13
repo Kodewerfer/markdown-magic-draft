@@ -4,7 +4,7 @@ import {
     GetCaretContext,
     GetChildNodesAsHTMLString, GetLastTextNode, GetNextSiblings, MoveCaretIntoNode,
     MoveCaretToNode
-} from "../Helpers";
+} from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
 
 export function ListContainer({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
