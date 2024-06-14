@@ -10,6 +10,7 @@
 
 # production
 /build
+#Note: /dist shoud be added here. But yalc is also referencing .gitignore, so add /dist will result in no fills being published on yalc
 
 # misc
 .DS_Store
