@@ -46,8 +46,14 @@ export function MD2HTMLSync(MarkdownContent: Compatible) {
         .processSync(MarkdownContent);
 }
 
-// @ts-expect-error: the react types are missing.
-const jsxElementConfig = {Fragment: reactJsxRuntime.Fragment, jsx: reactJsxRuntime.jsx, jsxs: reactJsxRuntime.jsxs}
+// the config looks like this to satisfy rehypeReact's spec on option,
+// after react 18.3.0, Fragment/jsx/jsxs will correctly provide the types, but the resulting config would be incompatible with rehypeReact 8.0
+// until rehypeReact is updated, the structure will need to stay this way.
+const jsxElementConfig: { Fragment: any, jsx: any, jsxs: any } = {
+    Fragment: (reactJsxRuntime as any).Fragment,
+    jsx: (reactJsxRuntime as any).jsx,
+    jsxs: (reactJsxRuntime as any).jsxs
+}
 
 export async function HTML2React(HTMLContent: Compatible, componentOptions?: Record<string, React.FunctionComponent<any>>) {
     
