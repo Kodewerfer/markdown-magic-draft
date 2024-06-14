@@ -7,6 +7,8 @@
       "esnext"
     ],
     "allowJs": true,
+    // Generate d.ts files
+    "declaration": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -19,8 +21,9 @@
     "isolatedModules": true,
     "noEmit": false,
     "jsx": "react-jsx",
+    //tsc only build components
     "rootDir": "./src/components",
-    "outDir": "./dist/esm"
+    "outDir": "./dist/"
   },
   "include": [
     "src/components"
