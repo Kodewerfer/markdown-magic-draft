@@ -1,4 +1,12 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {
+    ForwardedRef,
+    forwardRef,
+    useEffect,
+    useImperativeHandle,
+    useLayoutEffect,
+    useRef,
+    useState
+} from "react";
 import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "./Utils/Conversion";
 import useEditorDaemon, {ParagraphTest} from "./hooks/useEditorDaemon";
 import {Compatible} from "unified/lib";
@@ -23,8 +31,12 @@ import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 import {TActivationReturn} from "./Editor_Types";
 import SpecialLink from "./Editor_Parts/SpecialLink";
 
-type TEditorProps = {
-    SourceData?: string | undefined
+export type TEditorForwardRef = {
+    ExtractMD: () => Promise<string>;
+}
+
+export type TEditorProps = {
+    SourceData?: string | undefined;
 };
 
 type TActivationCache = {
@@ -43,8 +55,9 @@ const AutoCompletePairsMap = new Map([
 ]);
 
 
-export default function Editor(
-    {SourceData}: TEditorProps
+function EditorActual(
+    {SourceData}: TEditorProps,
+    ref: ForwardedRef<TEditorForwardRef>
 ) {
     const [sourceMD, setSourceMD] = useState<string>(() => {
         SourceData = SourceData || "";
@@ -197,10 +210,17 @@ export default function Editor(
         }
     }
     
+    // function that extract HTML content from editor, will be called by parent component with forward ref
     async function ExtractMD() {
         const ConvertedMarkdown = await HTML2MD(EditorSourceStringRef.current);
-        console.log(String(ConvertedMarkdown));
+        return String(ConvertedMarkdown);
     }
+    
+    // expose the extraction to parent
+    useImperativeHandle(ref, () => ({
+        ExtractMD
+    }));
+    
     
     // Editor level selection status monitor
     const ComponentActivationSwitch = () => {
@@ -1080,7 +1100,6 @@ export default function Editor(
     
     return (
         <>
-            <button className={"bg-amber-600"} onClick={ExtractMD}>Save</button>
             <section className="Editor">
                 <main className={'Editor-Inner'} ref={EditorElementRef}>
                     {EditorComponent}
@@ -1092,6 +1111,9 @@ export default function Editor(
         </>
     )
 }
+
+const Editor = forwardRef(EditorActual);
+export default Editor;
 
 // the fallback render for any unknown or unspecified elements
 // Needed if the like of br is to be rendered normally.
