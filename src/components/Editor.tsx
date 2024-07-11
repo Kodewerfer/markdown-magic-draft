@@ -59,10 +59,6 @@ function EditorActual(
     {SourceData}: TEditorProps,
     ref: ForwardedRef<TEditorForwardRef>
 ) {
-    const [sourceMD, setSourceMD] = useState<string>(() => {
-        SourceData = SourceData || "";
-        return SourceData;
-    });
     const EditorElementRef = useRef<HTMLElement | null>(null);
     const EditorSourceStringRef = useRef('');
     const EditorSourceDOCRef = useRef<Document | null>(null);
@@ -1001,8 +997,9 @@ function EditorActual(
     // First time loading
     useEffect(() => {
         ;(async () => {
+            const MDData = SourceData || '';
             // convert MD to HTML
-            const convertedHTML: string = String(await MD2HTML(sourceMD));
+            const convertedHTML: string = String(await MD2HTML(MDData));
             let CleanedHTML = HTMLCleanUP(convertedHTML);
             
             // Save a copy of HTML
@@ -1015,7 +1012,7 @@ function EditorActual(
             setEditorComponent(ConfigAndConvertToReact(String(CleanedHTML)))
         })()
         
-    }, [sourceMD]);
+    }, [SourceData]);
     
     // Masking and unmasking to hide flicker
     useLayoutEffect(() => {
