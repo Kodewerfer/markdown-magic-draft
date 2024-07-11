@@ -109,7 +109,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
             if (CodeElementRef.current && CodeElementRef.current.textContent
                 && CodeElementRef.current.parentNode && CodeElementRef.current.parentNode.nodeName.toLowerCase() === 'pre') {
                 
-                const NewCodeContent = CompileAllTextNode()?.replace('\u00A0', '');
+                const NewCodeContent = CompileAllTextNode()?.replace(/\u00A0/g, '');
                 if (!NewCodeContent) return componentHandlers;
                 UpdateCodeElement(NewCodeContent);
             }
@@ -157,14 +157,20 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         
         let node;
         let textContent = '';
+        let syntaxDataCount = 0;
         while (node = elementWalker.nextNode()) {
-            textContent += node.textContent;
+            if (syntaxDataCount === 2) break; //there shouldn't be any content after the second part of syntax, trim them off if present
+            if (node.textContent === syntaxData) syntaxDataCount += 1;
+            if (node.textContent === syntaxData && syntaxDataCount > 1) // otherwise the trailing syntaxData would become part of the content
+                textContent += ("\n" + node.textContent);
+            else
+                textContent += node.textContent;
         }
         return textContent.trim();
     }
     
     function UpdateCodeElement(NewCodeContent: string) {
-        
+        console.log(NewCodeContent);
         if (!CodeElementRef.current || !CodeElementRef.current.parentNode) return;
         
         let ReplacementNode;
@@ -172,7 +178,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         // NOTE: converter's quirk, element will still be converted even if the ending half of the syntax is missing
         // NOTE: due to the particularity of the pre element(can contain syntax that should be converted to element),
         // only send to convert if only the result will still be a pre
-        if (NewCodeContent.startsWith(syntaxData) && NewCodeContent.endsWith(syntaxData) && NewCodeContent !== "```") {
+        if (NewCodeContent.startsWith(syntaxData) && NewCodeContent.endsWith(syntaxData) && NewCodeContent !== syntaxData) {
             
             const textNodeResult = TextNodeProcessor(NewCodeContent);
             ReplacementNode = textNodeResult?.length ? textNodeResult[0] : null;
