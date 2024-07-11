@@ -109,19 +109,25 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         let elementWalker = document.createTreeWalker(WholeElementRef.current, NodeFilter.SHOW_TEXT);
         
         let node;
-        let textContent = '';
+        let textContentResult = '';
         while (node = elementWalker.nextNode()) {
-            textContent += node.textContent === '\u00A0' ? "" : node.textContent;
+            let textActual = node.textContent;
+            if (node.textContent) {
+                if (node.textContent === '\u00A0')
+                    textActual = "";
+                else
+                    textActual = node.textContent.replace(/\u00A0/g, ' ');
+            }
+            textContentResult += textActual;
         }
         
-        return textContent;
+        return textContentResult;
     }
     
     // Called in meta state
     function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
         if (!TextNodeContent || !ParentElement) return;
         const textNodeResult = TextNodeProcessor(TextNodeContent);
-        
         if (!textNodeResult) return;
         
         let documentFragment = document.createDocumentFragment();
