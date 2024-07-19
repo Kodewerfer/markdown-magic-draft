@@ -31,7 +31,7 @@ export type TSyncOperation = {
 }
 
 // For storing selection before parent re-rendering
-type TSelectionStatus = {
+export type TSelectionStatus = {
     AnchorNodeXPath: string;
     StartingOffset: number;
     SelectionExtent: number;
@@ -80,6 +80,8 @@ type TCaretToken = 'zero' | 'PrevElement' | 'PrevLine' | 'NextLine' | 'NextEdita
 
 export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
+    GetSelectionStatus: () => TSelectionStatus | null;
+    SetSelectionStatus: (status: TSelectionStatus) => void;
     DiscardHistory: (DiscardCount: number) => void;
     SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node | HTMLElement | Node[], Type: TDOMTrigger, bIncludeAllChild?: boolean) => void;
@@ -1065,7 +1067,7 @@ export default function useEditorDaemon(
             NewRange.setStart(AnchorNode, StartingOffset);
             NewRange.collapse(true);
         } catch (e) {
-            console.warn("StartingOffset error");
+            console.warn("StartingOffset error,", (e as Error).message);
             NewRange.setStart(AnchorNode, 0);
         }
         
@@ -1350,6 +1352,7 @@ export default function useEditorDaemon(
         WatchedElement.addEventListener("selectstart", SelectionHandler);
         WatchedElement.addEventListener("dragstart", DoNothing);
         WatchedElement.addEventListener("focusout", BlurHandler);
+        WatchedElement.addEventListener("blur", BlurHandler);
         
         WatchedElement.addEventListener("mouseup", MoveCaretToMouse);
         
@@ -1362,6 +1365,7 @@ export default function useEditorDaemon(
             WatchedElement.removeEventListener("selectstart", SelectionHandler);
             WatchedElement.removeEventListener("dragstart", DoNothing);
             WatchedElement.removeEventListener("focusout", BlurHandler);
+            WatchedElement.removeEventListener("blur", BlurHandler);
             
             WatchedElement.removeEventListener("mouseup", MoveCaretToMouse);
         }
@@ -1393,6 +1397,16 @@ export default function useEditorDaemon(
                 FlushAllRecords();
                 resolve();
             });
+        },
+        GetSelectionStatus() {
+            return GetSelectionStatus();
+        },
+        SetSelectionStatus(status: TSelectionStatus) {
+            // applicable for first time loading, inject the status (could've been saved in parent component)
+            if (!DaemonState.SelectionStatusCache)
+                DaemonState.SelectionStatusCache = status;
+            if (!WatchElementRef.current) return;
+            RestoreSelectionStatus(WatchElementRef.current, status);
         },
         SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideTokens.push(token);

@@ -8,7 +8,7 @@ import React, {
     useState
 } from "react";
 import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "./Utils/Conversion";
-import useEditorDaemon, {ParagraphTest} from "./hooks/useEditorDaemon";
+import useEditorDaemon, {ParagraphTest, TSelectionStatus} from "./hooks/useEditorDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
 
@@ -33,10 +33,14 @@ import SpecialLink from "./Editor_Parts/SpecialLink";
 
 export type TEditorForwardRef = {
     ExtractMD: () => Promise<string>;
+    ExtractCaretData: () => TSelectionStatus | null;
+    SetCaretData: (caretData: TSelectionStatus) => void;
+    
 }
 
 export type TEditorProps = {
     SourceData?: string | undefined;
+    [key: string]: any; // for otherProps
 };
 
 type TActivationCache = {
@@ -56,7 +60,7 @@ const AutoCompletePairsMap = new Map([
 
 
 function EditorActual(
-    {SourceData}: TEditorProps,
+    {SourceData, ...otherProps}: TEditorProps,
     ref: ForwardedRef<TEditorForwardRef>
 ) {
     const EditorElementRef = useRef<HTMLElement | null>(null);
@@ -64,13 +68,13 @@ function EditorActual(
     const EditorSourceDOCRef = useRef<Document | null>(null);
     const EditorMaskRef = useRef<HTMLDivElement | null>(null);
     
-    const [EditorComponent, setEditorComponent] = useState<React.ReactNode>(null);
+    const [EditorComponents, setEditorComponents] = useState<React.ReactNode>(null);
     
     // Cache of the last activated components
     const LastActivationCache = useRef<TActivationCache[]>([]);
     const LastActiveAnchor = useRef<Node | null>(null); //compare with this only works before page re-rendering
     
-    // Subsequence reload
+    // Subsequence reload by daemon
     async function ReloadEditorContent() {
         if (!EditorSourceDOCRef.current) return;
         const bodyElement: HTMLBodyElement | null = EditorSourceDOCRef.current.documentElement.querySelector('body');
@@ -78,14 +82,22 @@ function EditorActual(
         bodyElement.normalize();
         
         EditorSourceStringRef.current = String(bodyElement.innerHTML);
-        const CleanedHTML = HTMLCleanUP(bodyElement.innerHTML);
+        
+        // Edge case, very unlikely, if the whole content become blank, reset it to an empty line
+        if (!EditorSourceStringRef.current || EditorSourceStringRef.current.trim() === "") {
+            const EmptyLine = document.createElement("p");
+            EmptyLine.appendChild(document.createElement("br"));
+            EditorSourceStringRef.current = EmptyLine.outerHTML;
+        }
+        
+        const CleanedHTML = HTMLCleanUP(EditorSourceStringRef.current);
         
         EditorSourceStringRef.current = String(CleanedHTML);
         const HTMLParser = new DOMParser();
         EditorSourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
         
         
-        setEditorComponent(ConfigAndConvertToReact(EditorSourceStringRef.current));
+        setEditorComponents(ConfigAndConvertToReact(EditorSourceStringRef.current));
     }
     
     // FIXME: this structure is getting unwieldy, find a way to refactor.
@@ -212,9 +224,20 @@ function EditorActual(
         return String(ConvertedMarkdown);
     }
     
+    // return the selection status from the daemon to parent of the editor
+    function ExtractCaretData() {
+        return DaemonHandle.GetSelectionStatus();
+    }
+    
+    function SetCaretData(caretData: TSelectionStatus) {
+        return DaemonHandle.SetSelectionStatus(caretData);
+    }
+    
     // expose the extraction to parent
     useImperativeHandle(ref, () => ({
-        ExtractMD
+        ExtractMD,
+        ExtractCaretData,
+        SetCaretData
     }));
     
     
@@ -994,22 +1017,32 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
-    // First time loading
+    // First time loading, also dealing with empty source
     useEffect(() => {
         ;(async () => {
             const MDData = SourceData || '';
             // convert MD to HTML
             const convertedHTML: string = String(await MD2HTML(MDData));
-            let CleanedHTML = HTMLCleanUP(convertedHTML);
+            const CleanedHTML = HTMLCleanUP(convertedHTML);
+            let SourceHTMLString = String(CleanedHTML);
+            
+            // the source file is empty,replace the content with an empty line and br
+            if (!SourceHTMLString || SourceHTMLString === "") {
+                const EmptyLine = document.createElement("p");
+                EmptyLine.appendChild(document.createElement("br"));
+                
+                SourceHTMLString = EmptyLine.outerHTML;
+            }
+            
             
             // Save a copy of HTML
             const HTMLParser = new DOMParser();
-            EditorSourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
+            EditorSourceDOCRef.current = HTMLParser.parseFromString(SourceHTMLString, "text/html");
             
             // save a text copy
-            EditorSourceStringRef.current = String(CleanedHTML);
+            EditorSourceStringRef.current = SourceHTMLString;
             // load editor component
-            setEditorComponent(ConfigAndConvertToReact(String(CleanedHTML)))
+            setEditorComponents(ConfigAndConvertToReact(SourceHTMLString))
         })()
         
     }, [SourceData]);
@@ -1097,9 +1130,9 @@ function EditorActual(
     
     return (
         <>
-            <section className="Editor">
+            <section className="Editor" {...otherProps}>
                 <main className={'Editor-Inner'} ref={EditorElementRef}>
-                    {EditorComponent}
+                    {EditorComponents}
                 </main>
                 <div className={'Editor-Mask'} ref={EditorMaskRef}>
                     Floating Mask To Hide Flickering
