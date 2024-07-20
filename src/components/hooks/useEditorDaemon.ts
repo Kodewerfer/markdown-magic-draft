@@ -179,7 +179,8 @@ export default function useEditorDaemon(
                 onRollbackCancelled = DaemonOptions.OnRollback();
             DaemonState.EditorLocked = true;
             ToggleObserve(false);
-            WatchElementRef.current!.contentEditable = 'false';
+            if (WatchElementRef.current)
+                WatchElementRef.current.contentEditable = 'false';
         }
         
         let {OperationLogs, BindOperationLogs} = RollbackAndBuildOps();
@@ -1083,6 +1084,8 @@ export default function useEditorDaemon(
         } catch (e) {
             console.warn("EndOffset error");
         }
+        
+        return NewRange.cloneRange();
     }
     
     function HandleSelectionToken(OverrideTokens: TCaretToken[], Walker: TreeWalker,
@@ -1406,7 +1409,6 @@ export default function useEditorDaemon(
             if (!DaemonState.SelectionStatusCache)
                 DaemonState.SelectionStatusCache = status;
             if (!WatchElementRef.current) return;
-            RestoreSelectionStatus(WatchElementRef.current, status);
         },
         SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideTokens.push(token);

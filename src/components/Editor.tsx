@@ -35,7 +35,6 @@ export type TEditorForwardRef = {
     ExtractMD: () => Promise<string>;
     ExtractCaretData: () => TSelectionStatus | null;
     SetCaretData: (caretData: TSelectionStatus) => void;
-    
 }
 
 export type TEditorProps = {
@@ -220,6 +219,8 @@ function EditorActual(
     
     // function that extract HTML content from editor, will be called by parent component with forward ref
     async function ExtractMD() {
+        await DaemonHandle.SyncNow();
+        // console.warn("Extracting Markdown, Daemon synced.");
         const ConvertedMarkdown = await HTML2MD(EditorSourceStringRef.current);
         return String(ConvertedMarkdown);
     }
