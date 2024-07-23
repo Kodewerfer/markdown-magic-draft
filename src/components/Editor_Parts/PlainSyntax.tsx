@@ -7,6 +7,7 @@ import {
     TextNodeProcessor
 } from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
+import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -38,8 +39,8 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             ElementOBRef.current?.disconnect();
             ElementOBRef.current = null;
             
-            const TextContent = CompileAllTextNode();
-            UpdateComponentAndSync(TextContent, WholeElementRef.current);
+            const TextContent = CompileAllTextNode(WholeElementRef.current!);
+            UpdateComponentAndSync(daemonHandle, TextContent, WholeElementRef.current);
             
         }
         if (state) {
@@ -87,7 +88,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         
         let bShouldBreakLine = true;
         
-        const TextContent = CompileAllTextNode();
+        const TextContent = CompileAllTextNode(WholeElementRef.current!);
         
         const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, WholeElementRef.current!);
         
@@ -98,47 +99,9 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         else
             daemonHandle.SetFutureCaret("NextElement");
         
-        UpdateComponentAndSync(TextContent, WholeElementRef.current);
+        UpdateComponentAndSync(daemonHandle, TextContent, WholeElementRef.current);
         
         return Promise.resolve(bShouldBreakLine);
-    }
-    
-    // Called in meta state
-    function CompileAllTextNode() {
-        if (!WholeElementRef.current) return;
-        let elementWalker = document.createTreeWalker(WholeElementRef.current, NodeFilter.SHOW_TEXT);
-        
-        let node;
-        let textContentResult = '';
-        while (node = elementWalker.nextNode()) {
-            let textActual = node.textContent;
-            if (node.textContent) {
-                if (node.textContent === '\u00A0')
-                    textActual = "";
-                else
-                    textActual = node.textContent.replace(/\u00A0/g, ' ');
-            }
-            textContentResult += textActual;
-        }
-        
-        return textContentResult;
-    }
-    
-    // Called in meta state
-    function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
-        if (!TextNodeContent || !ParentElement) return;
-        const textNodeResult = TextNodeProcessor(TextNodeContent);
-        if (!textNodeResult) return;
-        
-        let documentFragment = document.createDocumentFragment();
-        textNodeResult?.forEach(item => documentFragment.appendChild(item));
-        
-        daemonHandle.AddToOperations({
-            type: "REPLACE",
-            targetNode: ParentElement,
-            newNode: documentFragment //first result node only
-        });
-        return daemonHandle.SyncNow();
     }
     
     // Add all nodes to ignore, update the central textnode ref, updating this component relies on activation function
@@ -166,7 +129,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             TextContentMapRef.current.clear();
         }
     });
-    
+    // TODO: best to not have the nbsp on
     return React.createElement(tagName, {
         ...otherProps,
         ref: WholeElementRef,
