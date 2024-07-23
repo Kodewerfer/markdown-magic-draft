@@ -38,7 +38,7 @@ export function TextNodeProcessor(textNode: Node | string) {
     // Multiple element are at the top level result, eg: textnode + p tag + textnode. (Not really likely at the moment)
     if (TemplateChildNodes.length > 1) {
         NewNodes = [...TemplateChildNodes];
-        console.warn("TextNodeProcessor: Multiple top level nodes.");
+        console.warn("TextNodeProcessor: Multiple top level nodes.", NewNodes);
         return NewNodes;
     }
     

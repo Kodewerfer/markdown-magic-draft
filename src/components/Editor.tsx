@@ -29,7 +29,7 @@ import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
 import {ListContainer, ListItem} from "./Editor_Parts/List";
 import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 import {TActivationReturn} from "./Editor_Types";
-import SpecialLink from "./Editor_Parts/SpecialLink";
+import TagLink from "./Editor_Parts/TagLink";
 
 export type TEditorForwardRef = {
     ExtractMD: () => Promise<string>;
@@ -109,16 +109,16 @@ function EditorActual(
                     
                     // inline syntax
                     if (props['data-md-syntax'] && props['data-md-inline']) {
-                        if (props['data-link-to']) {
-                            return <SpecialLink {...props}
-                                                daemonHandle={DaemonHandle}
-                                                tagName={tagName}/>;
-                        }
-                        //Containers
                         //Simple syntax
                         return <PlainSyntax {...props}
                                             daemonHandle={DaemonHandle}
                                             tagName={tagName}/>;
+                    }
+                    // Tag links
+                    if (props['data-tag-link']) {
+                        return <TagLink {...props}
+                                        daemonHandle={DaemonHandle}
+                                        tagName={tagName}/>;
                     }
                     // Links
                     if (props['data-md-link']) {
@@ -183,7 +183,7 @@ function EditorActual(
                                           daemonHandle={DaemonHandle}
                                           tagName={tagName}/>
                     }
-                    
+                    // fallback catch-all component
                     return <CommonRenderer {...props}
                                            tagName={tagName}/>;
                 }
