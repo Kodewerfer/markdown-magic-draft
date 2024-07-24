@@ -84,9 +84,10 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         return daemonHandle.SyncNow();
     }
     
-    // for tag it will only restore the text
+    // Due to tags is not modifiable by user, some text replacement is needed.
     function CheckAndGetTagText() {
-        if (!TagElementRef.current) return;
+        if (!TagElementRef.current?.parentNode) return;
+        if (!TagTextRef.current?.parentNode) return;
         let elementWalker = document.createTreeWalker(TagElementRef.current, NodeFilter.SHOW_TEXT);
         
         let node;
@@ -94,14 +95,19 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         while (node = elementWalker.nextNode()) {
             let textActual = node.textContent;
             if (node.textContent) {
-                if (node.textContent === '\u00A0')
+                // replace the text
+                if (node.parentNode === TagTextRef.current) {
+                    if (node.textContent !== TagDisplayText)
+                        textActual = ""
+                    textActual = `:Tag[${TagLinkTarget}]`;
+                } else if (node.textContent === '\u00A0')
                     textActual = "";
                 else
                     textActual = node.textContent.replace(/\u00A0/g, ' ');
             }
+            
             textContentResult += textActual;
         }
-        
         return textContentResult;
     }
     
