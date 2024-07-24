@@ -2,6 +2,7 @@ import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {TActivationReturn} from "../Editor_Types";
 import {GetAllSurroundingText, GetCaretContext, TextNodeProcessor} from "../Utils/Helpers";
+import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 
 /**
  * A "Tag" link element is different in that it can be directly edited by the user once it is created.
@@ -24,7 +25,8 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
     
     // the element tag
     const TagElementRef = useRef<HTMLElement | null>(null);
-    const TagTextRef = useRef<HTMLElement | null>(null);
+    // the "fake" display, wont be extracted as part of the syntax
+    const TagDisplayTextRef = useRef<HTMLElement | null>(null);
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
     
@@ -42,8 +44,8 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
             
             if (TagElementRef.current) {
                 
-                const TextContent = CheckAndGetTagText();
-                UpdateTagAndSync(TextContent, TagElementRef.current);
+                const TextContent = CompileAllTextNode(TagElementRef.current);
+                UpdateComponentAndSync(daemonHandle, TextContent, TagElementRef.current);
                 
             }
         }
@@ -68,7 +70,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
             if (!Record.removedNodes.length) return;
             
             Record.removedNodes.forEach((Node) => {
-                if (Node === TagTextRef.current) {
+                if (Node === TagDisplayTextRef.current) {
                     DeleteTagAndSync();
                 }
             })
@@ -84,54 +86,27 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         return daemonHandle.SyncNow();
     }
     
-    // Due to tags is not modifiable by user, some text replacement is needed.
-    function CheckAndGetTagText() {
-        if (!TagElementRef.current?.parentNode) return;
-        if (!TagTextRef.current?.parentNode) return;
-        let elementWalker = document.createTreeWalker(TagElementRef.current, NodeFilter.SHOW_TEXT);
-        
-        let node;
-        let textContentResult = '';
-        while (node = elementWalker.nextNode()) {
-            let textActual = node.textContent;
-            if (node.textContent) {
-                // replace the text
-                if (node.parentNode === TagTextRef.current) {
-                    if (node.textContent !== TagDisplayText)
-                        textActual = ""
-                    textActual = `:Tag[${TagLinkTarget}]`;
-                } else if (node.textContent === '\u00A0')
-                    textActual = "";
-                else
-                    textActual = node.textContent.replace(/\u00A0/g, ' ');
-            }
-            
-            textContentResult += textActual;
-        }
-        return textContentResult;
-    }
-    
     // if TextNodeContent is null then delete, otherwise "refresh" the tag element
-    function UpdateTagAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
-        if (!ParentElement) return;
-        
-        if (!TextNodeContent) return DeleteTagAndSync();
-        
-        const textNodeResult = TextNodeProcessor(TextNodeContent);
-        
-        if (!textNodeResult) return DeleteTagAndSync();
-        
-        // Effectively "refresh" the tag.
-        let documentFragment = document.createDocumentFragment();
-        textNodeResult?.forEach(item => documentFragment.appendChild(item));
-        
-        daemonHandle.AddToOperations({
-            type: "REPLACE",
-            targetNode: ParentElement,
-            newNode: documentFragment //first result node only
-        });
-        return daemonHandle.SyncNow();
-    }
+    // function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
+    //     if (!ParentElement) return;
+    //
+    //     if (!TextNodeContent) return DeleteTagAndSync();
+    //
+    //     const textNodeResult = TextNodeProcessor(TextNodeContent);
+    //
+    //     if (!textNodeResult) return DeleteTagAndSync();
+    //
+    //     // Effectively "refresh" the tag.
+    //     let documentFragment = document.createDocumentFragment();
+    //     textNodeResult?.forEach(item => documentFragment.appendChild(item));
+    //
+    //     daemonHandle.AddToOperations({
+    //         type: "REPLACE",
+    //         targetNode: ParentElement,
+    //         newNode: documentFragment //first result node only
+    //     });
+    //     return daemonHandle.SyncNow();
+    // }
     
     function HandleEnter(ev: Event) {
         ev.preventDefault();
@@ -140,7 +115,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         
         let bShouldBreakLine = true;
         
-        const TextContent = CheckAndGetTagText();
+        const TextContent = CompileAllTextNode(TagElementRef.current!);
         
         const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, TagElementRef.current!);
         
@@ -151,7 +126,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         else
             daemonHandle.SetFutureCaret("NextElement");
         
-        UpdateTagAndSync(TextContent, TagElementRef.current);
+        UpdateComponentAndSync(daemonHandle, TextContent, TagElementRef.current);
         
         return Promise.resolve(bShouldBreakLine);
     }
@@ -170,9 +145,11 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         ...otherProps,
         ref: TagElementRef,
     }, [
-        <span key={"FrontSpacing"} className={`${isEditing ? "" : 'Hide-It'}`}>{'\u00A0'}</span>,
-        (<span key={"TagDisplay"} ref={TagTextRef} contentEditable={false}>{TagDisplayText}</span>),
-        <span key={"BackSpacing"} className={`${isEditing ? "" : 'Hide-It'}`}>{'\u00A0'}</span>,
+        <span key={"FrontSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
+        <span key={"HiddenSyntaxFront"} data-is-generated={true} className={'Hide-It'}>:Tag[{TagLinkTarget}]</span>,
+        (<span key={"TagDisplay"} ref={TagDisplayTextRef} data-fake-text={true}
+               contentEditable={false}>{TagDisplayText}</span>), //!!important data-fake-text will not be extracted as part of the syntax
+        <span key={"BackSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
     ]);
 }
 

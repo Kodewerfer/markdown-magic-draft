@@ -17,13 +17,16 @@ export function CompileAllTextNode(ContainerElement: HTMLElement) {
     while (node = elementWalker.nextNode()) {
         let textActual = node.textContent;
         if (node.textContent) {
-            if (node.textContent === '\u00A0')
+            if ((node.parentNode as HTMLElement).hasAttribute("data-fake-text"))
+                textActual = "";
+            else if (node.textContent === '\u00A0')
                 textActual = "";
             else
                 textActual = node.textContent.replace(/\u00A0/g, ' ');
         }
         textContentResult += textActual;
     }
+    
     return textContentResult;
 }
 
