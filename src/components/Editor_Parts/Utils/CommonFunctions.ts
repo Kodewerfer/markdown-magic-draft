@@ -30,7 +30,7 @@ export function CompileAllTextNode(ContainerElement: HTMLElement) {
     return textContentResult;
 }
 
-export function UpdateComponentAndSync(daemonHandle: TDaemonReturn, TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
+export function UpdateComponentAndSync(daemonHandle: TDaemonReturn, TextNodeContent: string | null | undefined, ParentElement: HTMLElement | Node | null) {
     if (!TextNodeContent || !ParentElement || !daemonHandle) return;
     const textNodeResult = TextNodeProcessor(TextNodeContent);
     if (!textNodeResult) return;
@@ -41,6 +41,26 @@ export function UpdateComponentAndSync(daemonHandle: TDaemonReturn, TextNodeCont
     daemonHandle.AddToOperations({
         type: "REPLACE",
         targetNode: ParentElement,
+        newNode: documentFragment //first result node only
+    });
+    return daemonHandle.SyncNow();
+}
+
+export function UpdateContainerAndSync(daemonHandle: TDaemonReturn, ContainerFullText: string | null | undefined, Container: HTMLElement | Node, ContainerTagName: string) {
+    if (!ContainerFullText || !Container || !daemonHandle) return
+    // Not removing the wrapper with processor
+    const textNodeResult = TextNodeProcessor(ContainerFullText, false);
+    if (!textNodeResult) return;
+    
+    console.log(ContainerFullText)
+    console.log(textNodeResult)
+    
+    let documentFragment = document.createDocumentFragment();
+    textNodeResult?.forEach(item => documentFragment.appendChild(item));
+    
+    daemonHandle.AddToOperations({
+        type: "REPLACE",
+        targetNode: Container,
         newNode: documentFragment //first result node only
     });
     return daemonHandle.SyncNow();
