@@ -109,7 +109,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
             if (CodeElementRef.current && CodeElementRef.current.textContent
                 && CodeElementRef.current.parentNode && CodeElementRef.current.parentNode.nodeName.toLowerCase() === 'pre') {
                 
-                const NewCodeContent = CompileAllTextNode()?.replace(/\u00A0/g, '');
+                const NewCodeContent = CompileAllCodeText()?.replace(/\u00A0/g, '');
                 if (!NewCodeContent) return componentHandlers;
                 UpdateCodeElement(NewCodeContent);
             }
@@ -142,7 +142,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
                     if (CodeElementRef.current && CodeElementRef.current.textContent
                         && CodeElementRef.current.parentNode && CodeElementRef.current.parentNode.nodeName.toLowerCase() === 'pre') {
                         
-                        const NewCodeContent = CompileAllTextNode()?.replace('\u00A0', '');
+                        const NewCodeContent = CompileAllCodeText()?.replace('\u00A0', '');
                         if (NewCodeContent)
                             UpdateCodeElement(NewCodeContent);
                     }
@@ -151,7 +151,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
         })
     }
     
-    function CompileAllTextNode() {
+    function CompileAllCodeText() {
         if (!CodeElementRef.current) return;
         let elementWalker = document.createTreeWalker(CodeElementRef.current, NodeFilter.SHOW_TEXT);
         

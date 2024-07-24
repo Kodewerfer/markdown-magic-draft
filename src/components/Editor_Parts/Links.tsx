@@ -6,6 +6,7 @@ import {
     TextNodeProcessor
 } from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
+import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 
 /**
  *  In current implementation, the Link component is a special kind of "plainSyntax" component which are in-line elements in nature
@@ -46,8 +47,8 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
             
             if (LinkElementRef.current) {
                 
-                const TextContent = CompileAllTextNode();
-                UpdateComponentAndSync(TextContent, LinkElementRef.current);
+                const TextContent = CompileAllTextNode(LinkElementRef.current);
+                UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
                 
             }
         }
@@ -74,41 +75,11 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
             Record.removedNodes.forEach((Node) => {
                 if (Node === LinkAddrRef.current || LinkedContentMapRef.current.get(Node)) {
                     
-                    const TextContent = CompileAllTextNode();
-                    UpdateComponentAndSync(TextContent, LinkElementRef.current);
+                    const TextContent = CompileAllTextNode(LinkElementRef.current!);
+                    UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
                 }
             })
         })
-    }
-    
-    function CompileAllTextNode() {
-        if (!LinkElementRef.current) return;
-        let elementWalker = document.createTreeWalker(LinkElementRef.current, NodeFilter.SHOW_TEXT);
-        
-        let node;
-        let textContent = '';
-        while (node = elementWalker.nextNode()) {
-            textContent += node.textContent;
-        }
-        
-        return textContent.trim();
-    }
-    
-    function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
-        if (!TextNodeContent || !ParentElement) return;
-        const textNodeResult = TextNodeProcessor(TextNodeContent);
-        
-        if (!textNodeResult) return;
-        
-        let documentFragment = document.createDocumentFragment();
-        textNodeResult?.forEach(item => documentFragment.appendChild(item));
-        
-        daemonHandle.AddToOperations({
-            type: "REPLACE",
-            targetNode: ParentElement,
-            newNode: documentFragment //first result node only
-        });
-        return daemonHandle.SyncNow();
     }
     
     function HandleEnter(ev: Event) {
@@ -118,7 +89,7 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
         
         let bShouldBreakLine = true;
         
-        const TextContent = CompileAllTextNode();
+        const TextContent = CompileAllTextNode(LinkElementRef.current!);
         
         const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, LinkElementRef.current!);
         
@@ -129,7 +100,7 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
         else
             daemonHandle.SetFutureCaret("NextElement");
         
-        UpdateComponentAndSync(TextContent, LinkElementRef.current);
+        UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
         
         return Promise.resolve(bShouldBreakLine);
     }

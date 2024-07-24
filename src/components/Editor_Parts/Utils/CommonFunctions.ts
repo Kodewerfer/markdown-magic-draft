@@ -24,7 +24,6 @@ export function CompileAllTextNode(ContainerElement: HTMLElement) {
         }
         textContentResult += textActual;
     }
-    
     return textContentResult;
 }
 
