@@ -86,6 +86,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         return daemonHandle.SyncNow();
     }
     
+    // using common functions now, saving for reference
     // if TextNodeContent is null then delete, otherwise "refresh" the tag element
     // function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
     //     if (!ParentElement) return;

@@ -123,6 +123,7 @@ export async function HTML2MD(CurrentContent: Compatible) {
     
 }
 
+// Handles custom directive conversion from HTML to MD
 function GetRehyperRemarkHandlers() {
     return {
         'br': (State: any, Node: any) => {
@@ -131,7 +132,7 @@ function GetRehyperRemarkHandlers() {
             return result;
         },
         'span': (State: any, Node: any) => {
-            const LinkedTarget = Node.properties['dataLinkTo'];
+            const LinkedTarget = Node.properties['dataTagLink'];
             if (!LinkedTarget || LinkedTarget === '') {
                 return;
             }
@@ -143,9 +144,9 @@ function GetRehyperRemarkHandlers() {
             let TextDirectiveContent: string;
             
             if (LinkedTarget === FirstTextNode.value)
-                TextDirectiveContent = `:LinkTo[${LinkedTarget}]`
+                TextDirectiveContent = `:Tag[${LinkedTarget}]`
             else
-                TextDirectiveContent = `:LinkTo[${FirstTextNode.value}]{${LinkedTarget}}`
+                TextDirectiveContent = `:Tag[${FirstTextNode.value}]{${LinkedTarget}}`
             
             const result = u('text', TextDirectiveContent);
             
