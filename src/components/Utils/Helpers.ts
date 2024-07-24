@@ -3,11 +3,14 @@ import {renderToString} from "react-dom/server";
 import {MD2HTMLSync} from "./Conversion";
 
 /**
- * Run a html text node through the conversion, may result in a mixture of text and element nodes.
- * Used in the editor as well as plainSyntax component.
- * @param textNode - the node to be processed
+ * Processes a text node and converts it to HTML.
+ *
+ * @param {Node|string} textNode - The text node to be processed. Can be either a Node or a string.
+ * @param ShouldRemoveWrapper =true - should remove the outer P tag if exist (converter quirk)
+ *
+ * @return {Node[]|null} - An array of new nodes created from the processed text node. Returns null if the converted HTML is empty or if the textNode parameter is not a text node.
  */
-export function TextNodeProcessor(textNode: Node | string) {
+export function TextNodeProcessor(textNode: Node | string, ShouldRemoveWrapper: boolean = true) {
     
     if (typeof textNode === 'string')
         textNode = document.createTextNode(textNode);
@@ -20,13 +23,14 @@ export function TextNodeProcessor(textNode: Node | string) {
     
     let TemplateConverter: HTMLTemplateElement = document.createElement('template');
     TemplateConverter.innerHTML = convertedHTML;
+    
     const TemplateChildNodes: NodeListOf<ChildNode> = TemplateConverter.content.childNodes;
     
     // New node for the daemon
     let NewNodes: Node[] = [];
     
     // Normal case where the P tag was added by the converter serving as a simple wrapper.
-    if (TemplateChildNodes.length === 1 && TemplateChildNodes[0].nodeType === Node.ELEMENT_NODE && (TemplateChildNodes[0] as HTMLElement).tagName.toLowerCase() === 'p') {
+    if (ShouldRemoveWrapper && TemplateChildNodes.length === 1 && TemplateChildNodes[0].nodeType === Node.ELEMENT_NODE && (TemplateChildNodes[0] as HTMLElement).tagName.toLowerCase() === 'p') {
         
         let WrapperTag = TemplateConverter.content.children[0];
         NewNodes = [...WrapperTag.childNodes];
@@ -35,7 +39,7 @@ export function TextNodeProcessor(textNode: Node | string) {
         return NewNodes;
     }
     
-    // Multiple element are at the top level result, eg: textnode + p tag + textnode. (Not really likely at the moment)
+    // Multiple element are at the top level result, eg: textnode + p tag + textnode. (usually indicate bug if not sent by a container)
     if (TemplateChildNodes.length > 1) {
         NewNodes = [...TemplateChildNodes];
         console.warn("TextNodeProcessor: Multiple top level nodes.", NewNodes);
