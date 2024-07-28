@@ -1,7 +1,9 @@
 import React, {useEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
-import {ExtraRealChild, GetChildNodesAsHTMLString, GetChildNodesTextContent} from '../Utils/Helpers'
+import {GetChildNodesAsHTMLString} from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
+import {RecalibrateContainer} from "../context/ParentElementContext";
+import {CompileAllTextNode, UpdateContainerAndSync} from "./Utils/CommonFunctions";
 
 export default function Paragraph({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -97,17 +99,26 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         
     });
     
-    return React.createElement(tagName, {
-        ...otherProps,
-        ref: MainElementRef,
-    }, [
-        isHeader && React.createElement('span', {
-            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
-            key: 'HeaderSyntaxLead',
-            ref: SyntaxElementRef,
-            contentEditable: false,
-            className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, headerSyntax),
-        ...(Array.isArray(children) ? children : [children]),
-    ]);
+    function ContainerUpdate() {
+        console.log("Sub element changed, Paragraph update.")
+        const compileAllTextNode = CompileAllTextNode(MainElementRef.current!);
+        if (MainElementRef.current && MainElementRef.current.parentNode)
+            UpdateContainerAndSync(daemonHandle, compileAllTextNode, MainElementRef.current, tagName);
+    }
+    
+    return <RecalibrateContainer.Provider value={ContainerUpdate}>
+        {React.createElement(tagName, {
+            ...otherProps,
+            ref: MainElementRef,
+        }, [
+            isHeader && React.createElement('span', {
+                'data-is-generated': true,
+                key: 'HeaderSyntaxLead',
+                ref: SyntaxElementRef,
+                contentEditable: false,
+                className: ` ${isEditing ? '' : 'Hide-It'}`
+            }, headerSyntax),
+            ...(Array.isArray(children) ? children : [children]),
+        ])}
+    </RecalibrateContainer.Provider>
 };

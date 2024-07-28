@@ -115,7 +115,7 @@ function EditorActual(
                                             tagName={tagName}/>;
                     }
                     // Tag links
-                    if (props['data-tag-link']) {
+                    if (props['data-file-link']) {
                         return <TagLink {...props}
                                         daemonHandle={DaemonHandle}
                                         tagName={tagName}/>;
@@ -475,9 +475,9 @@ function EditorActual(
         while (TopActiveComponent && typeof TopActiveComponent.return?.enter === 'function' && (TopActiveComponent.id && TopActiveComponent.id !== LastComponentKey)) {
             bComponentEnterUsed = true;
             LastComponentKey = TopActiveComponent.id;  //NOTE: this can be the key of the wrapping anonymous component
-            console.log("Component Enter key ", LastComponentKey);
+            console.log("Component spec Enter, key:", LastComponentKey);
             LatestCallbackReturn = await TopActiveComponent.return.enter(ev);
-            
+            // re-acquire the "current" top element(assuming the caret moved)
             TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         }
         
@@ -662,7 +662,7 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
-    function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
+    async function BackSpaceKeyHandler(ev: HTMLElementEventMap['keydown']) {
         const ActiveComponentsStack = LastActivationCache.current;
         const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         
@@ -836,9 +836,9 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
-    function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
+    async function DelKeyHandler(ev: HTMLElementEventMap['keydown']) {
         const ActiveComponentsStack = LastActivationCache.current;
-        const TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        let TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         
         if (TopActiveComponent && typeof TopActiveComponent.return?.delOverride === 'function') {
             console.log("Del: Component Spec Override");
@@ -965,13 +965,31 @@ function EditorActual(
             return;
         }
         
-        // Run the component spec handler if present
-        if (TopActiveComponent && typeof TopActiveComponent.return?.delJoining === 'function') {
-            console.log("Del: Component Spec line joining");
-            
-            if (TopActiveComponent.return.delJoining(ev) !== true)
-                return
+        // Del joining is bug prone, resulting deleting a whole line.
+        // run the delJoining() on each level of component
+        let bComponentDeJoiningUsed = false;
+        let LatestCallbackReturn;
+        let checkIndex = 1;
+        let CheckForComponent = ActiveComponentsStack[ActiveComponentsStack.length - checkIndex];
+        while (CheckForComponent) { //.foreach() won't cut it here, have to use the original reference (ActiveComponentsStack) when the key is pressed.
+            if (typeof CheckForComponent.return?.delJoining === 'function') {
+                bComponentDeJoiningUsed = true;
+                console.log("Component spec del joining used, key:", CheckForComponent.id);
+                LatestCallbackReturn = await CheckForComponent.return.delJoining(ev)
+            }
+            checkIndex++;
+            CheckForComponent = ActiveComponentsStack[ActiveComponentsStack.length - checkIndex];
         }
+        
+        if (bComponentDeJoiningUsed && LatestCallbackReturn !== true) return;
+        
+        // Old implementation, only check the top-level
+        // if (TopActiveComponent && typeof TopActiveComponent.return?.delJoining === 'function') {
+        //     console.log("Del: Component Spec line joining");
+        //
+        //     if (TopActiveComponent.return.delJoining(ev) !== true)
+        //         return
+        // }
         
         // Dealing with container type of element
         if (nextElementSibling.nodeType === Node.ELEMENT_NODE && (nextElementSibling as HTMLElement)?.hasAttribute('data-md-container')) {

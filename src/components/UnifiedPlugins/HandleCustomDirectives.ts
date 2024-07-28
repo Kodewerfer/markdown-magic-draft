@@ -43,7 +43,7 @@ function MDTransformer(ast: object) {
             /**
              * Special Links
              */
-            if (node.name.toLowerCase() === 'tag' && node.type === 'textDirective') {
+            if (node.name.toLowerCase() === 'link' && node.type === 'textDirective') {
                 
                 // attr is not used
                 // let LinkToTarget = Object.keys(node.attributes)[0];
@@ -59,7 +59,7 @@ function MDTransformer(ast: object) {
                 
                 
                 const hast = h(`span`,
-                    {'dataTagLink': firstChildValue},
+                    {'dataFileLink': firstChildValue},
                     [...childNodes]);
                 
                 data.hName = hast.tagName

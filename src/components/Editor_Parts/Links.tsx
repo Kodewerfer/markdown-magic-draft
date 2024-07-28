@@ -1,4 +1,4 @@
-import React, {useLayoutEffect, useRef, useState} from "react";
+import React, {useContext, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {
     GetAllSurroundingText,
@@ -7,6 +7,7 @@ import {
 } from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
+import {RecalibrateContainer} from "../context/ParentElementContext";
 
 /**
  *  In current implementation, the Link component is a special kind of "plainSyntax" component which are in-line elements in nature
@@ -33,6 +34,8 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
     
+    const ParentAction = useContext(RecalibrateContainer);
+    
     function ComponentActivation(state: boolean): TActivationReturn {
         
         const ComponentReturn = {
@@ -41,11 +44,15 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
         
         // send whatever within the text node before re-rendering to the processor
         if (!state) {
+            
             ElementOBRef.current?.takeRecords();
             ElementOBRef.current?.disconnect();
             ElementOBRef.current = null;
             
-            if (LinkElementRef.current) {
+            if (typeof ParentAction === "function")
+                ParentAction();
+            
+            else if (LinkElementRef.current) {
                 
                 const TextContent = CompileAllTextNode(LinkElementRef.current);
                 UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
@@ -75,6 +82,9 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
             Record.removedNodes.forEach((Node) => {
                 if (Node === LinkAddrRef.current || LinkedContentMapRef.current.get(Node)) {
                     
+                    if (typeof ParentAction === "function")
+                        return ParentAction();
+                    
                     const TextContent = CompileAllTextNode(LinkElementRef.current!);
                     UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
                 }
@@ -100,7 +110,10 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
         else
             daemonHandle.SetFutureCaret("NextElement");
         
-        UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
+        if (typeof ParentAction === "function")
+            ParentAction();
+        else
+            UpdateComponentAndSync(daemonHandle, TextContent, LinkElementRef.current);
         
         return Promise.resolve(bShouldBreakLine);
     }

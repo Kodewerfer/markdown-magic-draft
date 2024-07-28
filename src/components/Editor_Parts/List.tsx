@@ -6,6 +6,8 @@ import {
     MoveCaretToNode
 } from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
+import {CompileAllTextNode, UpdateContainerAndSync} from "./Utils/CommonFunctions";
+import {RecalibrateContainer} from "../context/ParentElementContext";
 
 export function ListContainer({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -294,18 +296,26 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         }
     });
     
+    function ContainerUpdate() {
+        console.log("Sub element changed, List items update.")
+        const compileAllTextNode = CompileAllTextNode(CurrentListItemRef.current!);
+        if (CurrentListItemRef.current && CurrentListItemRef.current.parentNode)
+            UpdateContainerAndSync(daemonHandle, compileAllTextNode, CurrentListItemRef.current, tagName);
+    }
     
-    return React.createElement(tagName, {
-        ...otherProps,
-        ref: CurrentListItemRef,
-    }, [
-        React.createElement('span', {
-            'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
-            key: 'HeaderSyntaxLead',
-            ref: ListSyntaxFiller,
-            contentEditable: false,
-            className: ` ${isEditing ? '' : 'Hide-It'}`
-        }, "- "),
-        ...(Array.isArray(children) ? children : [children]),
-    ]);
+    return <RecalibrateContainer.Provider value={ContainerUpdate}>
+        {React.createElement(tagName, {
+            ...otherProps,
+            ref: CurrentListItemRef,
+        }, [
+            React.createElement('span', {
+                'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
+                key: 'HeaderSyntaxLead',
+                ref: ListSyntaxFiller,
+                contentEditable: false,
+                className: ` ${isEditing ? '' : 'Hide-It'}`
+            }, "- "),
+            ...(Array.isArray(children) ? children : [children]),
+        ])}
+    </RecalibrateContainer.Provider>
 }

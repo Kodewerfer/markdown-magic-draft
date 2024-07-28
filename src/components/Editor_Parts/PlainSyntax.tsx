@@ -1,4 +1,4 @@
-import React, {useLayoutEffect, useRef, useState} from "react";
+import React, {useContext, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {
     GetAllSurroundingText,
@@ -8,6 +8,7 @@ import {
 } from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
+import {RecalibrateContainer} from "../context/ParentElementContext";
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -33,14 +34,21 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
     
+    const ParentAction = useContext(RecalibrateContainer);
+    
     function ComponentActivation(state: boolean): TActivationReturn {
         if (!state) {
+            
             ElementOBRef.current?.takeRecords();
             ElementOBRef.current?.disconnect();
             ElementOBRef.current = null;
             
-            const TextContent = CompileAllTextNode(WholeElementRef.current!);
-            UpdateComponentAndSync(daemonHandle, TextContent, WholeElementRef.current);
+            if (typeof ParentAction === "function")
+                ParentAction();
+            else {
+                const TextContent = CompileAllTextNode(WholeElementRef.current!);
+                UpdateComponentAndSync(daemonHandle, TextContent, WholeElementRef.current);
+            }
             
         }
         if (state) {
@@ -68,6 +76,9 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             Record.removedNodes.forEach((Node) => {
                 if (Node === SyntaxElementRefFront.current || SyntaxElementRefRear.current || TextContentMapRef.current.get(Node)) {
                     
+                    if (typeof ParentAction === "function")
+                        return ParentAction();
+                    
                     daemonHandle.AddToOperations({
                         type: "REPLACE",
                         targetNode: WholeElementRef.current!,
@@ -84,6 +95,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     function EnterKeyHandler(ev: Event) {
         ev.preventDefault();
         
+        
         const {CurrentSelection} = GetCaretContext();
         
         let bShouldBreakLine = true;
@@ -99,7 +111,10 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         else
             daemonHandle.SetFutureCaret("NextElement");
         
-        UpdateComponentAndSync(daemonHandle, TextContent, WholeElementRef.current);
+        if (typeof ParentAction === "function")
+            ParentAction();
+        else
+            UpdateComponentAndSync(daemonHandle, TextContent, WholeElementRef.current);
         
         return Promise.resolve(bShouldBreakLine);
     }

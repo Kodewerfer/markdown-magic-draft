@@ -1,8 +1,9 @@
-import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useContext, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {TActivationReturn} from "../Editor_Types";
 import {GetAllSurroundingText, GetCaretContext, TextNodeProcessor} from "../Utils/Helpers";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
+import {RecalibrateContainer} from "../context/ParentElementContext";
 
 /**
  * A "Tag" link element is different in that it can be directly edited by the user once it is created.
@@ -20,15 +21,17 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
     
     const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
     
-    const TagLinkTarget: any = otherProps['data-tag-link']; //prop passed down by the config func
-    const TagDisplayText = getLastPartOfPath(String(TagLinkTarget));
+    const FileLinkTarget: any = otherProps['data-file-link']; //prop passed down by the config func
+    const FileLinkDisplayText = getLastPartOfPath(String(FileLinkTarget));
     
     // the element tag
-    const TagElementRef = useRef<HTMLElement | null>(null);
+    const FileLinkElementRef = useRef<HTMLElement | null>(null);
     // the "fake" display, wont be extracted as part of the syntax
-    const TagDisplayTextRef = useRef<HTMLElement | null>(null);
+    const FileLinkDisplayTextRef = useRef<HTMLElement | null>(null);
     
     const ElementOBRef = useRef<MutationObserver | null>(null);
+    
+    const ParentAction = useContext(RecalibrateContainer);
     
     function ComponentActivation(state: boolean): TActivationReturn {
         
@@ -38,14 +41,17 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         
         // send whatever within the text node before re-rendering to the processor
         if (!state) {
+            
             ElementOBRef.current?.takeRecords();
             ElementOBRef.current?.disconnect();
             ElementOBRef.current = null;
             
-            if (TagElementRef.current) {
+            if (typeof ParentAction === "function")
+                ParentAction();
+            else if (FileLinkElementRef.current) {
                 
-                const TextContent = CompileAllTextNode(TagElementRef.current);
-                UpdateComponentAndSync(daemonHandle, TextContent, TagElementRef.current);
+                const TextContent = CompileAllTextNode(FileLinkElementRef.current);
+                UpdateComponentAndSync(daemonHandle, TextContent, FileLinkElementRef.current);
                 
             }
         }
@@ -54,7 +60,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
             
             if (typeof MutationObserver) {
                 ElementOBRef.current = new MutationObserver(ObserverHandler);
-                TagElementRef.current && ElementOBRef.current?.observe(TagElementRef.current, {
+                FileLinkElementRef.current && ElementOBRef.current?.observe(FileLinkElementRef.current, {
                     childList: true,
                     subtree: true
                 });
@@ -70,7 +76,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
             if (!Record.removedNodes.length) return;
             
             Record.removedNodes.forEach((Node) => {
-                if (Node === TagDisplayTextRef.current) {
+                if (Node === FileLinkDisplayTextRef.current) {
                     DeleteTagAndSync();
                 }
             })
@@ -78,10 +84,10 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
     }
     
     function DeleteTagAndSync() {
-        if (!TagElementRef.current) return;
+        if (!FileLinkElementRef.current) return;
         daemonHandle.AddToOperations({
             type: "REMOVE",
-            targetNode: TagElementRef.current,
+            targetNode: FileLinkElementRef.current,
         });
         return daemonHandle.SyncNow();
     }
@@ -116,9 +122,9 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         
         let bShouldBreakLine = true;
         
-        const TextContent = CompileAllTextNode(TagElementRef.current!);
+        const TextContent = CompileAllTextNode(FileLinkElementRef.current!);
         
-        const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, TagElementRef.current!);
+        const {precedingText, followingText} = GetAllSurroundingText(CurrentSelection!, FileLinkElementRef.current!);
         
         if (precedingText.trim() === '')
             daemonHandle.SetFutureCaret("PrevElement");
@@ -127,7 +133,10 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         else
             daemonHandle.SetFutureCaret("NextElement");
         
-        UpdateComponentAndSync(daemonHandle, TextContent, TagElementRef.current);
+        if (typeof ParentAction === "function")
+            ParentAction();
+        else
+            UpdateComponentAndSync(daemonHandle, TextContent, FileLinkElementRef.current);
         
         return Promise.resolve(bShouldBreakLine);
     }
@@ -137,19 +146,19 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
         
         if (typeof children === 'string') children = children.trim();
         
-        if (TagElementRef.current && TagElementRef.current?.firstChild)
-            daemonHandle.AddToIgnore([...TagElementRef.current.childNodes], "any", true);
+        if (FileLinkElementRef.current && FileLinkElementRef.current?.firstChild)
+            daemonHandle.AddToIgnore([...FileLinkElementRef.current.childNodes], "any", true);
     });
     
     
     return React.createElement(tagName, {
         ...otherProps,
-        ref: TagElementRef,
+        ref: FileLinkElementRef,
     }, [
         <span key={"FrontSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
-        <span key={"HiddenSyntaxFront"} data-is-generated={true} className={'Hide-It'}>:Tag[{TagLinkTarget}]</span>,
-        (<span key={"TagDisplay"} ref={TagDisplayTextRef} data-fake-text={true}
-               contentEditable={false}>{TagDisplayText}</span>), //!!important data-fake-text will not be extracted as part of the syntax
+        <span key={"HiddenSyntaxFront"} data-is-generated={true} className={'Hide-It'}>:Link[{FileLinkTarget}]</span>,
+        (<span key={"TagDisplay"} ref={FileLinkDisplayTextRef} data-fake-text={true}
+               contentEditable={false}>{FileLinkDisplayText}</span>), //!!important data-fake-text will not be extracted as part of the syntax
         <span key={"BackSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
     ]);
 }

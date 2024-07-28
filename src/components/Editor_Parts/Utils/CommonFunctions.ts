@@ -52,8 +52,8 @@ export function UpdateContainerAndSync(daemonHandle: TDaemonReturn, ContainerFul
     const textNodeResult = TextNodeProcessor(ContainerFullText, false);
     if (!textNodeResult) return;
     
-    console.log(ContainerFullText)
-    console.log(textNodeResult)
+    // console.log(ContainerFullText)
+    // console.log(textNodeResult)
     
     let documentFragment = document.createDocumentFragment();
     textNodeResult?.forEach(item => documentFragment.appendChild(item));

@@ -3,8 +3,8 @@
 // the returning value of these components' handler determined whether the "default behavior" should continue to run.
 export type TActivationReturn = {
     'enter'?: (ev: Event) => void | boolean | Promise<boolean>
-    'delJoining'?: (ev: Event) => void | boolean, //only handle line joining
+    'delJoining'?: (ev: Event) => void | boolean | Promise<boolean>, //only handle line joining
     'delOverride'?: (ev: Event) => void | boolean, //completely override del key to use the handler provided by component
-    'backspaceJoining'?: (ev: Event) => void | boolean, //only handle line joining
+    'backspaceJoining'?: (ev: Event) => void | boolean | Promise<boolean>, //only handle line joining
     'backspaceOverride'?: (ev: Event) => void | boolean, //completely override backspace key to use the handler provided by component
 };
