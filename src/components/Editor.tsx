@@ -30,7 +30,7 @@ import {ListContainer, ListItem} from "./Editor_Parts/List";
 import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 import {TActivationReturn} from "./Editor_Types";
 import TagLink from "./Editor_Parts/TagLink";
-import {CompileAllTextNode} from "./Editor_Parts/Utils/CommonFunctions";
+import {CompileAllTextNode, CompileDisplayTextNodes} from "./Editor_Parts/Utils/CommonFunctions";
 
 export type TEditorForwardRef = {
     ExtractMD: () => Promise<string>;
@@ -1038,46 +1038,69 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
-    async function CopyHandler(ev: ClipboardEvent) {
-        // will ask for permission
-        const ClipboarText = await navigator.clipboard.readText();
-        // remove all line breaks set as default
-        // await navigator.clipboard.writeText(ClipboarText.replace(/\r?\n|\r/g, " "));
+    async function CopyHandler(_?: ClipboardEvent) {
+        // will ask for permission, extract text only, as a default(no matter if the selection is expanded)
+        const clipboardText = await navigator.clipboard.readText();
+        
+        // remove all line breaks
+        // await navigator.clipboard.writeText(clipboardText.replace(/\r?\n|\r/g, " "));
+        await navigator.clipboard.writeText(clipboardText || " ");
         
         const selection = window.getSelection();
-        if (!selection) return; //narrowing
-        if (!selection.isCollapsed) {
-            const range = selection.getRangeAt(0);
-            const docFrag = range.cloneContents();
-            const allNodes = [];
-            const iterator = document.createNodeIterator(docFrag, NodeFilter.SHOW_ELEMENT);
-            let currentNode;
-            
-            while (currentNode = iterator.nextNode()) {
-                if (!(currentNode as HTMLElement).hasAttribute("data-is-generated"))
-                    allNodes.push(currentNode);
-            }
-            console.log(allNodes);
-            return;
-        }
-        
+        if (!selection || !selection.isCollapsed) return; //expanded selection will only copy pure text.
         
         let ActiveComponentsStack = LastActivationCache.current;
         const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
         if (!TopComponent) return;
+        
         const TopComponentElement = TopComponent.return?.element;
-        console.log(TopComponentElement);
         if (TopComponentElement) {
-            await navigator.clipboard.writeText(CompileAllTextNode(TopComponentElement) || "");
+            
+            const TextWithSyntax = CompileAllTextNode(TopComponentElement);
+            const TextPure = CompileDisplayTextNodes(TopComponentElement); // unused, todo: remove later
+            
+            await navigator.clipboard.writeText(TextWithSyntax || "");
         }
         
         return TopComponentElement;
         
     }
     
-    async function CutHandler(ev: ClipboardEvent) {
-        if (!ev.clipboardData) return; //narrowing
-        console.log(ev.clipboardData.getData("text/plain"));
+    async function CutHandler(_: ClipboardEvent) {
+        const selection = window.getSelection();
+        if (!selection || !selection.isCollapsed) {
+            // extract text only
+            const clipboardText = await navigator.clipboard.readText();
+            await navigator.clipboard.writeText(clipboardText || " ");
+            return;
+        }
+        
+        const ElementToDelete = await CopyHandler();
+        if (!ElementToDelete) return;
+        
+        DaemonHandle.AddToOperations({
+            type: "REMOVE",
+            targetNode: ElementToDelete
+        });
+        DaemonHandle.SyncNow();
+    }
+    
+    // TODO
+    async function PasteHandler(ev: ClipboardEvent) {
+        // let ActiveComponentsStack = LastActivationCache.current;
+        // const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        // console.log(TopComponent);
+        // if (!TopComponent) return;
+        //
+        // ev.preventDefault();
+        // const lastElementTagName = TopComponent.return?.element?.tagName;
+        // // FIXME: Deprecated API, no alternative
+        // if (lastElementTagName && ParagraphTest.test(lastElementTagName))
+        //     // await navigator.clipboard.writeText(ClipboardWithSyntax.current);
+        //     document.execCommand('insertText', false, ClipboardWithSyntax.current);
+        // else
+        //     // await navigator.clipboard.writeText(ClipboardPure.current);
+        //     document.execCommand('insertText', false, ClipboardPure.current.replace(/\r?\n|\r/g, " "));
     }
     
     // First time loading, also dealing with empty source
@@ -1170,12 +1193,14 @@ function EditorActual(
         
         EditorElementRef.current?.addEventListener("copy", CopyHandler);
         EditorElementRef.current?.addEventListener("cut", CutHandler);
+        // EditorElementRef.current?.addEventListener("paste", PasteHandler);
         return () => {
             EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
             EditorElementRef.current?.removeEventListener("keyup", EditorKeyUp);
             
             EditorElementRef.current?.removeEventListener("copy", CopyHandler);
             EditorElementRef.current?.removeEventListener("cut", CutHandler);
+            // EditorElementRef.current?.removeEventListener("paste", PasteHandler);
         }
     }, [EditorElementRef.current])
     

@@ -30,6 +30,28 @@ export function CompileAllTextNode(ContainerElement: HTMLElement) {
     return textContentResult;
 }
 
+export function CompileDisplayTextNodes(ContainerElement: HTMLElement) {
+    if (!ContainerElement) return null;
+    let elementWalker = document.createTreeWalker(ContainerElement, NodeFilter.SHOW_TEXT);
+    
+    let node;
+    let textContentResult = '';
+    while (node = elementWalker.nextNode()) {
+        let textActual = node.textContent;
+        if (node.textContent) {
+            if ((node.parentNode as HTMLElement).dataset["IsGenerated"] || (node.parentNode as HTMLElement).contentEditable === "false")
+                textActual = "";
+            else if (node.textContent === '\u00A0')
+                textActual = "";
+            else
+                textActual = node.textContent.replace(/\u00A0/g, ' ');
+        }
+        textContentResult += textActual;
+    }
+    
+    return textContentResult;
+}
+
 export function UpdateComponentAndSync(daemonHandle: TDaemonReturn, TextNodeContent: string | null | undefined, ParentElement: HTMLElement | Node | null) {
     if (!TextNodeContent || !ParentElement || !daemonHandle) return;
     const textNodeResult = TextNodeProcessor(TextNodeContent);

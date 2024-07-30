@@ -276,9 +276,9 @@ export default function useEditorDaemon(
                         // exception
                         if (OldTextNode.textContent !== '')
                             console.warn("Invalid text node handler return", callbackResult, " From ", OldTextNode.textContent);
-                        //
-                        if (OldTextNode.textContent === '' && (mutation.oldValue || TextNodeOriginalValue)) {
-                            console.log("Text Handler: Result is empty,delete text node");
+                        //this removal doesn't always work, but it is now done in with converter cleanupEmptyElements plugin
+                        if (OldTextNode.textContent?.trim() === '' && (mutation.oldValue || TextNodeOriginalValue)) {
+                            console.warn("Text Handler: Result is empty,delete text node");
                             const operationLog: TSyncOperation = {
                                 type: "REMOVE",
                                 newNode: OldTextNode.cloneNode(true),
