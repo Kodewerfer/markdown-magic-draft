@@ -1350,7 +1350,7 @@ export default function useEditorDaemon(
         
         WatchedElement.addEventListener("keydown", KeyDownHandler);
         WatchedElement.addEventListener("keyup", KeyUpHandler);
-        WatchedElement.addEventListener("paste", PastHandler);
+        // WatchedElement.addEventListener("paste", PastHandler);
         
         WatchedElement.addEventListener("selectstart", SelectionHandler);
         WatchedElement.addEventListener("dragstart", DoNothing);
@@ -1363,7 +1363,7 @@ export default function useEditorDaemon(
             // WatchedElement.style.whiteSpace = whiteSpaceCached;
             WatchedElement.removeEventListener("keydown", KeyDownHandler);
             WatchedElement.removeEventListener("keyup", KeyUpHandler);
-            WatchedElement.removeEventListener("paste", PastHandler);
+            // WatchedElement.removeEventListener("paste", PastHandler);
             
             WatchedElement.removeEventListener("selectstart", SelectionHandler);
             WatchedElement.removeEventListener("dragstart", DoNothing);

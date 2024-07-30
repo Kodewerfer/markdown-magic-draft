@@ -1087,20 +1087,20 @@ function EditorActual(
     
     // TODO
     async function PasteHandler(ev: ClipboardEvent) {
-        // let ActiveComponentsStack = LastActivationCache.current;
-        // const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
-        // console.log(TopComponent);
-        // if (!TopComponent) return;
-        //
-        // ev.preventDefault();
-        // const lastElementTagName = TopComponent.return?.element?.tagName;
-        // // FIXME: Deprecated API, no alternative
-        // if (lastElementTagName && ParagraphTest.test(lastElementTagName))
-        //     // await navigator.clipboard.writeText(ClipboardWithSyntax.current);
-        //     document.execCommand('insertText', false, ClipboardWithSyntax.current);
-        // else
-        //     // await navigator.clipboard.writeText(ClipboardPure.current);
-        //     document.execCommand('insertText', false, ClipboardPure.current.replace(/\r?\n|\r/g, " "));
+        let ActiveComponentsStack = LastActivationCache.current;
+        const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        console.log(TopComponent);
+        if (!TopComponent) return;
+        
+        ev.preventDefault();
+        const clipboardText = await navigator.clipboard.readText();
+        const lastElementTagName = TopComponent.return?.element?.tagName;
+        // FIXME: Deprecated API, no alternative
+        if (lastElementTagName && ParagraphTest.test(lastElementTagName))
+            // await navigator.clipboard.writeText(ClipboardWithSyntax.current);
+            document.execCommand('insertText', false, clipboardText);
+        else
+            document.execCommand('insertText', false, clipboardText.replace(/\r?\n|\r/g, " "));
     }
     
     // First time loading, also dealing with empty source
@@ -1193,14 +1193,14 @@ function EditorActual(
         
         EditorElementRef.current?.addEventListener("copy", CopyHandler);
         EditorElementRef.current?.addEventListener("cut", CutHandler);
-        // EditorElementRef.current?.addEventListener("paste", PasteHandler);
+        EditorElementRef.current?.addEventListener("paste", PasteHandler);
         return () => {
             EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
             EditorElementRef.current?.removeEventListener("keyup", EditorKeyUp);
             
             EditorElementRef.current?.removeEventListener("copy", CopyHandler);
             EditorElementRef.current?.removeEventListener("cut", CutHandler);
-            // EditorElementRef.current?.removeEventListener("paste", PasteHandler);
+            EditorElementRef.current?.removeEventListener("paste", PasteHandler);
         }
     }, [EditorElementRef.current])
     
