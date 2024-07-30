@@ -46,7 +46,9 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         setIsEditing(state);
         
         // Paragraph no need for special handling for enter and dels
-        return {}
+        return {
+            element: MainElementRef.current
+        }
     }
     
     function ObserverHandler(mutationList: MutationRecord[]) {

@@ -64,7 +64,8 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         }
         setIsEditing(state);
         return {
-            enter: EnterKeyHandler
+            enter: EnterKeyHandler,
+            element: WholeElementRef.current
         };
     }
     

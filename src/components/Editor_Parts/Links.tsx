@@ -39,7 +39,8 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     function ComponentActivation(state: boolean): TActivationReturn {
         
         const ComponentReturn = {
-            "enter": HandleEnter
+            "enter": HandleEnter,
+            element: LinkElementRef.current
         }
         
         // send whatever within the text node before re-rendering to the processor

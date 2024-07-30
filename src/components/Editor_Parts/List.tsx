@@ -64,6 +64,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
         return {
             "enter": EnterKeyHandler,
             "delJoining": DelKeyHandler,
+            element: CurrentListItemRef.current
         }
     }
     

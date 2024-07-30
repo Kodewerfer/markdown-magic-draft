@@ -62,6 +62,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         return {
             "enter": EnterKeyHandler,
             "delJoining": DelKeyHandler,
+            element:WholeElementRef.current
         }
     }
     

@@ -30,6 +30,7 @@ import {ListContainer, ListItem} from "./Editor_Parts/List";
 import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 import {TActivationReturn} from "./Editor_Types";
 import TagLink from "./Editor_Parts/TagLink";
+import {CompileAllTextNode} from "./Editor_Parts/Utils/CommonFunctions";
 
 export type TEditorForwardRef = {
     ExtractMD: () => Promise<string>;
@@ -244,6 +245,7 @@ function EditorActual(
     
     // Editor level selection status monitor
     const ComponentActivationSwitch = () => {
+        // console.log("Switching activation")
         const selection: Selection | null = window.getSelection();
         if (!selection) return;
         // Must be an element of the current editor
@@ -1036,6 +1038,48 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
+    async function CopyHandler(ev: ClipboardEvent) {
+        // will ask for permission
+        const ClipboarText = await navigator.clipboard.readText();
+        // remove all line breaks set as default
+        // await navigator.clipboard.writeText(ClipboarText.replace(/\r?\n|\r/g, " "));
+        
+        const selection = window.getSelection();
+        if (!selection) return; //narrowing
+        if (!selection.isCollapsed) {
+            const range = selection.getRangeAt(0);
+            const docFrag = range.cloneContents();
+            const allNodes = [];
+            const iterator = document.createNodeIterator(docFrag, NodeFilter.SHOW_ELEMENT);
+            let currentNode;
+            
+            while (currentNode = iterator.nextNode()) {
+                if (!(currentNode as HTMLElement).hasAttribute("data-is-generated"))
+                    allNodes.push(currentNode);
+            }
+            console.log(allNodes);
+            return;
+        }
+        
+        
+        let ActiveComponentsStack = LastActivationCache.current;
+        const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        if (!TopComponent) return;
+        const TopComponentElement = TopComponent.return?.element;
+        console.log(TopComponentElement);
+        if (TopComponentElement) {
+            await navigator.clipboard.writeText(CompileAllTextNode(TopComponentElement) || "");
+        }
+        
+        return TopComponentElement;
+        
+    }
+    
+    async function CutHandler(ev: ClipboardEvent) {
+        if (!ev.clipboardData) return; //narrowing
+        console.log(ev.clipboardData.getData("text/plain"));
+    }
+    
     // First time loading, also dealing with empty source
     useEffect(() => {
         ;(async () => {
@@ -1123,9 +1167,15 @@ function EditorActual(
         
         EditorElementRef.current?.addEventListener("keydown", EditorKeydown);
         EditorElementRef.current?.addEventListener("keyup", EditorKeyUp);
+        
+        EditorElementRef.current?.addEventListener("copy", CopyHandler);
+        EditorElementRef.current?.addEventListener("cut", CutHandler);
         return () => {
             EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
             EditorElementRef.current?.removeEventListener("keyup", EditorKeyUp);
+            
+            EditorElementRef.current?.removeEventListener("copy", CopyHandler);
+            EditorElementRef.current?.removeEventListener("cut", CutHandler);
         }
     }, [EditorElementRef.current])
     

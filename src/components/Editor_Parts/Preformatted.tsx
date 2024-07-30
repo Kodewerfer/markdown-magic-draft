@@ -99,6 +99,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
             "enter": EnterKeyHandler,
             "backspaceOverride": BackspaceHandler,
             "delOverride": DelKeyHandler,
+            element: CodeElementRef.current
         };
         
         if (!state) {
