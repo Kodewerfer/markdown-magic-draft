@@ -147,6 +147,14 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
         return Promise.resolve(bShouldBreakLine);
     }
     
+    // run the init callback each time
+    useLayoutEffect(() => {
+        (async () => {
+            if (typeof initCallback === "function")
+                await initCallback(FileLinkTarget);
+        })()
+    }, []);
+    
     // Like other in-line components, the component's node are exempt from ob, all updates are handled via addops in ComponentActivation
     useLayoutEffect(() => {
         
@@ -155,15 +163,6 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
         if (FileLinkElementRef.current && FileLinkElementRef.current?.firstChild)
             daemonHandle.AddToIgnore([...FileLinkElementRef.current.childNodes], "any", true);
     });
-    
-    // run the init callback each time
-    useLayoutEffect(() => {
-        (async () => {
-            if (typeof initCallback === "function")
-                await initCallback(FileLinkTarget);
-        })()
-    });
-    
     
     return React.createElement(tagName, {
         ...otherProps,
