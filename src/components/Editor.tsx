@@ -29,7 +29,7 @@ import {Blockquote, QuoteItem} from "./Editor_Parts/Blockquote";
 import {ListContainer, ListItem} from "./Editor_Parts/List";
 import {CodeItem, Preblock} from "./Editor_Parts/Preformatted";
 import {TActivationReturn} from "./Editor_Types";
-import TagLink from "./Editor_Parts/TagLink";
+import FileLink from "./Editor_Parts/FileLink";
 import {CompileAllTextNode, CompileDisplayTextNodes} from "./Editor_Parts/Utils/CommonFunctions";
 
 export type TEditorForwardRef = {
@@ -38,8 +38,16 @@ export type TEditorForwardRef = {
     SetCaretData: (caretData: TSelectionStatus) => void;
 }
 
+export type TComponentCallbacks = {
+    FileLinks?: {
+        initCallback?: (linkTarget: string) => void | Promise<void>;
+        removeCallback?: (linkTarget: string) => void | Promise<void>;
+    }
+}
+
 export type TEditorProps = {
     SourceData?: string | undefined;
+    ComponentCallbacks?: TComponentCallbacks;
     [key: string]: any; // for otherProps
 };
 
@@ -60,8 +68,8 @@ const AutoCompletePairsMap = new Map([
 
 
 function EditorActual(
-    {SourceData, ...otherProps}: TEditorProps,
-    ref: ForwardedRef<TEditorForwardRef>
+    {SourceData, ComponentCallbacks, ...otherProps}: TEditorProps,
+    ref?: ForwardedRef<TEditorForwardRef>,
 ) {
     const EditorElementRef = useRef<HTMLElement | null>(null);
     const EditorSourceStringRef = useRef('');
@@ -117,9 +125,11 @@ function EditorActual(
                     }
                     // Tag links
                     if (props['data-file-link']) {
-                        return <TagLink {...props}
-                                        daemonHandle={DaemonHandle}
-                                        tagName={tagName}/>;
+                        return <FileLink {...props}
+                                         removeCallback={ComponentCallbacks?.FileLinks?.removeCallback}
+                                         initCallback={ComponentCallbacks?.FileLinks?.initCallback}
+                                         daemonHandle={DaemonHandle}
+                                         tagName={tagName}/>;
                     }
                     // Links
                     if (props['data-md-link']) {
@@ -157,7 +167,7 @@ function EditorActual(
                                          tagName={tagName}/>
                     }
                     // Code and Code block
-                    // usually code blocks, supersede in-line codes
+                    // code blocks supersede in-line codes
                     if (props['data-md-pre-item'] === 'true' && props['data-md-code'] === 'true') {
                         return <CodeItem {...props}
                                          daemonHandle={DaemonHandle}

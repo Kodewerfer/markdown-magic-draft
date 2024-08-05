@@ -8,13 +8,14 @@ import {RecalibrateContainer} from "../context/ParentElementContext";
 /**
  * A "Tag" link element is different in that it can be directly edited by the user once it is created.
  */
-export default function TagLink({children, tagName, daemonHandle, ...otherProps}: {
+export default function FileLink({children, tagName, daemonHandle, initCallback, removeCallback, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
     tagName: string;
+    initCallback?: (linkTarget: string) => void | Promise<void>;
+    removeCallback?: (linkTarget: string) => void | Promise<void>;
     daemonHandle: TDaemonReturn;
     [key: string]: any; // for otherProps
 }) {
-    // TODO: set up alias for this
     const [SetActivation] = useState<(state: boolean) => TActivationReturn>(() => {
         return ComponentActivation;
     }); // the Meta state, called by parent via dom fiber
@@ -22,7 +23,7 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
     const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
     
     const FileLinkTarget: any = otherProps['data-file-link']; //prop passed down by the config func
-    const FileLinkDisplayText = getLastPartOfPath(String(FileLinkTarget));
+    const FileLinkDisplayText = getLastPartOfPath(String(FileLinkTarget)).split('.')[0];
     
     // the element tag
     const FileLinkElementRef = useRef<HTMLElement | null>(null);
@@ -90,6 +91,10 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
             type: "REMOVE",
             targetNode: FileLinkElementRef.current,
         });
+        
+        if (typeof removeCallback === "function")
+            removeCallback(FileLinkTarget);
+        
         return daemonHandle.SyncNow();
     }
     
@@ -151,6 +156,14 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
             daemonHandle.AddToIgnore([...FileLinkElementRef.current.childNodes], "any", true);
     });
     
+    // run the init callback each time
+    useLayoutEffect(() => {
+        (async () => {
+            if (typeof initCallback === "function")
+                await initCallback(FileLinkTarget);
+        })()
+    });
+    
     
     return React.createElement(tagName, {
         ...otherProps,
@@ -168,5 +181,5 @@ export default function TagLink({children, tagName, daemonHandle, ...otherProps}
 export function getLastPartOfPath(fullPath: string) {
     let tempPath = fullPath.replace(/\\/g, '/');
     let pathParts = tempPath.split('/');
-    return pathParts[pathParts.length - 1];
+    return pathParts[pathParts.length - 1] || "";
 }
