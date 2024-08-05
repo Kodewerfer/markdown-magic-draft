@@ -36,6 +36,7 @@ export type TEditorForwardRef = {
     ExtractMD: () => Promise<string>;
     ExtractCaretData: () => TSelectionStatus | null;
     SetCaretData: (caretData: TSelectionStatus) => void;
+    InsertText: (TextContent: string, bSyncAfterInsert?: boolean) => void;
 }
 
 export type TComponentCallbacks = {
@@ -228,6 +229,64 @@ function EditorActual(
         }
     }
     
+    function InsertText(TextContent: string, bSyncAfterInsert: boolean = true) {
+        
+        EditorElementRef.current?.focus();
+        
+        let {
+            PrecedingText,
+            SelectedText,
+            RemainingText,
+            TextAfterSelection,
+            CurrentSelection,
+            CurrentAnchorNode
+        } = GetCaretContext();
+        if (!CurrentSelection || CurrentAnchorNode === EditorElementRef.current) return;
+        // immediately collapse the selection
+        if (!CurrentSelection.isCollapsed) {
+            CurrentSelection.collapseToEnd();
+            ({
+                PrecedingText,
+                SelectedText,
+                RemainingText,
+                TextAfterSelection,
+                CurrentSelection,
+                CurrentAnchorNode
+            } = GetCaretContext());
+        }
+        
+        if (!CurrentSelection || !CurrentAnchorNode || !CurrentSelection.focusNode) return;
+        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
+        if (!NearestContainer) return;
+        if (CurrentAnchorNode.nodeType !== Node.TEXT_NODE && CurrentAnchorNode !== NearestContainer) return;
+        
+        let OldRange = {
+            startOffset: CurrentSelection.getRangeAt(0).startOffset || 0,
+        };
+        
+        // insert the text
+        CurrentAnchorNode.textContent = PrecedingText + String(TextContent);
+        if (TextAfterSelection) {
+            CurrentAnchorNode.textContent += TextAfterSelection;
+        }
+        
+        // reset the caret position
+        const selection = window.getSelection();
+        if (!selection) return;
+        try {
+            const NewRange = document.createRange();
+            NewRange.setStart(CurrentAnchorNode, (OldRange.startOffset + TextContent.length) || 0);
+            
+            selection.removeAllRanges()
+            selection.addRange(NewRange);
+        } catch (e) {
+            console.warn(e);
+        }
+        
+        if (bSyncAfterInsert)
+            DaemonHandle.SyncNow();
+    }
+    
     // function that extract HTML content from editor, will be called by parent component with forward ref
     async function ExtractMD() {
         await DaemonHandle.SyncNow();
@@ -249,7 +308,8 @@ function EditorActual(
     useImperativeHandle(ref, () => ({
         ExtractMD,
         ExtractCaretData,
-        SetCaretData
+        SetCaretData,
+        InsertText
     }));
     
     
