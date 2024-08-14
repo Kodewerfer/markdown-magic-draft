@@ -33,10 +33,16 @@ import FileLink from "./Editor_Parts/FileLink";
 import {CompileAllTextNode, CompileDisplayTextNodes} from "./Editor_Parts/Utils/CommonFunctions";
 
 export type TEditorForwardRef = {
+    FlushChanges: () => Promise<void>;
     ExtractMD: () => Promise<string>;
     ExtractCaretData: () => TSelectionStatus | null;
     SetCaretData: (caretData: TSelectionStatus) => void;
     InsertText: (TextContent: string, bSyncAfterInsert?: boolean) => void;
+    GetDOM: () => {
+        root: HTMLElement | null,
+        editor: HTMLElement | null,
+        mask: HTMLElement | null
+    }
 }
 
 export type TComponentCallbacks = {
@@ -72,6 +78,7 @@ function EditorActual(
     {SourceData, ComponentCallbacks, ...otherProps}: TEditorProps,
     ref?: ForwardedRef<TEditorForwardRef>,
 ) {
+    const EditorWrapperRef = useRef<HTMLElement | null>(null); //use to export outside only
     const EditorElementRef = useRef<HTMLElement | null>(null);
     const EditorSourceStringRef = useRef('');
     const EditorSourceDOCRef = useRef<Document | null>(null);
@@ -229,6 +236,20 @@ function EditorActual(
         }
     }
     
+    // - Forward ref functions
+    
+    async function FlushChanges() {
+        return DaemonHandle.SyncNow();
+    }
+    
+    function GetDOM() {
+        return {
+            root: EditorWrapperRef.current,
+            editor: EditorElementRef.current,
+            mask: EditorMaskRef.current
+        }
+    }
+    
     function InsertText(TextContent: string, bSyncAfterInsert: boolean = true) {
         
         EditorElementRef.current?.focus();
@@ -306,10 +327,12 @@ function EditorActual(
     
     // expose the extraction to parent
     useImperativeHandle(ref, () => ({
+        FlushChanges,
         ExtractMD,
         ExtractCaretData,
         SetCaretData,
-        InsertText
+        InsertText,
+        GetDOM
     }));
     
     
@@ -1294,7 +1317,7 @@ function EditorActual(
     
     return (
         <>
-            <section className="Editor" {...otherProps}>
+            <section className="Editor" ref={EditorWrapperRef} {...otherProps}>
                 <main className={'Editor-Inner'} ref={EditorElementRef}>
                     {EditorComponents}
                 </main>
