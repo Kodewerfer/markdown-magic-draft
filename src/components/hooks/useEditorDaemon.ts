@@ -81,7 +81,7 @@ type TCaretToken = 'zero' | 'PrevElement' | 'PrevLine' | 'NextLine' | 'NextEdita
 export type TDaemonReturn = {
     SyncNow: () => Promise<void>;
     GetSelectionStatus: () => TSelectionStatus | null;
-    SetSelectionStatus: (status: TSelectionStatus) => void;
+    SetSelectionStatus: (status: TSelectionStatus, ShouldOverride?: boolean) => void;
     DiscardHistory: (DiscardCount: number) => void;
     SetFutureCaret: (token: TCaretToken) => void;
     AddToIgnore: (Element: Node | HTMLElement | Node[], Type: TDOMTrigger, bIncludeAllChild?: boolean) => void;
@@ -1404,11 +1404,16 @@ export default function useEditorDaemon(
         GetSelectionStatus() {
             return GetSelectionStatus();
         },
-        SetSelectionStatus(status: TSelectionStatus) {
+        SetSelectionStatus(status: TSelectionStatus, ShouldOverride: boolean = false) {
             // applicable for first time loading, inject the status (could've been saved in parent component)
             if (!DaemonState.SelectionStatusCache)
                 DaemonState.SelectionStatusCache = status;
             if (!WatchElementRef.current) return;
+            
+            if (ShouldOverride) {
+                WatchElementRef.current.focus();
+                RestoreSelectionStatus(WatchElementRef.current, status);
+            }
         },
         SetFutureCaret(token: TCaretToken) {
             DaemonState.CaretOverrideTokens.push(token);

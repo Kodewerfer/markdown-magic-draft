@@ -36,7 +36,7 @@ export type TEditorForwardRef = {
     FlushChanges: () => Promise<void>;
     ExtractMD: () => Promise<string>;
     ExtractCaretData: () => TSelectionStatus | null;
-    SetCaretData: (caretData: TSelectionStatus) => void;
+    SetCaretData: (caretData: TSelectionStatus, ShouldOverride?: boolean) => void;
     InsertText: (TextContent: string, bSyncAfterInsert?: boolean) => void;
     GetDOM: () => {
         root: HTMLElement | null,
@@ -321,8 +321,8 @@ function EditorActual(
         return DaemonHandle.GetSelectionStatus();
     }
     
-    function SetCaretData(caretData: TSelectionStatus) {
-        return DaemonHandle.SetSelectionStatus(caretData);
+    function SetCaretData(caretData: TSelectionStatus, ShouldOverride?: boolean) {
+        return DaemonHandle.SetSelectionStatus(caretData, ShouldOverride);
     }
     
     // expose the extraction to parent
