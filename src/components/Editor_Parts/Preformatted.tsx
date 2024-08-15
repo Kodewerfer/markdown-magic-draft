@@ -58,6 +58,7 @@ export function Preblock({children, tagName, parentSetActivation, daemonHandle, 
     
     return React.createElement(tagName, {
         ref: ContainerRef,
+        className: "pre-block",
         ...otherProps
     }, cloneChildrenWithProps(children, {"parentMoveCaret": MoveCaret, "parentAddLine": AddEmptyLine}));
 }
@@ -383,6 +384,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
     
     return React.createElement(tagName, {
         ...otherProps,
+        className: "pre-block-code",
         ref: CodeElementRef,
     }, [
         <section className={`Text-Normal Whole-Line ${isEditing ? "" : 'Hide-It'}`}

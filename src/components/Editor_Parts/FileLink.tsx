@@ -143,13 +143,14 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
     
     return React.createElement(tagName, {
         ...otherProps,
+        className: "file-link",
         ref: FileLinkElementRef,
     }, [
-        <span key={"FrontSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
+        <span key={"FrontSpacing"} data-is-generated={true}>{''}</span>,
         <span key={"HiddenSyntaxFront"} data-is-generated={true} className={'Hide-It'}>:Link[{FileLinkTarget}]</span>,
         (<span key={"TagDisplay"} ref={FileLinkDisplayTextRef} data-fake-text={true}
                contentEditable={false}>{FileLinkDisplayText}</span>), //!!important data-fake-text will not be extracted as part of the syntax
-        <span key={"BackSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
+        <span key={"BackSpacing"} data-is-generated={true}>{''}</span>,
     ]);
 }
 

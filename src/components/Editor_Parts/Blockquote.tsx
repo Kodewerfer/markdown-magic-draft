@@ -18,6 +18,7 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
     
     return React.createElement(tagName, {
         ref: ContainerRef,
+        className: "block-quote",
         ...otherProps
     }, children);
 }
@@ -62,7 +63,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         return {
             "enter": EnterKeyHandler,
             "delJoining": DelKeyHandler,
-            element:WholeElementRef.current
+            element: WholeElementRef.current
         }
     }
     
@@ -157,6 +158,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     
     return React.createElement(tagName, {
         ...otherProps,
+        className: "block-quote-item",
         ref: WholeElementRef,
     }, [
         React.createElement('span', {

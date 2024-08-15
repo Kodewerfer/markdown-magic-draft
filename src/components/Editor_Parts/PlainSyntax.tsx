@@ -148,6 +148,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     // TODO: best to not have the nbsp on
     return React.createElement(tagName, {
         ...otherProps,
+        className: "in-line-element",
         ref: WholeElementRef,
     }, [
         React.createElement('span', {

@@ -20,6 +20,7 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
     
     return React.createElement(tagName, {
         ref: ListContainerRef,
+        className: "list-container",
         ...otherProps
     }, children);
 }
@@ -307,6 +308,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     return <RecalibrateContainer.Provider value={ContainerUpdate}>
         {React.createElement(tagName, {
             ...otherProps,
+            className: "list-item",
             ref: CurrentListItemRef,
         }, [
             React.createElement('span', {
