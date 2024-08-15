@@ -4,7 +4,6 @@ import {
     GetAllSurroundingText,
     GetCaretContext,
     GetChildNodesTextContent,
-    TextNodeProcessor
 } from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
@@ -25,7 +24,9 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     const propSyntaxData: any = otherProps['data-md-syntax'];
     const propShouldWrap: any = otherProps['data-md-wrapped'];
     
+    const SyntaxElementRefFrontWrapper = useRef<HTMLElement | null>(null);
     const SyntaxElementRefFront = useRef<HTMLElement | null>(null);
+    const SyntaxElementRefRearWrapper = useRef<HTMLElement | null>(null);
     const SyntaxElementRefRear = useRef<HTMLElement | null>(null);
     const TextContentMapRef = useRef(new Map<HTMLElement | Node, boolean>())
     
@@ -65,6 +66,8 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         setIsEditing(state);
         return {
             enter: EnterKeyHandler,
+            "backspaceOverride": BackspaceHandler,
+            "delOverride": DelKeyHandler,
             element: WholeElementRef.current
         };
     }
@@ -120,6 +123,39 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         return Promise.resolve(bShouldBreakLine);
     }
     
+    function BackspaceHandler(ev: Event) {
+        ev.stopImmediatePropagation();
+        
+        let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
+        
+        if (!CurrentAnchorNode || !CurrentSelection) return;
+        
+        if (SyntaxElementRefRearWrapper.current?.contains(CurrentAnchorNode) && PrecedingText.trim() === "") {
+            ev.preventDefault();
+            WholeElementRef.current?.removeChild(SyntaxElementRefRearWrapper.current!);
+            return false;
+        }
+        
+        return true;
+        
+    }
+    
+    function DelKeyHandler(ev: Event) {
+        ev.stopImmediatePropagation();
+        
+        let {CurrentSelection, CurrentAnchorNode, TextAfterSelection} = GetCaretContext();
+        
+        if (!CurrentAnchorNode || !CurrentSelection) return;
+        
+        if (SyntaxElementRefFrontWrapper.current?.contains(CurrentAnchorNode) && (!TextAfterSelection || TextAfterSelection.trim() === "")) {
+            ev.preventDefault();
+            WholeElementRef.current?.removeChild(SyntaxElementRefFrontWrapper.current!);
+            return false;
+        }
+        
+        return true;
+    }
+    
     // Add all nodes to ignore, update the central textnode ref, updating this component relies on activation function
     useLayoutEffect(() => {
         if (WholeElementRef.current && WholeElementRef.current.childNodes) {
@@ -154,6 +190,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxFront',
+            ref: SyntaxElementRefFrontWrapper,
             className: ` Text-Normal ${isEditing ? '' : 'Hide-It'}`
         }, ['\u00A0', (<span ref={SyntaxElementRefFront} key={'SyntaxFrontBlock'}
                              contentEditable={false}>{propSyntaxData}</span>)]),
@@ -163,6 +200,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         propShouldWrap && React.createElement('span', {
             'data-is-generated': true, //!!IMPORTANT!! custom attr for the daemon's find xp function, so that this element won't count towards to the number of sibling of the same name
             key: 'SyntaxRear',
+            ref: SyntaxElementRefRearWrapper,
             className: `Text-Normal ${isEditing ? '' : 'Hide-It'}`
         }, [
             propShouldWrap ? (<span ref={SyntaxElementRefRear} key={'SyntaxRearBlock'}
