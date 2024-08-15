@@ -202,23 +202,27 @@ export function GetCaretContext(): {
     let CurrentAnchorNode = undefined;
     
     if (CurrentSelection) {
-        const Range = CurrentSelection.getRangeAt(0);
-        
-        CurrentAnchorNode = window.getSelection()?.anchorNode;
-        
-        let textContent: string | null = CurrentAnchorNode!.textContent;
-        
-        if (textContent) {
-            PrecedingText = textContent.substring(0, Range.startOffset);
-            RemainingText = textContent.substring(Range.startOffset, textContent.length);
-            TextAfterSelection = textContent.substring(Range.endOffset, textContent.length);
-            if (!CurrentSelection.isCollapsed) {
-                SelectedText = textContent.substring(Range.startOffset, Range.endOffset);
-                if (CurrentSelection.focusNode !== CurrentSelection.anchorNode) {
-                    SelectedText = textContent.substring(Range.startOffset, textContent.length);
-                    TextAfterSelection = null;
+        try {
+            const Range = CurrentSelection.getRangeAt(0);
+            
+            CurrentAnchorNode = window.getSelection()?.anchorNode;
+            
+            let textContent: string | null = CurrentAnchorNode!.textContent;
+            
+            if (textContent) {
+                PrecedingText = textContent.substring(0, Range.startOffset);
+                RemainingText = textContent.substring(Range.startOffset, textContent.length);
+                TextAfterSelection = textContent.substring(Range.endOffset, textContent.length);
+                if (!CurrentSelection.isCollapsed) {
+                    SelectedText = textContent.substring(Range.startOffset, Range.endOffset);
+                    if (CurrentSelection.focusNode !== CurrentSelection.anchorNode) {
+                        SelectedText = textContent.substring(Range.startOffset, textContent.length);
+                        TextAfterSelection = null;
+                    }
                 }
             }
+        } catch (e) {
+            console.error(`Error getting caret context:${(e as Error).message}`);
         }
     }
     

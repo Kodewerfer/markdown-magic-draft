@@ -770,10 +770,11 @@ function EditorActual(
         let {PrecedingText, CurrentSelection, CurrentAnchorNode} = GetCaretContext();
         if (!CurrentAnchorNode) return;
         
-        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
+        let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
         
         if (NearestContainer === CurrentAnchorNode) {
+            console.log("Backspace: Caret on container, move to first child:", NearestContainer.firstChild)
             CurrentAnchorNode = NearestContainer.firstChild
             if (!CurrentAnchorNode) {
                 ev.preventDefault();
@@ -787,12 +788,32 @@ function EditorActual(
             // return;
         }
         
+        if (ParagraphTest.test(CurrentAnchorNode.nodeName)) {
+            console.log("Backspace: Caret on paragraph, move to first child:", CurrentAnchorNode.firstChild);
+            CurrentAnchorNode = CurrentAnchorNode.firstChild
+            NearestContainer = CurrentAnchorNode;
+            if (!CurrentAnchorNode || !NearestContainer) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+            }
+            
+        }
+        
+        // "normal" text removal conditions
         const bPrecedingValid = PrecedingText.trim() !== '' || (CurrentAnchorNode.previousSibling && CurrentAnchorNode.previousSibling.textContent !== '\n');
         const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
         
+        const bIsNonEditable = (CurrentAnchorNode as HTMLElement).contentEditable === "false";
+        const bIsParentNonEditable = CurrentAnchorNode.parentNode && (CurrentAnchorNode.parentNode as HTMLElement).contentEditable === "false";
+        
+        if (bIsNonEditable || (bAnchorIsTextNode && bIsParentNonEditable)) {
+            console.log("Backspacing: remove non-editable element")
+            return;
+        }
         
         // Run the normal key press on in-line editing
-        if (bPrecedingValid && bAnchorIsTextNode) return;
+        if (bAnchorIsTextNode && bPrecedingValid) return;
         if (CurrentSelection && !CurrentSelection.isCollapsed) return;
         
         // Handle empty container type
@@ -949,23 +970,51 @@ function EditorActual(
         let NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
         if (!NearestContainer) return;
         
-        const bCaretOnContainer = CurrentAnchorNode === NearestContainer;
-        const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
-        const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
+        if (NearestContainer === CurrentAnchorNode) {
+            console.log("Del: Caret on container, move to last child:", NearestContainer.lastChild)
+            CurrentAnchorNode = NearestContainer.lastChild
+            if (!CurrentAnchorNode) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+            }
+        }
+        
+        if (ParagraphTest.test(CurrentAnchorNode.nodeName)) {
+            console.log("Del: Caret on paragraph, move to last child:", CurrentAnchorNode.lastChild);
+            CurrentAnchorNode = CurrentAnchorNode.lastChild
+            NearestContainer = CurrentAnchorNode;
+            if (!CurrentAnchorNode || !NearestContainer) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+            }
+        }
         
         // Mainly dealing with li elements, after placing the caret on "the dash", anchor will be on the li itself due to the leading span is non-editable,
         // thus this is needed to remove the span so that the operation seemed more natural
         //TODO: May be buggy, need more testing
-        if (ParagraphTest.test(CurrentAnchorNode.nodeName)) {
-            if (CurrentAnchorNode.childNodes && (CurrentAnchorNode.childNodes[0] as HTMLElement).contentEditable === 'false')
-                return CurrentAnchorNode.removeChild(CurrentAnchorNode.childNodes[0]);
-            
-            return MoveCaretIntoNode(CurrentAnchorNode);
-        }
-        // Expanded selection, use browser defualt logic
-        if (CurrentSelection && !CurrentSelection.isCollapsed) return;
+        // if (ParagraphTest.test(CurrentAnchorNode.nodeName)) {
+        //     if (CurrentAnchorNode.childNodes && (CurrentAnchorNode.childNodes[0] as HTMLElement).contentEditable === 'false')
+        //         return CurrentAnchorNode.removeChild(CurrentAnchorNode.childNodes[0]);
         //
-        if (!bCaretOnContainer && bHasContentToDelete && bAnchorIsTextNode) return;   // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
+        //     return MoveCaretIntoNode(CurrentAnchorNode);
+        // }
+        
+        const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
+        const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
+        
+        const bIsNonEditable = (CurrentAnchorNode as HTMLElement).contentEditable === "false";
+        const bIsParentNonEditable = CurrentAnchorNode.parentNode && (CurrentAnchorNode.parentNode as HTMLElement).contentEditable === "false";
+        
+        if (bIsNonEditable || (bAnchorIsTextNode && bIsParentNonEditable)) {
+            console.log("Del: remove non-editable element")
+            return;
+        }
+        
+        // Expanded selection, use browser defualt logic
+        if (bHasContentToDelete && bAnchorIsTextNode) return;   // NOTE: when deleting text, default browser logic behaved strangely and will see the caret moving back and forth
+        if (CurrentSelection && !CurrentSelection.isCollapsed) return;
         
         // Handle empty container type
         if (CurrentAnchorNode.childNodes.length) {

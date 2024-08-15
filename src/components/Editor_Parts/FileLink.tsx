@@ -98,29 +98,6 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
         return daemonHandle.SyncNow();
     }
     
-    // using common functions now, saving for reference
-    // if TextNodeContent is null then delete, otherwise "refresh" the tag element
-    // function UpdateComponentAndSync(TextNodeContent: string | null | undefined, ParentElement: HTMLElement | null) {
-    //     if (!ParentElement) return;
-    //
-    //     if (!TextNodeContent) return DeleteTagAndSync();
-    //
-    //     const textNodeResult = TextNodeProcessor(TextNodeContent);
-    //
-    //     if (!textNodeResult) return DeleteTagAndSync();
-    //
-    //     // Effectively "refresh" the tag.
-    //     let documentFragment = document.createDocumentFragment();
-    //     textNodeResult?.forEach(item => documentFragment.appendChild(item));
-    //
-    //     daemonHandle.AddToOperations({
-    //         type: "REPLACE",
-    //         targetNode: ParentElement,
-    //         newNode: documentFragment //first result node only
-    //     });
-    //     return daemonHandle.SyncNow();
-    // }
-    
     function HandleEnter(ev: Event) {
         ev.preventDefault();
         
