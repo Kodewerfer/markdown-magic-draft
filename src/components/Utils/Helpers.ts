@@ -119,6 +119,14 @@ export function GetChildNodesTextContent(ChildNodes: NodeListOf<ChildNode> | und
     return textContent;
 }
 
+/**
+ * Check whether a node is the child of a container node
+ *
+ * @param {Node} Node - The node to start searching from.
+ * @param {HTMLElement} Container - The container element to search within.
+ * @param {RegExp} [NodeNameTest] - An optional regular expression to match against the node name.
+ * @return {HTMLElement|null} - The found wrapping element if it exists, or null if not found.
+ */
 export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLElement, NodeNameTest?: RegExp): HTMLElement | null {
     
     let currentNode = Node;
@@ -129,13 +137,19 @@ export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLEl
         let parentNode = currentNode.parentNode;
         if (parentNode === Container) return currentNode as HTMLElement;
         if (NodeNameTest && NodeNameTest.test(parentNode.nodeName.toLowerCase())) return currentNode as HTMLElement;
-        
+        console.log(currentNode)
         currentNode = parentNode;
     }
     
     return null;
 }
 
+/**
+ * Retrieves an array of all the sibling nodes that appear after the given node.
+ *
+ * @param {Node} node - The node for which to find the next siblings.
+ * @return {Node[]} - An array containing all the sibling nodes that appear after the given node.
+ */
 export function GetNextSiblings(node: Node): Node[] {
     let current: Node | null = node;
     const siblings: Node[] = [];
@@ -150,6 +164,12 @@ export function GetNextSiblings(node: Node): Node[] {
     return siblings;
 }
 
+/**
+ * Returns an array of the non-line breaker real children of a given node or HTML element.
+ *
+ * @param {Node | HTMLElement} node - The node or HTML element whose real children need to be retrieved.
+ * @return {Node[]} - An array containing the real children of the given node or HTML element.
+ */
 export function GetRealChildren(node: Node | HTMLElement) {
     let RealChildren: Node[] = [];
     if (!node || !node.childNodes.length) return RealChildren;

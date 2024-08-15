@@ -99,7 +99,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     
     function DelKeyHandler(ev: Event) {
         
-        const {CurrentSelection, CurrentAnchorNode, RemainingText, PrecedingText} = GetCaretContext();
+        const {CurrentSelection, CurrentAnchorNode, RemainingText} = GetCaretContext();
         
         if (!CurrentSelection || !CurrentAnchorNode) return;
         

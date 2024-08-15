@@ -2,8 +2,7 @@ import React, {useContext, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {
     GetAllSurroundingText,
-    GetCaretContext,
-    TextNodeProcessor
+    GetCaretContext
 } from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";

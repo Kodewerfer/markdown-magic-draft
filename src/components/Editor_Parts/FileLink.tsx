@@ -1,7 +1,10 @@
-import React, {useContext, useEffect, useLayoutEffect, useRef, useState} from "react";
+import React, {useContext, useLayoutEffect, useRef, useState} from "react";
 import {TDaemonReturn} from "../hooks/useEditorDaemon";
 import {TActivationReturn} from "../Editor_Types";
-import {GetAllSurroundingText, GetCaretContext, TextNodeProcessor} from "../Utils/Helpers";
+import {
+    GetAllSurroundingText,
+    GetCaretContext,
+} from "../Utils/Helpers";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 import {RecalibrateContainer} from "../context/ParentElementContext";
 
@@ -38,6 +41,8 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
         
         const ComponentReturn = {
             "enter": HandleEnter,
+            "backspaceOverride": BackspaceHandler,
+            "delOverride": DelKeyHandler,
             element: FileLinkElementRef.current
         }
         
@@ -124,6 +129,20 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
         return Promise.resolve(bShouldBreakLine);
     }
     
+    // because of the simple nature of the file link, del and backspace will simply delete the element
+    function BackspaceHandler(ev: Event) {
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+        DeleteTagAndSync();
+        
+    }
+    
+    function DelKeyHandler(ev: Event) {
+        ev.stopImmediatePropagation();
+        ev.preventDefault();
+        DeleteTagAndSync();
+    }
+    
     // run the init callback each time
     useLayoutEffect(() => {
         (async () => {
@@ -146,11 +165,11 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
         className: "file-link",
         ref: FileLinkElementRef,
     }, [
-        <span key={"FrontSpacing"} data-is-generated={true}>{''}</span>,
+        <span key={"FrontSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
         <span key={"HiddenSyntaxFront"} data-is-generated={true} className={'Hide-It'}>:Link[{FileLinkTarget}]</span>,
         (<span key={"TagDisplay"} ref={FileLinkDisplayTextRef} data-fake-text={true}
                contentEditable={false}>{FileLinkDisplayText}</span>), //!!important data-fake-text will not be extracted as part of the syntax
-        <span key={"BackSpacing"} data-is-generated={true}>{''}</span>,
+        <span key={"BackSpacing"} data-is-generated={true}>{'\u00A0'}</span>,
     ]);
 }
 

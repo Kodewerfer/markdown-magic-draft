@@ -268,8 +268,6 @@ function EditorActual(
             CurrentSelection.collapseToEnd();
             ({
                 PrecedingText,
-                SelectedText,
-                RemainingText,
                 TextAfterSelection,
                 CurrentSelection,
                 CurrentAnchorNode
@@ -443,7 +441,6 @@ function EditorActual(
         let {
             PrecedingText,
             SelectedText,
-            RemainingText,
             TextAfterSelection,
             CurrentSelection,
             CurrentAnchorNode
@@ -521,30 +518,6 @@ function EditorActual(
         }
         
         return;
-    }
-    
-    // TODO: May not be needed, delete later
-    function CheckForInputTriggers(KeyboardInput: string) {
-        
-        let {
-            PrecedingText,
-            SelectedText,
-            RemainingText,
-            TextAfterSelection,
-            CurrentSelection,
-            CurrentAnchorNode
-        } = GetCaretContext();
-        if (!CurrentAnchorNode || !CurrentSelection) return;
-        
-        const NearestContainer = FindWrappingElementWithinContainer(CurrentAnchorNode, EditorElementRef.current!)
-        if (!NearestContainer) return;
-        
-        const bContainerIsParagraph = NearestContainer.nodeName.toLowerCase() === 'p' && NearestContainer.parentNode === EditorElementRef.current;
-        
-        if (KeyboardInput === "`" && bContainerIsParagraph && NearestContainer.textContent === "``") {
-            console.log("SYNCED")
-            DaemonHandle.SyncNow();
-        }
     }
     
     /**
@@ -763,7 +736,9 @@ function EditorActual(
         
         if (TopActiveComponent && typeof TopActiveComponent.return?.backspaceOverride === 'function') {
             console.log("Backspace: Component Spec Override");
-            return TopActiveComponent.return?.backspaceOverride(ev);
+            if (TopActiveComponent.return?.backspaceOverride(ev) !== true)
+                return;
+            console.log("Backspace: Override returned true, continue editor backspacing");
         }
         
         // basically a reverse of the "delete", but with key differences on "normal join line"
@@ -821,10 +796,9 @@ function EditorActual(
             const bHaveOtherElement = Array.from(CurrentAnchorNode.childNodes).some((childNode: any) => {
                 if (childNode.nodeType === Node.TEXT_NODE && childNode.textContent !== '\n')
                     return true;
-                if (childNode.nodeType === Node.ELEMENT_NODE && (!(childNode as HTMLElement).hasAttribute("data-is-generated") && (childNode as HTMLElement).contentEditable !== 'false'))
-                    return true;
+                return childNode.nodeType === Node.ELEMENT_NODE && (!(childNode as HTMLElement).hasAttribute("data-is-generated") && (childNode as HTMLElement).contentEditable !== 'false');
                 
-                return false;
+                
             });
             if (!bHaveOtherElement) console.log("Backspace: container empty, removing");
             if (!bHaveOtherElement) return;
@@ -959,7 +933,9 @@ function EditorActual(
         if (TopActiveComponent && typeof TopActiveComponent.return?.delOverride === 'function') {
             console.log("Del: Component Spec Override");
             
-            return TopActiveComponent.return.delOverride(ev);
+            if (TopActiveComponent.return.delOverride(ev) !== true)
+                return
+            console.log("Del: Override returned true, continue editor Del");
         }
         
         
@@ -1021,10 +997,9 @@ function EditorActual(
             const bHaveOtherElement = Array.from(CurrentAnchorNode.childNodes).some((childNode: any) => {
                 if (childNode.nodeType === Node.TEXT_NODE && childNode.textContent !== '\n')
                     return true;
-                if (childNode.nodeType === Node.ELEMENT_NODE && (!(childNode as HTMLElement).hasAttribute("data-is-generated") && (childNode as HTMLElement).contentEditable !== 'false'))
-                    return true;
+                return childNode.nodeType === Node.ELEMENT_NODE && (!(childNode as HTMLElement).hasAttribute("data-is-generated") && (childNode as HTMLElement).contentEditable !== 'false');
                 
-                return false;
+                
             });
             if (!bHaveOtherElement) console.log("Del: container empty, removing");
             if (!bHaveOtherElement) return;
@@ -1199,7 +1174,6 @@ function EditorActual(
         if (TopComponentElement) {
             
             const TextWithSyntax = CompileAllTextNode(TopComponentElement);
-            const TextPure = CompileDisplayTextNodes(TopComponentElement); // unused, todo: remove later
             
             await navigator.clipboard.writeText(TextWithSyntax || "");
         }
