@@ -52,10 +52,6 @@ export type TComponentCallbacks = {
     }
 }
 
-export type TEditorCallbacks = {
-    OnReload: (SourceHTMLString: string) => void;
-}
-
 export type TEditorProps = {
     SourceData?: string | undefined;
     EditorCallBacks?: TEditorCallbacks;
