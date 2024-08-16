@@ -137,7 +137,6 @@ export function FindWrappingElementWithinContainer(Node: Node, Container: HTMLEl
         let parentNode = currentNode.parentNode;
         if (parentNode === Container) return currentNode as HTMLElement;
         if (NodeNameTest && NodeNameTest.test(parentNode.nodeName.toLowerCase())) return currentNode as HTMLElement;
-        console.log(currentNode)
         currentNode = parentNode;
     }
     

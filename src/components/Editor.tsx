@@ -52,9 +52,18 @@ export type TComponentCallbacks = {
     }
 }
 
+export type TEditorCallbacks = {
+    OnReload: (SourceHTMLString: string) => void;
+}
+
 export type TEditorProps = {
     SourceData?: string | undefined;
+    EditorCallBacks?: TEditorCallbacks;
     ComponentCallbacks?: TComponentCallbacks;
+    DaemonShouldLog?: boolean;
+    IsEditable?: boolean;
+    AutoFocus?: boolean;
+    HistoryLength?: number;
     [key: string]: any; // for otherProps
 };
 
@@ -75,14 +84,25 @@ const AutoCompletePairsMap = new Map([
 
 
 function EditorActual(
-    {SourceData, ComponentCallbacks, ...otherProps}: TEditorProps,
+    {
+        SourceData,
+        ComponentCallbacks,
+        EditorCallBacks,
+        DaemonShouldLog = true,
+        IsEditable = true,
+        AutoFocus = true,
+        HistoryLength = 10,
+        ...otherProps
+    }: TEditorProps,
     ref?: ForwardedRef<TEditorForwardRef>,
 ) {
+    // DOM element refs, can be extracted via GetDOM()
     const EditorWrapperRef = useRef<HTMLElement | null>(null); //use to export outside only
     const EditorElementRef = useRef<HTMLElement | null>(null);
-    const EditorSourceStringRef = useRef('');
-    const EditorSourceDOCRef = useRef<Document | null>(null);
     const EditorMaskRef = useRef<HTMLDivElement | null>(null);
+    // Internal data's ref
+    const SourceHTMLStringRef = useRef(''); //HTML string before converted into react components, will be exposed via OnReload() callback
+    const SourceDOCRef = useRef<Document | null>(null); //passed into Deamon
     
     const [EditorComponents, setEditorComponents] = useState<React.ReactNode>(null);
     
@@ -92,28 +112,33 @@ function EditorActual(
     
     // Subsequence reload by daemon
     async function ReloadEditorContent() {
-        if (!EditorSourceDOCRef.current) return;
-        const bodyElement: HTMLBodyElement | null = EditorSourceDOCRef.current.documentElement.querySelector('body');
+        if (!SourceDOCRef.current) return;
+        const bodyElement: HTMLBodyElement | null = SourceDOCRef.current.documentElement.querySelector('body');
         if (!bodyElement) return;
         bodyElement.normalize();
         
-        EditorSourceStringRef.current = String(bodyElement.innerHTML);
+        SourceHTMLStringRef.current = String(bodyElement.innerHTML);
         
         // Edge case, very unlikely, if the whole content become blank, reset it to an empty line
-        if (!EditorSourceStringRef.current || EditorSourceStringRef.current.trim() === "") {
+        if (!SourceHTMLStringRef.current || SourceHTMLStringRef.current.trim() === "") {
             const EmptyLine = document.createElement("p");
             EmptyLine.appendChild(document.createElement("br"));
-            EditorSourceStringRef.current = EmptyLine.outerHTML;
+            SourceHTMLStringRef.current = EmptyLine.outerHTML;
         }
         
-        const CleanedHTML = HTMLCleanUP(EditorSourceStringRef.current);
+        const CleanedHTML = HTMLCleanUP(SourceHTMLStringRef.current);
         
-        EditorSourceStringRef.current = String(CleanedHTML);
+        SourceHTMLStringRef.current = String(CleanedHTML);
         const HTMLParser = new DOMParser();
-        EditorSourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
+        SourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
         
         
-        setEditorComponents(ConfigAndConvertToReact(EditorSourceStringRef.current));
+        setEditorComponents(ConfigAndConvertToReact(SourceHTMLStringRef.current));
+        // caller's interface
+        console.log("Editor synced, reloading complete");
+        if (typeof EditorCallBacks?.OnReload === "function") {
+            EditorCallBacks.OnReload(SourceHTMLStringRef.current);
+        }
     }
     
     // FIXME: this structure is getting unwieldy, find a way to refactor.
@@ -310,7 +335,7 @@ function EditorActual(
     async function ExtractMD() {
         await DaemonHandle.SyncNow();
         // console.warn("Extracting Markdown, Daemon synced.");
-        const ConvertedMarkdown = await HTML2MD(EditorSourceStringRef.current);
+        const ConvertedMarkdown = await HTML2MD(SourceHTMLStringRef.current);
         return String(ConvertedMarkdown);
     }
     
@@ -1239,10 +1264,10 @@ function EditorActual(
             
             // Save a copy of HTML
             const HTMLParser = new DOMParser();
-            EditorSourceDOCRef.current = HTMLParser.parseFromString(SourceHTMLString, "text/html");
+            SourceDOCRef.current = HTMLParser.parseFromString(SourceHTMLString, "text/html");
             
             // save a text copy
-            EditorSourceStringRef.current = SourceHTMLString;
+            SourceHTMLStringRef.current = SourceHTMLString;
             // load editor component
             setEditorComponents(ConfigAndConvertToReact(SourceHTMLString))
         })()
@@ -1320,13 +1345,15 @@ function EditorActual(
         }
     }, [EditorElementRef.current])
     
-    const DaemonHandle = useEditorDaemon(EditorElementRef, EditorSourceDOCRef, ReloadEditorContent,
+    const DaemonHandle = useEditorDaemon(EditorElementRef, SourceDOCRef, ReloadEditorContent,
         {
             OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeProcessor,
-            ShouldLog: true, //detailed logs
-            IsEditable: true,
-            ShouldObserve: true
+            ShouldLog: DaemonShouldLog, //detailed logs
+            IsEditable: IsEditable,
+            ShouldObserve: true,
+            ShouldFocus: AutoFocus,
+            HistoryLength: HistoryLength,
         });
     
     // Force refreshing the activated component after reloading and caret is restored, needed to be after DaemonHandle's layout effect
