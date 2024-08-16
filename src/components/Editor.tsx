@@ -45,6 +45,11 @@ export type TEditorForwardRef = {
     }
 }
 
+export type TEditorCallbacks = {
+    OnInit?: (SourceHTMLString: string) => void;
+    OnReload?: (SourceHTMLString: string) => void;
+}
+
 export type TComponentCallbacks = {
     FileLinks?: {
         initCallback?: (linkTarget: string) => void | Promise<void>;
@@ -1266,6 +1271,12 @@ function EditorActual(
             SourceHTMLStringRef.current = SourceHTMLString;
             // load editor component
             setEditorComponents(ConfigAndConvertToReact(SourceHTMLString))
+            
+            console.log("Editor loaded");
+            if (typeof EditorCallBacks?.OnInit === "function") {
+                EditorCallBacks.OnInit(SourceHTMLStringRef.current);
+            }
+            
         })()
         
     }, [SourceData]);
