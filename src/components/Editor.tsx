@@ -45,16 +45,16 @@ export type TEditorForwardRef = {
     }
 }
 
-export type TEditorCallbacks = {
-    OnInit?: (SourceHTMLString: string) => void;
-    OnReload?: (SourceHTMLString: string) => void;
-}
-
 export type TComponentCallbacks = {
     FileLinks?: {
         initCallback?: (linkTarget: string) => void | Promise<void>;
         removeCallback?: (linkTarget: string) => void | Promise<void>;
     }
+}
+
+export type TEditorCallbacks = {
+    OnInit: (HTMLString: string) => void;
+    OnReload: (HTMLString: string) => void;
 }
 
 export type TEditorProps = {
@@ -1272,11 +1272,10 @@ function EditorActual(
             // load editor component
             setEditorComponents(ConfigAndConvertToReact(SourceHTMLString))
             
-            console.log("Editor loaded");
+            console.log("Editor init complete");
             if (typeof EditorCallBacks?.OnInit === "function") {
                 EditorCallBacks.OnInit(SourceHTMLStringRef.current);
             }
-            
         })()
         
     }, [SourceData]);
