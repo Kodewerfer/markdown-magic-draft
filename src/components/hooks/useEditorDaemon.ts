@@ -1246,29 +1246,14 @@ export default function useEditorDaemon(
     
     // Event handler entry point
     useLayoutEffect(() => {
-        
-        if (!EditorElementRef.current || !MirrorDocumentRef.current) {
-            console.error("No Editor element or mirror doc, daemon event binding canceled");
+        if (!EditorElementRef.current) {
+            console.error("No Editor element, daemon event binding canceled");
             return;
         }
         const WatchedElement = EditorElementRef.current;
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
-            // FIXME: for test purpose
-            // if (ev.key === "t") {
-            //     ev.preventDefault();
-            //     console.log("testing...")
-            //     DaemonState.SelectionStatusCache = GetSelectionStatus();
-            //     DaemonState.CaretOverrideToken = "NextLine";
-            //     // rollbackAndSync();
-            //     if (DaemonState.SelectionStatusCache) {
-            //         // consume the saved status
-            //         RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache);
-            //         DaemonState.SelectionStatusCache = null;
-            //         DaemonState.CaretOverrideToken = null;
-            //     }
-            // }
             if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && ev.code === 'KeyZ') {
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -1290,6 +1275,7 @@ export default function useEditorDaemon(
             debounceRollbackAndSync();
         }
         
+        // now handled in editor
         const PastHandler = (ev: ClipboardEvent) => {
             ev.preventDefault();
             
@@ -1351,7 +1337,7 @@ export default function useEditorDaemon(
         
         WatchedElement.addEventListener("keydown", KeyDownHandler);
         WatchedElement.addEventListener("keyup", KeyUpHandler);
-        // WatchedElement.addEventListener("paste", PastHandler);
+        // WatchedElement.addEventListener("paste", PastHandler); // now handled in editor
         
         WatchedElement.addEventListener("selectstart", SelectionHandler);
         WatchedElement.addEventListener("dragstart", DoNothing);

@@ -4,6 +4,7 @@ import {GetChildNodesAsHTMLString} from '../Utils/Helpers'
 import {TActivationReturn} from "../Editor_Types";
 import {RecalibrateContainer} from "../context/ParentElementContext";
 import {CompileAllTextNode, UpdateContainerAndSync} from "./Utils/CommonFunctions";
+import _ from "lodash";
 
 export default function Paragraph({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -74,26 +75,6 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         })
     }
     
-    // // Self destruct if no child element
-    // useEffect(() => {
-    //     if (!children || React.Children.count(children) === 1) {
-    //         if (String(children).trim() === '' && MainElementRef.current) {
-    //
-    //             daemonHandle.AddToOperations(
-    //                 {
-    //                     type: "REMOVE",
-    //                     targetNode: MainElementRef.current,
-    //                 }
-    //             );
-    //
-    //             MainElementRef.current = null;
-    //             daemonHandle.SyncNow();
-    //             daemonHandle.DiscardHistory(1);
-    //
-    //         }
-    //     }
-    // });
-    
     // Add filler element to ignore, add filler element's special handling operation
     useEffect(() => {
         if (isHeader && SyntaxElementRef.current)
@@ -115,7 +96,7 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
         }, [
             isHeader && React.createElement('span', {
                 'data-is-generated': true,
-                key: 'HeaderSyntaxLead',
+                key: `HeaderSyntaxLead_${_.uniqueId()}`,
                 ref: SyntaxElementRef,
                 contentEditable: false,
                 className: ` ${isEditing ? '' : 'Hide-It'}`

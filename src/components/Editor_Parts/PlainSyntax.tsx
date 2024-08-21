@@ -181,7 +181,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             TextContentMapRef.current.clear();
         }
     });
-    // TODO: best to not have the nbsp on
     return React.createElement(tagName, {
         ...otherProps,
         className: "in-line-element",

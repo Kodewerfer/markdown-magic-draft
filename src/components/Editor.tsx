@@ -7,7 +7,7 @@ import React, {
     useRef,
     useState
 } from "react";
-import {HTML2MD, HTML2ReactSnyc, HTMLCleanUP, MD2HTML} from "./Utils/Conversion";
+import {HTML2MDSync, HTML2ReactAsync, HTMLCleanUP, MD2HTMLAsync} from "./Utils/Conversion";
 import useEditorDaemon, {ParagraphTest, TSelectionStatus} from "./hooks/useEditorDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
@@ -103,7 +103,7 @@ function EditorActual(
     const EditorMaskRef = useRef<HTMLDivElement | null>(null);
     // Internal data's ref
     const SourceHTMLStringRef = useRef(''); //HTML string before converted into react components, will be exposed via OnReload() callback
-    const SourceDOCRef = useRef<Document | null>(null); //passed into Deamon
+    const MirrorDocRef = useRef<Document | null>(null); //passed into Deamon
     
     const [EditorComponents, setEditorComponents] = useState<React.ReactNode>(null);
     
@@ -111,30 +111,73 @@ function EditorActual(
     const LastActivationCache = useRef<TActivationCache[]>([]);
     const LastActiveAnchor = useRef<Node | null>(null); //compare with this only works before page re-rendering
     
+    // First time loading, also dealing with empty source
+    useEffect(() => {
+        ;(async () => {
+            const MDData = SourceData || '';
+            // convert MD to HTML
+            const convertedHTML: string = String(await MD2HTMLAsync(MDData));
+            const CleanedHTML = HTMLCleanUP(convertedHTML);
+            let SourceHTMLString = String(CleanedHTML);
+            
+            // the source file is empty,replace the content with an empty line and br
+            // if (!SourceHTMLString || SourceHTMLString === "") {
+            //     const EmptyLine = document.createElement("p");
+            //     EmptyLine.appendChild(document.createElement("br"));
+            //
+            //     SourceHTMLString = EmptyLine.outerHTML;
+            // }
+            
+            // Save a copy of HTML
+            const HTMLParser = new DOMParser();
+            MirrorDocRef.current = HTMLParser.parseFromString(SourceHTMLString, "text/html");
+            
+            // save a text copy
+            SourceHTMLStringRef.current = SourceHTMLString;
+            
+            let reactConversion = await ConfigAndConvertToReact(SourceHTMLString);
+            
+            // load editor component
+            setEditorComponents(reactConversion.result)
+            
+            
+            console.log("Editor init complete");
+            if (typeof EditorCallBacks?.OnInit === "function") {
+                EditorCallBacks.OnInit(SourceHTMLStringRef.current);
+            }
+        })()
+        
+    }, [SourceData]);
+    
     // Subsequence reload by daemon
-    async function ReloadEditorContent() {
-        if (!SourceDOCRef.current) return;
-        const bodyElement: HTMLBodyElement | null = SourceDOCRef.current.documentElement.querySelector('body');
-        if (!bodyElement) return;
-        bodyElement.normalize();
-        
-        SourceHTMLStringRef.current = String(bodyElement.innerHTML);
-        
-        // Edge case, very unlikely, if the whole content become blank, reset it to an empty line
-        if (!SourceHTMLStringRef.current || SourceHTMLStringRef.current.trim() === "") {
-            const EmptyLine = document.createElement("p");
-            EmptyLine.appendChild(document.createElement("br"));
-            SourceHTMLStringRef.current = EmptyLine.outerHTML;
+    async function OnDaemonFinishedProcessing() {
+        if (!MirrorDocRef.current) return;
+        const MirrorDocBodyElement: HTMLBodyElement | null = MirrorDocRef.current.documentElement.querySelector('body');
+        if (!MirrorDocBodyElement) {
+            console.error("Mirror Doc body element is null");
+            return;
         }
+        MirrorDocBodyElement.normalize();
         
-        const CleanedHTML = HTMLCleanUP(SourceHTMLStringRef.current);
+        const CleanedHTML = HTMLCleanUP(MirrorDocBodyElement.innerHTML);
         
         SourceHTMLStringRef.current = String(CleanedHTML);
-        const HTMLParser = new DOMParser();
-        SourceDOCRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
+        MirrorDocBodyElement.innerHTML = String(CleanedHTML);
         
+        // Edge case, very unlikely, if the whole content become blank, reset it to an empty line
+        // if (!SourceHTMLStringRef.current || SourceHTMLStringRef.current.trim() === "") {
+        //     const EmptyLine = document.createElement("p");
+        //     EmptyLine.appendChild(document.createElement("br"));
+        //     SourceHTMLStringRef.current = EmptyLine.outerHTML;
+        // }
         
-        setEditorComponents(ConfigAndConvertToReact(SourceHTMLStringRef.current));
+        // SourceHTMLStringRef.current = String(CleanedHTML);
+        
+        // const HTMLParser = new DOMParser();
+        // MirrorDocRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
+        
+        let reactConversion = await ConfigAndConvertToReact(SourceHTMLStringRef.current);
+        setEditorComponents(reactConversion.result);
         // caller's interface
         console.log("Editor synced, reloading complete");
         if (typeof EditorCallBacks?.OnReload === "function") {
@@ -143,102 +186,66 @@ function EditorActual(
     }
     
     // FIXME: this structure is getting unwieldy, find a way to refactor.
-    function ConfigAndConvertToReact(md2HTML: Compatible) {
+    const ComponentRenderConditions = (props: any, tagName: string) => {
+        
+        const CompoKey = props.dataKey;
+        
+        if (props['data-md-syntax'] && props['data-md-inline']) {
+            return <PlainSyntax {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-file-link']) {
+            return <FileLink {...props} key={CompoKey} removeCallback={ComponentCallbacks?.FileLinks?.removeCallback}
+                             initCallback={ComponentCallbacks?.FileLinks?.initCallback} daemonHandle={DaemonHandle}
+                             tagName={tagName}/>;
+        }
+        if (props['data-md-link']) {
+            return <Links {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-blockquote'] === 'true') {
+            return <Blockquote {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-quote-item'] === 'true') {
+            return <QuoteItem {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-list'] === 'true') {
+            return <ListContainer {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-list-item'] === 'true') {
+            return <ListItem {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-preformatted'] === 'true') {
+            return <Preblock {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-pre-item'] === 'true' && props['data-md-code'] === 'true') {
+            return <CodeItem {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-code'] === 'true') {
+            return <PlainSyntax {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        if (props['data-md-paragraph'] || props['data-md-header']) {
+            return <Paragraph {...props} key={CompoKey} isHeader={props['data-md-header'] !== undefined}
+                              headerSyntax={props['data-md-header']} daemonHandle={DaemonHandle} tagName={tagName}/>;
+        }
+        // fallback
+        return <CommonRenderer {...props} key={CompoKey} tagName={tagName}/>;
+    };
+    
+    async function ConfigAndConvertToReact(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
-        const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = ['p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'br', 'img', 'del', 'input', 'hr']
-            .reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
-                acc[tagName] = (props: any) => {
-                    
-                    // inline syntax
-                    if (props['data-md-syntax'] && props['data-md-inline']) {
-                        //Simple syntax
-                        return <PlainSyntax {...props}
-                                            daemonHandle={DaemonHandle}
-                                            tagName={tagName}/>;
-                    }
-                    // Tag links
-                    if (props['data-file-link']) {
-                        return <FileLink {...props}
-                                         removeCallback={ComponentCallbacks?.FileLinks?.removeCallback}
-                                         initCallback={ComponentCallbacks?.FileLinks?.initCallback}
-                                         daemonHandle={DaemonHandle}
-                                         tagName={tagName}/>;
-                    }
-                    // Links
-                    if (props['data-md-link']) {
-                        return <Links {...props}
-                                      daemonHandle={DaemonHandle}
-                                      tagName={tagName}/>;
-                    }
-                    // Block quote
-                    if (props['data-md-blockquote'] === 'true') {
-                        return <Blockquote {...props}
-                                           daemonHandle={DaemonHandle}
-                                           tagName={tagName}/>
-                    }
-                    if (props['data-md-quote-item'] === 'true') {
-                        return <QuoteItem {...props}
-                                          daemonHandle={DaemonHandle}
-                                          tagName={tagName}/>
-                    }
-                    // List and items
-                    if (props['data-md-list'] === 'true') {
-                        return <ListContainer {...props}
-                                              daemonHandle={DaemonHandle}
-                                              tagName={tagName}/>
-                    }
-                    if (props['data-md-list-item'] === 'true') {
-                        return <ListItem {...props}
-                                         daemonHandle={DaemonHandle}
-                                         tagName={tagName}/>
-                    }
-                    
-                    
-                    if (props['data-md-preformatted'] === 'true') {
-                        return <Preblock {...props}
-                                         daemonHandle={DaemonHandle}
-                                         tagName={tagName}/>
-                    }
-                    // Code and Code block
-                    // code blocks supersede in-line codes
-                    if (props['data-md-pre-item'] === 'true' && props['data-md-code'] === 'true') {
-                        return <CodeItem {...props}
-                                         daemonHandle={DaemonHandle}
-                                         tagName={tagName}/>
-                    }
-                    // singular in-line code items
-                    if (props['data-md-code'] === 'true') {
-                        return <PlainSyntax {...props}
-                                            daemonHandle={DaemonHandle}
-                                            tagName={tagName}/>;
-                    }
-                    // Paragraph and Headers
-                    if (props['data-md-paragraph'] || props['data-md-header']) {
-                        // Header
-                        if (props['data-md-header'] !== undefined) {
-                            return <Paragraph {...props}
-                                              isHeader={true}
-                                              headerSyntax={props['data-md-header']}
-                                              daemonHandle={DaemonHandle}
-                                              tagName={tagName}/>
-                        }
-                        // Normal P tags
-                        return <Paragraph {...props}
-                                          daemonHandle={DaemonHandle}
-                                          tagName={tagName}/>
-                    }
-                    // fallback catch-all component
-                    return <CommonRenderer {...props}
-                                           tagName={tagName}/>;
-                }
-                return acc;
-            }, {});
+        const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = [
+            'p', 'span', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol',
+            'li', 'code', 'pre', 'em', 'strong', 'table', 'thead', 'tbody', 'tr', 'td', 'th',
+            'br', 'img', 'del', 'input', 'hr'
+        ].reduce((acc: Record<string, React.FunctionComponent<any>>, tagName: string) => {
+            acc[tagName] = (props: any) => ComponentRenderConditions(props, tagName);
+            return acc;
+        }, {});
         
         const componentOptions = {
             ...TextNodesMappingConfig
         }
-        return HTML2ReactSnyc(md2HTML, componentOptions).result;
+        return HTML2ReactAsync(md2HTML, componentOptions);
     }
     
     // Will be called by the Daemon
@@ -336,7 +343,7 @@ function EditorActual(
     async function ExtractMD() {
         await DaemonHandle.SyncNow();
         // console.warn("Extracting Markdown, Daemon synced.");
-        const ConvertedMarkdown = await HTML2MD(SourceHTMLStringRef.current);
+        const ConvertedMarkdown = await HTML2MDSync(SourceHTMLStringRef.current);
         return String(ConvertedMarkdown);
     }
     
@@ -427,12 +434,12 @@ function EditorActual(
         
         // switch on the new ones, parent components first
         parentFibers.forEach((fiber: any) => {
-            keyPathFull += fiber.key || "";
-            if (fiber.key && keyLast === null) keyLast = fiber.key //store the key so that it can be used latter
+            keyPathFull += fiber.id || "";
+            if (fiber.id && keyLast === null) keyLast = fiber.id //store the key so that it can be used latter
             
-            let ID = fiber.key;
+            let ID = fiber.id;
             
-            if (!fiber.key && keyLast) {
+            if (!fiber.id && keyLast) {
                 ID = keyLast;
                 keyLast = null;
             }
@@ -455,7 +462,7 @@ function EditorActual(
                 fiber: ActiveComponentFiber,
                 func: ActiveComponentFiber.memoizedState.memoizedState,
                 return: ActiveComponentFiber.memoizedState.memoizedState(true),
-                id: ActiveComponentFiber.key ? ActiveComponentFiber.key : keyLast
+                id: ActiveComponentFiber.id ? ActiveComponentFiber.id : keyLast
             });
         }
         
@@ -993,16 +1000,6 @@ function EditorActual(
             }
         }
         
-        // Mainly dealing with li elements, after placing the caret on "the dash", anchor will be on the li itself due to the leading span is non-editable,
-        // thus this is needed to remove the span so that the operation seemed more natural
-        //TODO: May be buggy, need more testing
-        // if (ParagraphTest.test(CurrentAnchorNode.nodeName)) {
-        //     if (CurrentAnchorNode.childNodes && (CurrentAnchorNode.childNodes[0] as HTMLElement).contentEditable === 'false')
-        //         return CurrentAnchorNode.removeChild(CurrentAnchorNode.childNodes[0]);
-        //
-        //     return MoveCaretIntoNode(CurrentAnchorNode);
-        // }
-        
         const bHasContentToDelete = RemainingText.trim() !== '' || (CurrentAnchorNode.nextSibling && CurrentAnchorNode.nextSibling.textContent !== '\n');
         const bAnchorIsTextNode = CurrentAnchorNode.nodeType === Node.TEXT_NODE;
         
@@ -1227,7 +1224,6 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
-    // TODO
     async function PasteHandler(ev: ClipboardEvent) {
         let ActiveComponentsStack = LastActivationCache.current;
         const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
@@ -1245,40 +1241,6 @@ function EditorActual(
             document.execCommand('insertText', false, clipboardText.replace(/\r?\n|\r/g, " "));
     }
     
-    // First time loading, also dealing with empty source
-    useEffect(() => {
-        ;(async () => {
-            const MDData = SourceData || '';
-            // convert MD to HTML
-            const convertedHTML: string = String(await MD2HTML(MDData));
-            const CleanedHTML = HTMLCleanUP(convertedHTML);
-            let SourceHTMLString = String(CleanedHTML);
-            
-            // the source file is empty,replace the content with an empty line and br
-            if (!SourceHTMLString || SourceHTMLString === "") {
-                const EmptyLine = document.createElement("p");
-                EmptyLine.appendChild(document.createElement("br"));
-                
-                SourceHTMLString = EmptyLine.outerHTML;
-            }
-            
-            
-            // Save a copy of HTML
-            const HTMLParser = new DOMParser();
-            SourceDOCRef.current = HTMLParser.parseFromString(SourceHTMLString, "text/html");
-            
-            // save a text copy
-            SourceHTMLStringRef.current = SourceHTMLString;
-            // load editor component
-            setEditorComponents(ConfigAndConvertToReact(SourceHTMLString))
-            
-            console.log("Editor init complete");
-            if (typeof EditorCallBacks?.OnInit === "function") {
-                EditorCallBacks.OnInit(SourceHTMLStringRef.current);
-            }
-        })()
-        
-    }, [SourceData]);
     
     // Masking and unmasking to hide flicker
     useLayoutEffect(() => {
@@ -1330,20 +1292,14 @@ function EditorActual(
             }
         }
         
-        function EditorKeyUp(ev: HTMLElementEventMap['keyup']) {
-            // CheckForInputTriggers(ev.key);
-            // TODO: May not be needed, delete later
-        }
         
         EditorElementRef.current?.addEventListener("keydown", EditorKeydown);
-        EditorElementRef.current?.addEventListener("keyup", EditorKeyUp);
         
         EditorElementRef.current?.addEventListener("copy", CopyHandler);
         EditorElementRef.current?.addEventListener("cut", CutHandler);
         EditorElementRef.current?.addEventListener("paste", PasteHandler);
         return () => {
             EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
-            EditorElementRef.current?.removeEventListener("keyup", EditorKeyUp);
             
             EditorElementRef.current?.removeEventListener("copy", CopyHandler);
             EditorElementRef.current?.removeEventListener("cut", CutHandler);
@@ -1351,7 +1307,7 @@ function EditorActual(
         }
     }, [EditorElementRef.current])
     
-    const DaemonHandle = useEditorDaemon(EditorElementRef, SourceDOCRef, ReloadEditorContent,
+    const DaemonHandle = useEditorDaemon(EditorElementRef, MirrorDocRef, OnDaemonFinishedProcessing,
         {
             OnRollback: MaskEditingArea,
             TextNodeCallback: TextNodeProcessor,
@@ -1442,7 +1398,7 @@ function FindActiveEditorComponentFiber(DomNode: HTMLElement, TraverseUp = 6): a
         parentFiber = getCompFiber(parentFiber);
         
         if (!parentFiber) break;
-        if (parentFiber.key && parentFiber.key.toLowerCase().includes('editor')) break; //reached editor level
+        if (parentFiber.id && parentFiber.id.toLowerCase().includes('editor')) break; //reached editor level
         
         allParentFibers.push(parentFiber);
     }
