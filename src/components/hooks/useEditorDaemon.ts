@@ -90,7 +90,7 @@ export type TDaemonReturn = {
 }
 
 export default function useEditorDaemon(
-    WatchElementRef: { current: HTMLElement | undefined | null },
+    EditorElementRef: { current: HTMLElement | undefined | null },
     MirrorDocumentRef: { current: Document | undefined | null },
     FinalizeChanges: Function,
     Options: Partial<THookOptions>
@@ -145,10 +145,10 @@ export default function useEditorDaemon(
             return;
         }
         
-        if (!WatchElementRef.current)
+        if (!EditorElementRef.current)
             return;
         
-        return DaemonState.Observer.observe(WatchElementRef.current, {
+        return DaemonState.Observer.observe(EditorElementRef.current, {
             childList: true,
             subtree: true,
             characterData: true,
@@ -179,8 +179,8 @@ export default function useEditorDaemon(
                 onRollbackCancelled = DaemonOptions.OnRollback();
             DaemonState.EditorLocked = true;
             ToggleObserve(false);
-            if (WatchElementRef.current)
-                WatchElementRef.current.contentEditable = 'false';
+            if (EditorElementRef.current)
+                EditorElementRef.current.contentEditable = 'false';
         }
         
         let {OperationLogs, BindOperationLogs} = RollbackAndBuildOps();
@@ -204,14 +204,14 @@ export default function useEditorDaemon(
                 console.log("No Operation generated, abort.");
             
             ToggleObserve(true);
-            WatchElementRef.current!.contentEditable = 'true';
+            EditorElementRef.current!.contentEditable = 'true';
             
             if (typeof onRollbackCancelled === "function")
                 // Run the cleanup/revert function that is the return of the onRollbackReturn handler.
                 // right now it's just unmasking.
                 onRollbackCancelled();
             
-            RestoreSelectionStatus(WatchElementRef.current!, DaemonState.SelectionStatusCache!);
+            RestoreSelectionStatus(EditorElementRef.current!, DaemonState.SelectionStatusCache!);
             DaemonState.EditorLocked = false;
             return;
         }
@@ -298,7 +298,7 @@ export default function useEditorDaemon(
                     
                     // The scope of operation
                     const ParentXPath = ParentNode ? GetXPathFromNode(ParentNode) : '';
-                    const parentClosestParagraph = FindNearestParagraph(ParentNode, DaemonOptions.ParagraphTags, WatchElementRef.current!);
+                    const parentClosestParagraph = FindNearestParagraph(ParentNode, DaemonOptions.ParagraphTags, EditorElementRef.current!);
                     const parentClosestParagraphXPath = parentClosestParagraph ? GetXPathFromNode(parentClosestParagraph) : '';
                     // const parentClosestParagraphXPath = ParentNode.parentNode ? GetXPathFromNode(ParentNode.parentNode) : '';
                     
@@ -577,7 +577,7 @@ export default function useEditorDaemon(
     // Helper to get the precise location in the original DOM tree, ignore generated tags(flag)
     function GetXPathFromNode(node: Node, bFilterGenerated = true): string {
         
-        if (!WatchElementRef.current || !node) return '';
+        if (!EditorElementRef.current || !node) return '';
         let parent = node.parentNode;
         if (!parent) return ''; // If no parent found, very unlikely
         
@@ -587,7 +587,7 @@ export default function useEditorDaemon(
         }
         
         // XPath upper limit: The watched element.
-        if ((node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
+        if ((node as HTMLElement).className === EditorElementRef.current.className && (node as HTMLElement).tagName === EditorElementRef.current.tagName) {
             return '//body';
         }
         
@@ -649,7 +649,7 @@ export default function useEditorDaemon(
             }
             
             // Node is the container itself
-            if (WatchElementRef.current && (node as HTMLElement).className === WatchElementRef.current.className && (node as HTMLElement).tagName === WatchElementRef.current.tagName) {
+            if (EditorElementRef.current && (node as HTMLElement).className === EditorElementRef.current.className && (node as HTMLElement).tagName === EditorElementRef.current.tagName) {
                 xpSegments.push('/body');
                 break;
             }
@@ -950,7 +950,7 @@ export default function useEditorDaemon(
         while (!AnchorNode && XPathSegments.length) {
             
             const XPathReconstructed = reconstructXPath();
-            AnchorNode = GetNodeFromXPathInHTMLElement(WatchElementRef.current!, XPathReconstructed);
+            AnchorNode = GetNodeFromXPathInHTMLElement(EditorElementRef.current!, XPathReconstructed);
             
             
             if (AnchorNode) {
@@ -970,7 +970,7 @@ export default function useEditorDaemon(
             // console.log(PrevSiblingXP, " and ", NextSiblingXP);
             
             // the next sibling(that which caret will naturally land on) takes priority.
-            AnchorNode = GetNodeFromXPathInHTMLElement(WatchElementRef.current!, NextSiblingXP) || GetNodeFromXPathInHTMLElement(WatchElementRef.current!, PrevSiblingXP);
+            AnchorNode = GetNodeFromXPathInHTMLElement(EditorElementRef.current!, NextSiblingXP) || GetNodeFromXPathInHTMLElement(EditorElementRef.current!, PrevSiblingXP);
             
             if (AnchorNode) break;
             
@@ -1112,7 +1112,7 @@ export default function useEditorDaemon(
                 }
                 case 'PrevLine': {
                     while (AnchorNode = Walker.previousNode()) {
-                        if (AnchorNode.parentNode !== WatchElementRef.current) continue;
+                        if (AnchorNode.parentNode !== EditorElementRef.current) continue;
                         if (CheckForAncestor(RangeInformation.CurrentAnchorNode, AnchorNode)) continue;
                         if (!AnchorNode.parentNode) continue;
                         if (AnchorNode.textContent === "\n") continue;
@@ -1127,7 +1127,7 @@ export default function useEditorDaemon(
                     while (AnchorNode = Walker.nextNode()) {
                         if (!AnchorNode.parentNode) continue;
                         if (AnchorNode.textContent === "\n") continue;
-                        if (AnchorNode.parentNode !== WatchElementRef.current) continue;
+                        if (AnchorNode.parentNode !== EditorElementRef.current) continue;
                         if ((AnchorNode.parentNode as HTMLElement).contentEditable === 'false') continue;
                         FocusNode = null;
                         StartingOffset = 0;
@@ -1201,31 +1201,31 @@ export default function useEditorDaemon(
     
     // Primary entry point to supporting functionalities such as restoring selection.
     useLayoutEffect(() => {
-        if (!WatchElementRef.current) {
-            console.log("Invalid Watched Element");
+        if (!EditorElementRef.current) {
+            console.log("Invalid Editor Element, daemon reloading canceled ");
             return;
         }
         
         DaemonState.EditorLocked = false;
         
-        const WatchedElement = WatchElementRef.current;
+        const WatchedElement = EditorElementRef.current;
         const contentEditableCached = WatchedElement.contentEditable;
         
         if (DaemonOptions?.IsEditable) {
             // !!plaintext-only actually introduces unwanted behavior
             WatchedElement.contentEditable = 'true';
-            WatchElementRef.current.focus();
+            EditorElementRef.current.focus();
         }
         
         if (DaemonState.SelectionStatusCachePreBlur && DaemonOptions.IsEditable) {
             // consume the saved status
-            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCachePreBlur);
+            RestoreSelectionStatus(EditorElementRef.current, DaemonState.SelectionStatusCachePreBlur);
             DaemonState.SelectionStatusCachePreBlur = null;
         }
         
         if (DaemonState.SelectionStatusCache) {
             // consume the saved status
-            RestoreSelectionStatus(WatchElementRef.current, DaemonState.SelectionStatusCache);
+            RestoreSelectionStatus(EditorElementRef.current, DaemonState.SelectionStatusCache);
             DaemonState.SelectionStatusCache = null;
             DaemonState.CaretOverrideTokens = [];
         }
@@ -1247,10 +1247,11 @@ export default function useEditorDaemon(
     // Event handler entry point
     useLayoutEffect(() => {
         
-        if (!WatchElementRef.current || !MirrorDocumentRef.current) {
+        if (!EditorElementRef.current || !MirrorDocumentRef.current) {
+            console.error("No Editor element or mirror doc, daemon event binding canceled");
             return;
         }
-        const WatchedElement = WatchElementRef.current;
+        const WatchedElement = EditorElementRef.current;
         
         // bind Events
         const KeyDownHandler = (ev: HTMLElementEventMap['keydown']) => {
@@ -1373,7 +1374,7 @@ export default function useEditorDaemon(
             WatchedElement.removeEventListener("mouseup", MoveCaretToMouse);
         }
         
-    }, [WatchElementRef.current!])
+    }, [EditorElementRef.current!])
     
     // Hook's public interface
     // Used by the already existing components in the editor
@@ -1408,11 +1409,11 @@ export default function useEditorDaemon(
             // applicable for first time loading, inject the status (could've been saved in parent component)
             if (!DaemonState.SelectionStatusCache)
                 DaemonState.SelectionStatusCache = status;
-            if (!WatchElementRef.current) return;
+            if (!EditorElementRef.current) return;
             
             if (ShouldOverride) {
-                WatchElementRef.current.focus();
-                RestoreSelectionStatus(WatchElementRef.current, status);
+                EditorElementRef.current.focus();
+                RestoreSelectionStatus(EditorElementRef.current, status);
             }
         },
         SetFutureCaret(token: TCaretToken) {
@@ -1461,9 +1462,9 @@ export default function useEditorDaemon(
                 if (!DaemonState.SelectionStatusCache)
                     DaemonState.SelectionStatusCache = GetSelectionStatus();
                 ToggleObserve(false);
-                WatchElementRef.current!.contentEditable = 'false';
-                if (WatchElementRef.current)
-                    WatchElementRef.current.contentEditable = 'false';
+                EditorElementRef.current!.contentEditable = 'false';
+                if (EditorElementRef.current)
+                    EditorElementRef.current.contentEditable = 'false';
                 typeof DaemonOptions.OnRollback === 'function' && DaemonOptions.OnRollback();
                 DaemonState.EditorLocked = true;
             }
