@@ -1201,7 +1201,7 @@ export default function useEditorDaemon(
     const throttledRollbackAndSync = _.throttle(FlushAllRecords, throttledFuncDelay);
     
     // Primary entry point to supporting functionalities such as restoring selection.
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!EditorElementRef.current) {
             console.log("Invalid Editor Element, daemon reloading canceled ");
             return;
