@@ -120,14 +120,6 @@ function EditorActual(
             const CleanedHTML = HTMLCleanUP(convertedHTML);
             let SourceHTMLString = String(CleanedHTML);
             
-            // the source file is empty,replace the content with an empty line and br
-            // if (!SourceHTMLString || SourceHTMLString === "") {
-            //     const EmptyLine = document.createElement("p");
-            //     EmptyLine.appendChild(document.createElement("br"));
-            //
-            //     SourceHTMLString = EmptyLine.outerHTML;
-            // }
-            
             // Save a copy of HTML
             const HTMLParser = new DOMParser();
             MirrorDocRef.current = HTMLParser.parseFromString(SourceHTMLString, "text/html");
@@ -140,9 +132,8 @@ function EditorActual(
             // load editor component
             setEditorComponents(reactConversion.result)
             
-            
-            console.log("Editor init complete");
             if (typeof EditorCallBacks?.OnInit === "function") {
+                console.log("Editor init complete, calling EditorCallBacks OnInit");
                 EditorCallBacks.OnInit(SourceHTMLStringRef.current);
             }
         })()
@@ -164,32 +155,23 @@ function EditorActual(
         SourceHTMLStringRef.current = String(CleanedHTML);
         MirrorDocBodyElement.innerHTML = String(CleanedHTML);
         
-        // Edge case, very unlikely, if the whole content become blank, reset it to an empty line
-        // if (!SourceHTMLStringRef.current || SourceHTMLStringRef.current.trim() === "") {
-        //     const EmptyLine = document.createElement("p");
-        //     EmptyLine.appendChild(document.createElement("br"));
-        //     SourceHTMLStringRef.current = EmptyLine.outerHTML;
-        // }
-        
-        // SourceHTMLStringRef.current = String(CleanedHTML);
-        
         // const HTMLParser = new DOMParser();
         // MirrorDocRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
         
         let reactConversion = await ConfigAndConvertToReact(SourceHTMLStringRef.current);
         setEditorComponents(reactConversion.result);
         // caller's interface
-        console.log("Editor synced, reloading complete");
         if (typeof EditorCallBacks?.OnReload === "function") {
+            console.log("Editor synced, reloading complete,calling EditorCallBacks OnReload");
             EditorCallBacks.OnReload(SourceHTMLStringRef.current);
         }
     }
     
     // FIXME: this structure is getting unwieldy, find a way to refactor.
     const ComponentRenderConditions = (props: any, tagName: string) => {
-        
-        const CompoKey = props.dataKey;
-        
+        // Key is generated each time in AddIDToElement
+        // TODO: will result in a complete reload, performance optimization needed for large files
+        const CompoKey = props['data-key'];
         if (props['data-md-syntax'] && props['data-md-inline']) {
             return <PlainSyntax {...props} key={CompoKey} daemonHandle={DaemonHandle} tagName={tagName}/>;
         }
@@ -434,12 +416,12 @@ function EditorActual(
         
         // switch on the new ones, parent components first
         parentFibers.forEach((fiber: any) => {
-            keyPathFull += fiber.id || "";
-            if (fiber.id && keyLast === null) keyLast = fiber.id //store the key so that it can be used latter
+            keyPathFull += fiber.id || fiber.key || "";
+            if ((fiber.id || fiber.key) && keyLast === null) keyLast = fiber.id || fiber.key //store the key so that it can be used latter
             
-            let ID = fiber.id;
+            let ID = fiber.id || fiber.key;
             
-            if (!fiber.id && keyLast) {
+            if (!ID && keyLast) {
                 ID = keyLast;
                 keyLast = null;
             }
@@ -458,11 +440,13 @@ function EditorActual(
         // the top-level component
         if (ActiveComponentFiber.memoizedState && typeof ActiveComponentFiber.memoizedState.memoizedState === "function") {
             
+            const componentID = ActiveComponentFiber.id || ActiveComponentFiber.key;
+            
             ActiveComponentsStack.push({
                 fiber: ActiveComponentFiber,
                 func: ActiveComponentFiber.memoizedState.memoizedState,
                 return: ActiveComponentFiber.memoizedState.memoizedState(true),
-                id: ActiveComponentFiber.id ? ActiveComponentFiber.id : keyLast
+                id: componentID ? componentID : keyLast
             });
         }
         
@@ -570,6 +554,9 @@ function EditorActual(
         if (!ActiveComponentsStack) return;
         // The top most active component, used for comparing
         let TopActiveComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
+        
+        // console.warn(ActiveComponentsStack)
+        // console.warn(TopActiveComponent)
         
         // Run "current component"'s enter key logic until there is none or encountered self again.
         // This is to deal with changed caret position and therefore changed active component after enter key.
