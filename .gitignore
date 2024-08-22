@@ -23,3 +23,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 /TestData/*
+
+src/Test_App.tsx
+src/Test_App.css
+
