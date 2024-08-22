@@ -150,7 +150,7 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
     
     return React.createElement(tagName, {
         ...otherProps,
-        className: "http-link",
+        className: `http-link ${isEditing ? "is-active" : ""}`,
         ref: LinkElementRef,
     }, [
         <span className={`Text-Normal ${isEditing ? "" : 'Hide-It'}`}

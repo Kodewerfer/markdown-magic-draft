@@ -92,6 +92,7 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
     return <RecalibrateContainer.Provider value={ContainerUpdate}>
         {React.createElement(tagName, {
             ...otherProps,
+            className:`line-container ${isEditing ? "is-active" : ""}`,
             ref: MainElementRef,
         }, [
             isHeader && React.createElement('span', {

@@ -182,7 +182,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     });
     return React.createElement(tagName, {
         ...otherProps,
-        className: "in-line-element",
+        className: `in-line-element ${isEditing ? "is-active" : ""}`,
         ref: WholeElementRef,
     }, [
         React.createElement('span', {

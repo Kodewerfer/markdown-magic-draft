@@ -158,7 +158,7 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
     
     return React.createElement(tagName, {
         ...otherProps,
-        className: "block-quote-item",
+        className: `block-quote-item ${isEditing ? "is-active" : ""}`,
         ref: WholeElementRef,
     }, [
         React.createElement('span', {

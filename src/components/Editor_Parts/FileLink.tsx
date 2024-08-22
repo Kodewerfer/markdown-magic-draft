@@ -162,7 +162,7 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
     
     return React.createElement(tagName, {
         ...otherProps,
-        className: "file-link",
+        className: `file-link ${isEditing ? "is-active" : ""}`,
         ref: FileLinkElementRef,
     }, [
         <span key={"FrontSpacing"} data-is-generated={true}>{'\u00A0'}</span>,

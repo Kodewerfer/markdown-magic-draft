@@ -384,7 +384,7 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
     
     return React.createElement(tagName, {
         ...otherProps,
-        className: "pre-block-code",
+        className: `pre-block-code ${isEditing ? "is-active" : ""}`,
         ref: CodeElementRef,
     }, [
         <section className={`Text-Normal Whole-Line ${isEditing ? "" : 'Hide-It'}`}

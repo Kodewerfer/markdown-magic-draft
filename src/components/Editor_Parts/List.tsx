@@ -308,7 +308,7 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
     return <RecalibrateContainer.Provider value={ContainerUpdate}>
         {React.createElement(tagName, {
             ...otherProps,
-            className: "list-item",
+            className: `list-item ${isEditing ? "is-active" : ""}`,
             ref: CurrentListItemRef,
         }, [
             React.createElement('span', {
