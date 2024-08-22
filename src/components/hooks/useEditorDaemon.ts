@@ -8,9 +8,9 @@
  *  So, the original DOM needs to be kept as-is; the changes will be made on the other DOM ref instead, which will later be turned to React components so that React can do proper diffing and DOM manipulation.
  */
 
-import {useLayoutEffect, useState} from "react";
+import {useEffect, useLayoutEffect, useState} from "react";
 import _ from 'lodash';
-import {CreateAndWalkToNode} from "../Utils/Helpers";
+import {CreateTreeWalker} from "../Utils/Helpers";
 
 export const ParagraphTest = /^(p|div|main|body|h1|h2|h3|h4|h5|h6|blockquote|pre|code|ul|li|section|hr)$/i;
 // Instructions for DOM manipulations on the mirror document
@@ -187,7 +187,7 @@ export default function useEditorDaemon(
         /**
          * The order of execution for the operations is:
          * 1. user initiated operations(on-page editing);
-         * 2. "bind" operations, eg: those that are triggered by removing a syntax span
+         * 2. "bind" operations, eg: those that are triggered by removing a syntax span (Not in used by any)
          * 3. "additional" operations, usually sent directly from a component
          */
         // Append Bind Ops
@@ -981,7 +981,7 @@ export default function useEditorDaemon(
         if (!AnchorNode) return; //at this stage, very unlikely
         
         // Get a walker that is walked to the anchor node to facilitate the following operations
-        const NodeWalker = CreateAndWalkToNode(RootElement, AnchorNode);
+        const NodeWalker = CreateTreeWalker(RootElement, AnchorNode);
         
         // Ensure that the caret will land on an editable node
         while ((AnchorNode as HTMLElement).contentEditable === 'false' || (AnchorNode!.parentNode && (AnchorNode!.parentNode as HTMLElement).contentEditable === 'false')) {
@@ -1095,6 +1095,7 @@ export default function useEditorDaemon(
                                       CurrentFocusNode?: Node | null | undefined,
                                       CurrentEndOffset?: number
                                   }) {
+        
         let AnchorNode: Node | null = RangeInformation.CurrentAnchorNode;
         let StartingOffset = RangeInformation.CurrentStartingOffset;
         let FocusNode: Node | null | undefined = RangeInformation.CurrentFocusNode;
@@ -1200,7 +1201,7 @@ export default function useEditorDaemon(
     const throttledRollbackAndSync = _.throttle(FlushAllRecords, throttledFuncDelay);
     
     // Primary entry point to supporting functionalities such as restoring selection.
-    useLayoutEffect(() => {
+    useEffect(() => {
         if (!EditorElementRef.current) {
             console.log("Invalid Editor Element, daemon reloading canceled ");
             return;

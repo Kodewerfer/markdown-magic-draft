@@ -325,24 +325,21 @@ export function MoveCaretIntoNode(ContainerNode: Node | null | undefined, Offset
 }
 
 /**
- * Creates a TreeWalker and walks to the specified target node.
+ * Creates a TreeWalker object for traversing elements and text nodes within a given root node.
  *
- * @param {Node | HTMLElement} rootNode - The root node from which to start the tree traversal.
- * @param {Node | HTMLElement} targetNode - The node to walk to.
- * @return {TreeWalker} The TreeWalker that has been walked to the targetNode if reachable.
+ * @param rootNode - The root node from which to start traversing.
+ * @param targetNode - Optional. Directly cut to this node to start the traversal from.
+ * @return The TreeWalker object that has been walked to the targetNode (if reachable).
  */
-export function CreateAndWalkToNode(rootNode: Node | HTMLElement, targetNode: Node | HTMLElement): TreeWalker {
+export function CreateTreeWalker(rootNode: Node | HTMLElement, targetNode?: Node | HTMLElement): TreeWalker {
     const nodeWalker = document.createTreeWalker(
         rootNode,
         NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
         null
     );
     
-    let tempNode: Node | null;
-    while (tempNode = nodeWalker.nextNode()) {
-        if (tempNode === targetNode)
-            break;
-    }
+    if (targetNode)
+        nodeWalker.currentNode = targetNode;
     
     return nodeWalker; // returns TreeWalker that has been walked to the targetNode (if reachable)
 }

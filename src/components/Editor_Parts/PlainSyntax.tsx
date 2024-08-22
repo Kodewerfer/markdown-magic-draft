@@ -20,7 +20,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     }); // the Meta state, called by parent via dom fiber
     
     const [isEditing, setIsEditing] = useState(false); //Reactive state, toggled by the meta state
-    
     const propSyntaxData: any = otherProps['data-md-syntax'];
     const propShouldWrap: any = otherProps['data-md-wrapped'];
     
@@ -99,7 +98,6 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
     function EnterKeyHandler(ev: Event) {
         ev.preventDefault();
         
-        
         const {CurrentSelection} = GetCaretContext();
         
         let bShouldBreakLine = true;
@@ -123,6 +121,7 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
         return Promise.resolve(bShouldBreakLine);
     }
     
+    // if backspace key is pressed in the second syntax block, or del in the firs, delete the syntax block(re-render component as normal text)
     function BackspaceHandler(ev: Event) {
         ev.stopImmediatePropagation();
         

@@ -7,7 +7,7 @@ import React, {
     useRef,
     useState
 } from "react";
-import {HTML2MDSync, HTML2ReactAsync, HTMLCleanUP, MD2HTMLAsync} from "./Utils/Conversion";
+import {HTML2MDSync, HTML2ReactSync, HTMLCleanUP, MD2HTMLAsync} from "./Utils/Conversion";
 import useEditorDaemon, {ParagraphTest, TSelectionStatus} from "./hooks/useEditorDaemon";
 import {Compatible} from "unified/lib";
 import "./Editor.css";
@@ -158,7 +158,7 @@ function EditorActual(
         // const HTMLParser = new DOMParser();
         // MirrorDocRef.current = HTMLParser.parseFromString(String(CleanedHTML), "text/html");
         
-        let reactConversion = await ConfigAndConvertToReact(SourceHTMLStringRef.current);
+        let reactConversion = ConfigAndConvertToReact(SourceHTMLStringRef.current);
         setEditorComponents(reactConversion.result);
         // caller's interface
         if (typeof EditorCallBacks?.OnReload === "function") {
@@ -212,7 +212,7 @@ function EditorActual(
         return <CommonRenderer {...props} key={CompoKey} tagName={tagName}/>;
     };
     
-    async function ConfigAndConvertToReact(md2HTML: Compatible) {
+    function ConfigAndConvertToReact(md2HTML: Compatible) {
         
         // Map all possible text-containing tags to TextContainer component and therefore manage them.
         const TextNodesMappingConfig: Record<string, React.FunctionComponent<any>> = [
@@ -227,7 +227,7 @@ function EditorActual(
         const componentOptions = {
             ...TextNodesMappingConfig
         }
-        return HTML2ReactAsync(md2HTML, componentOptions);
+        return HTML2ReactSync(md2HTML, componentOptions);
     }
     
     // Will be called by the Daemon

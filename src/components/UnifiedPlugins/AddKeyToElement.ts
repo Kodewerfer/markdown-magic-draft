@@ -9,6 +9,7 @@ function Transformer(ast: object) {
         
         const tagName = node.tagName.toLowerCase();
         
+        // Add as ID could break how caret restoration works
         NodeProps.dataKey = `${tagName}_${Math.random().toString(36).slice(2)}_${index}`;
         
         return node;
