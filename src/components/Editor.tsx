@@ -61,6 +61,7 @@ export type TEditorProps = {
     SourceData?: string | undefined;
     EditorCallBacks?: TEditorCallbacks;
     ComponentCallbacks?: TComponentCallbacks;
+    DebounceSyncDelay?: number;
     DaemonShouldLog?: boolean;
     IsEditable?: boolean;
     AutoFocus?: boolean;
@@ -89,6 +90,7 @@ function EditorActual(
         SourceData,
         ComponentCallbacks,
         EditorCallBacks,
+        DebounceSyncDelay = 500,
         DaemonShouldLog = true,
         IsEditable = true,
         AutoFocus = true,
@@ -1297,6 +1299,7 @@ function EditorActual(
     const DaemonHandle = useEditorDaemon(EditorElementRef, MirrorDocRef, OnDaemonFinishedProcessing,
         {
             OnRollback: MaskEditingArea,
+            DebounceSyncDelay: DebounceSyncDelay,
             TextNodeCallback: TextNodeProcessor,
             ShouldLog: DaemonShouldLog, //detailed logs
             IsEditable: IsEditable,

@@ -67,6 +67,7 @@ type TDaemonState = {
 type THookOptions = {
     TextNodeCallback?: (textNode: Node) => Node[] | null | undefined
     OnRollback?: Function | undefined
+    DebounceSyncDelay: number
     ShouldObserve: boolean
     ShouldLog: boolean
     IsEditable: boolean
@@ -105,6 +106,7 @@ export default function useEditorDaemon(
         IsEditable: true,
         ParagraphTags: ParagraphTest,   // Determined whether to use "replacement" logic or just change the text node.
         HistoryLength: 10,
+        DebounceSyncDelay: 500,
         ...Options
     };
     
@@ -1194,8 +1196,8 @@ export default function useEditorDaemon(
     
     const debounceSelectionStatus = _.debounce(() => {
         DaemonState.SelectionStatusCache = GetSelectionStatus();
-    }, 450);
-    const debounceRollbackAndSync = _.debounce(FlushAllRecords, 500);
+    }, DaemonOptions.DebounceSyncDelay - 50 > 50 ? DaemonOptions.DebounceSyncDelay : 50);
+    const debounceRollbackAndSync = _.debounce(FlushAllRecords, DaemonOptions.DebounceSyncDelay);
     
     const throttledFuncDelay = 200;
     const throttledRollbackAndSync = _.throttle(FlushAllRecords, throttledFuncDelay);
