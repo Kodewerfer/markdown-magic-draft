@@ -7,7 +7,6 @@ function Transformer(ast: object) {
         
         const NodeProps = node.properties || (node.properties = {});
         
-        // const NodeProps = node.properties && (node.properties = {})
         const tagName = node.tagName.toLowerCase();
         
         NodeProps.dataKey = `${tagName}_${Math.random().toString(36).slice(2)}_${index}`;
@@ -16,4 +15,4 @@ function Transformer(ast: object) {
     }
 }
 
-export const AddIDToElement = () => Transformer
+export const AddKeyToElement = () => Transformer

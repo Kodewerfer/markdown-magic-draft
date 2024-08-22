@@ -24,7 +24,7 @@ import {EmptyCodeHandler} from "../UnifiedPlugins/EmptyCodeHandler";
 import {CleanUpExtraText} from "../UnifiedPlugins/CleanupExtraText";
 import {GetRehyperRemarkHandlers} from "../UnifiedPlugins/HTMLToDirective";
 import {EmptyDocHandler} from "../UnifiedPlugins/EmptyDocHandler";
-import {AddIDToElement} from "../UnifiedPlugins/AddIDToElement";
+import {AddKeyToElement} from "../UnifiedPlugins/AddKeyToElement";
 
 /**
  * Initializes the Markdown processing pipeline.
@@ -93,7 +93,7 @@ export function HTMLCleanUP(HTMLContent: Compatible, componentOptions?: Record<s
         .use(ListElementHandler)
         .use(EmptyCodeHandler)
         .use(EmptyDocHandler)
-        .use(AddIDToElement)
+        .use(AddKeyToElement)
         .use(rehypeStringify)
         .processSync(HTMLContent);
 }
