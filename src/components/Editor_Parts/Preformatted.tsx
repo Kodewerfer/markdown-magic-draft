@@ -172,7 +172,6 @@ export function CodeItem({children, parentAddLine, parentMoveCaret, tagName, dae
     }
     
     function UpdateCodeElement(NewCodeContent: string) {
-        console.log(NewCodeContent);
         if (!CodeElementRef.current || !CodeElementRef.current.parentNode) return;
         
         let ReplacementNode;
