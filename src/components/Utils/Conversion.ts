@@ -98,16 +98,12 @@ export function HTMLCleanUP(HTMLContent: Compatible, componentOptions?: Record<s
         .processSync(HTMLContent);
 }
 
-/**
- * Converts HTML content to Markdown format.
- *
- * @param {Compatible} CurrentContent - The HTML content to be converted.
- *
- * @return {Promise<string>} - The converted Markdown content.
- */
-export async function HTML2MDSync(CurrentContent: Compatible) {
+
+export async function HTML2MDSync(CurrentContent: Compatible, {
+    keepBrs = true
+}: { keepBrs?: boolean }) {
     
-    const rehyperRemarkHandlers = GetRehyperRemarkHandlers();
+    const rehyperRemarkHandlers = GetRehyperRemarkHandlers(keepBrs);
     
     return unified()
         .use(rehypeParse)

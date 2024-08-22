@@ -59,6 +59,7 @@ export type TEditorCallbacks = {
 
 export type TEditorProps = {
     SourceData?: string | undefined;
+    KeepBrs?: boolean;
     EditorCallBacks?: TEditorCallbacks;
     ComponentCallbacks?: TComponentCallbacks;
     DebounceSyncDelay?: number;
@@ -88,6 +89,7 @@ const AutoCompletePairsMap = new Map([
 function EditorActual(
     {
         SourceData,
+        KeepBrs = true,
         ComponentCallbacks,
         EditorCallBacks,
         DebounceSyncDelay = 500,
@@ -327,7 +329,7 @@ function EditorActual(
     async function ExtractMD() {
         await DaemonHandle.SyncNow();
         // console.warn("Extracting Markdown, Daemon synced.");
-        const ConvertedMarkdown = await HTML2MDSync(SourceHTMLStringRef.current);
+        const ConvertedMarkdown = await HTML2MDSync(SourceHTMLStringRef.current, {keepBrs: KeepBrs});
         return String(ConvertedMarkdown);
     }
     

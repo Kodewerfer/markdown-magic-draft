@@ -1,13 +1,9 @@
 // Handles custom directive conversion from HTML to MD
 import {u} from "unist-builder";
 
-export function GetRehyperRemarkHandlers() {
-    return {
-        'br': (State: any, Node: any) => {
-            const result = u('text', ':br');
-            State.patch(Node, result);
-            return result;
-        },
+export function GetRehyperRemarkHandlers(keepBrs = true) {
+    
+    const Handlers = {
         'span': (State: any, Node: any) => {
             const LinkedTarget = Node.properties['dataFileLink'];
             if (!LinkedTarget || LinkedTarget === '') {
@@ -30,5 +26,18 @@ export function GetRehyperRemarkHandlers() {
             State.patch(Node, result);
             return result;
         }
+    }
+    
+    const brHandler = {
+        'br': (State: any, Node: any) => {
+            const result = u('text', ':br');
+            State.patch(Node, result);
+            return result;
+        }
     };
+    
+    if (keepBrs)
+        Object.assign(Handlers, brHandler);
+    
+    return Handlers
 }
