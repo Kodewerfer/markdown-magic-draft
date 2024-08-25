@@ -1169,13 +1169,16 @@ function EditorActual(
         DaemonHandle.SyncNow();
     }
     
+    // Copy and cut handlers to handle copy/cut component directly (when the selection is collapsed)
+    // copy handler used by cut to acquire active component
     async function CopyHandler(_?: ClipboardEvent) {
+        // TODO: removing line breaker is now handled in daemon's paste handler, remove these later
         // will ask for permission, extract text only, as a default(no matter if the selection is expanded)
-        const clipboardText = await navigator.clipboard.readText();
+        // const clipboardText = await navigator.clipboard.readText();
         
         // remove all line breaks
         // await navigator.clipboard.writeText(clipboardText.replace(/\r?\n|\r/g, " "));
-        await navigator.clipboard.writeText(clipboardText || " ");
+        // await navigator.clipboard.writeText(clipboardText || " ");
         
         const selection = window.getSelection();
         if (!selection || !selection.isCollapsed) return; //expanded selection will only copy pure text.
@@ -1208,28 +1211,12 @@ function EditorActual(
         const ElementToDelete = await CopyHandler();
         if (!ElementToDelete) return;
         
+        // normal bowser behavior won't deal with components properly
         DaemonHandle.AddToOperations({
             type: "REMOVE",
             targetNode: ElementToDelete
         });
         DaemonHandle.SyncNow();
-    }
-    
-    async function PasteHandler(ev: ClipboardEvent) {
-        let ActiveComponentsStack = LastActivationCache.current;
-        const TopComponent = ActiveComponentsStack[ActiveComponentsStack.length - 1];
-        console.log(TopComponent);
-        if (!TopComponent) return;
-        
-        ev.preventDefault();
-        const clipboardText = await navigator.clipboard.readText();
-        const lastElementTagName = TopComponent.return?.element?.tagName;
-        // FIXME: Deprecated API, no alternative
-        if (lastElementTagName && ParagraphTest.test(lastElementTagName))
-            // await navigator.clipboard.writeText(ClipboardWithSyntax.current);
-            document.execCommand('insertText', false, clipboardText);
-        else
-            document.execCommand('insertText', false, clipboardText.replace(/\r?\n|\r/g, " "));
     }
     
     
@@ -1288,13 +1275,11 @@ function EditorActual(
         
         EditorElementRef.current?.addEventListener("copy", CopyHandler);
         EditorElementRef.current?.addEventListener("cut", CutHandler);
-        EditorElementRef.current?.addEventListener("paste", PasteHandler);
         return () => {
             EditorElementRef.current?.removeEventListener("keydown", EditorKeydown);
             
             EditorElementRef.current?.removeEventListener("copy", CopyHandler);
             EditorElementRef.current?.removeEventListener("cut", CutHandler);
-            EditorElementRef.current?.removeEventListener("paste", PasteHandler);
         }
     }, [EditorElementRef.current])
     
