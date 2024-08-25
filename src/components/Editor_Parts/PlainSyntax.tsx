@@ -8,6 +8,7 @@ import {
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 import {RecalibrateContainer} from "../context/ParentElementContext";
+import classNames from "classnames/dedupe";
 
 export default function PlainSyntax({children, tagName, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -180,9 +181,17 @@ export default function PlainSyntax({children, tagName, daemonHandle, ...otherPr
             TextContentMapRef.current.clear();
         }
     });
+    
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        WholeElementRef?.current?.className,
+        `in-line-element`,
+        {"is-active": isEditing}
+    )
+    
     return React.createElement(tagName, {
         ...otherProps,
-        className: `in-line-element ${isEditing ? "is-active" : ""}`,
+        className: combinedClassnames,
         ref: WholeElementRef,
     }, [
         React.createElement('span', {

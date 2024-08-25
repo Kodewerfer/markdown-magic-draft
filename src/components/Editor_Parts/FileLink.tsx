@@ -7,6 +7,7 @@ import {
 } from "../Utils/Helpers";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 import {RecalibrateContainer} from "../context/ParentElementContext";
+import classNames from "classnames/dedupe";
 
 /**
  * A "Tag" link element is different in that it can be directly edited by the user once it is created.
@@ -160,9 +161,16 @@ export default function FileLink({children, tagName, daemonHandle, initCallback,
             daemonHandle.AddToIgnore([...FileLinkElementRef.current.childNodes], "any", true);
     });
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        FileLinkElementRef?.current?.className,
+        `file-link`,
+        {"is-active": isEditing}
+    )
+    
     return React.createElement(tagName, {
         ...otherProps,
-        className: `file-link ${isEditing ? "is-active" : ""}`,
+        className: combinedClassnames,
         ref: FileLinkElementRef,
     }, [
         <span key={"FrontSpacing"} data-is-generated={true}>{'\u00A0'}</span>,

@@ -6,6 +6,7 @@ import {
     MoveCaretToNode
 } from "../Utils/Helpers";
 import {TActivationReturn} from "../Editor_Types";
+import classNames from "classnames/dedupe";
 
 export function Blockquote({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -16,9 +17,15 @@ export function Blockquote({children, tagName, parentSetActivation, daemonHandle
 }) {
     const ContainerRef = useRef<HTMLElement | null>(null);
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        ContainerRef?.current?.className,
+        `block-quote`,
+    )
+    
     return React.createElement(tagName, {
         ref: ContainerRef,
-        className: "block-quote",
+        className: combinedClassnames,
         ...otherProps
     }, children);
 }
@@ -156,9 +163,16 @@ export function QuoteItem({children, tagName, daemonHandle, ...otherProps}: {
         }
     });
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        WholeElementRef?.current?.className,
+        `block-quote-item`,
+        {"is-active": isEditing}
+    )
+    
     return React.createElement(tagName, {
         ...otherProps,
-        className: `block-quote-item ${isEditing ? "is-active" : ""}`,
+        className: combinedClassnames,
         ref: WholeElementRef,
     }, [
         React.createElement('span', {

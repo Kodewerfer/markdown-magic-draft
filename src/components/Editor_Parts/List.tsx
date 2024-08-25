@@ -8,6 +8,7 @@ import {
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateContainerAndSync} from "./Utils/CommonFunctions";
 import {RecalibrateContainer} from "../context/ParentElementContext";
+import classNames from "classnames/dedupe";
 
 export function ListContainer({children, tagName, parentSetActivation, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -18,9 +19,15 @@ export function ListContainer({children, tagName, parentSetActivation, daemonHan
 }) {
     const ListContainerRef = useRef<HTMLElement | null>(null);
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        ListContainerRef?.current?.className,
+        `list-container`
+    )
+    
     return React.createElement(tagName, {
         ref: ListContainerRef,
-        className: "list-container",
+        className: combinedClassnames,
         ...otherProps
     }, children);
 }
@@ -305,10 +312,17 @@ export function ListItem({children, tagName, daemonHandle, ...otherProps}: {
             UpdateContainerAndSync(daemonHandle, compileAllTextNode, CurrentListItemRef.current, tagName);
     }
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        CurrentListItemRef?.current?.className,
+        `list-item`,
+        {"is-active": isEditing}
+    )
+    
     return <RecalibrateContainer.Provider value={ContainerUpdate}>
         {React.createElement(tagName, {
             ...otherProps,
-            className: `list-item ${isEditing ? "is-active" : ""}`,
+            className: combinedClassnames,
             ref: CurrentListItemRef,
         }, [
             React.createElement('span', {

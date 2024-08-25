@@ -5,6 +5,7 @@ import {TActivationReturn} from "../Editor_Types";
 import {RecalibrateContainer} from "../context/ParentElementContext";
 import {CompileAllTextNode, UpdateContainerAndSync} from "./Utils/CommonFunctions";
 import _ from "lodash";
+import classNames from "classnames/dedupe";
 
 export default function Paragraph({children, tagName, isHeader, headerSyntax, daemonHandle, ...otherProps}: {
     children?: React.ReactNode[] | React.ReactNode;
@@ -89,10 +90,18 @@ export default function Paragraph({children, tagName, isHeader, headerSyntax, da
             UpdateContainerAndSync(daemonHandle, compileAllTextNode, MainElementRef.current, tagName);
     }
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        MainElementRef?.current?.className,
+        `line-container`,
+        {"header-container": isHeader},
+        {"is-active": isEditing}
+    )
+    
     return <RecalibrateContainer.Provider value={ContainerUpdate}>
         {React.createElement(tagName, {
             ...otherProps,
-            className:`line-container ${isEditing ? "is-active" : ""}`,
+            className: combinedClassnames,
             ref: MainElementRef,
         }, [
             isHeader && React.createElement('span', {

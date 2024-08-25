@@ -7,6 +7,7 @@ import {
 import {TActivationReturn} from "../Editor_Types";
 import {CompileAllTextNode, UpdateComponentAndSync} from "./Utils/CommonFunctions";
 import {RecalibrateContainer} from "../context/ParentElementContext";
+import classNames from "classnames/dedupe";
 
 /**
  *  In current implementation, the Link component is a special kind of "plainSyntax" component which are in-line elements in nature
@@ -148,9 +149,16 @@ export default function Links({children, tagName, daemonHandle, ...otherProps}: 
         }
     });
     
+    // Add component classed on top of classes that may be added to it
+    const combinedClassnames = classNames(
+        LinkElementRef?.current?.className,
+        `http-link`,
+        {"is-active": isEditing}
+    )
+    
     return React.createElement(tagName, {
         ...otherProps,
-        className: `http-link ${isEditing ? "is-active" : ""}`,
+        className: combinedClassnames,
         ref: LinkElementRef,
     }, [
         <span className={`Text-Normal ${isEditing ? "" : 'Hide-It'}`}
