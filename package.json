@@ -1,0 +1,90 @@
+{
+  "name": "markdown-magic-draft",
+  "description": "A simple react based Markdown editor that can handle rendering and editing on the fly",
+  "author": "Kodewerfer",
+  "main": "./dist/index.js",
+  "version": "0.6.0",
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "^5.0.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.4.2",
+    "@testing-library/react": "^14.2.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/jest": "^29.5.12",
+    "@types/lodash": "^4.14.202",
+    "@types/node": "^20.11.20",
+    "@types/react": "^18.2.57",
+    "@types/react-dom": "^18.2.19",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "prettier": "^3.2.5",
+    "prettier-plugin-tailwindcss": "^0.5.11",
+    "rimraf": "^6.0.1",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "classnames": "^2.5.1",
+    "dedent": "^1.5.3",
+    "hastscript": "^9.0.0",
+    "lodash": "^4.17.21",
+    "mdast-util-from-markdown": "^2.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "^5.0.1",
+    "rehype-parse": "^9.0.0",
+    "rehype-react": "^8.0.0",
+    "rehype-remark": "^10.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "rehype-stringify": "^10.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-directive": "^3.0.0",
+    "remark-gfm": "^4.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.4",
+    "unist-builder": "^4.0.0",
+    "unist-util-find-after": "^5.0.0",
+    "unist-util-find-before": "^4.0.0",
+    "unist-util-remove": "^4.0.0",
+    "unist-util-visit": "^5.0.0"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "yarn run clean &&yarn build:package",
+    "build:package": "yarn build:typscript && yarn build:css",
+    "build:typscript": "tsc",
+    "build:css": "npx tailwindcss -i src/components/Editor.css -o dist/Editor.css --minify",
+    "start": "react-scripts start",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
