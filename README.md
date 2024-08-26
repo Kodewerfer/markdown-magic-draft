@@ -1,4 +1,5 @@
-# react-magic-draft
+# markdown-magic-draft
+
 
 An experimental react-based markdown editor that handles rendering and editing MD files on the fly while providing other
 functionalities such as exporting/restoring caret position, and life cycle callbacks.
