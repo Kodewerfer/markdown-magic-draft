@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from "react";
 import dedent from "dedent";
-import Editor, {TEditorForwardRef} from "./components/Editor";
+import MagicDraftEditor, {TEditorForwardRef} from "./components/MagicDraftEditor";
 
 import "./DEMO_App.css";
 
@@ -57,11 +57,11 @@ export default function DEMO_App() {
             <button className={"bg-amber-600 rounded-md mx-2 px-2 text-white"} onClick={appClickToExtract}>Extra data
             </button>
             <main className="Main-wrapper">
-                <Editor SourceData={dataSource}
-                        DaemonShouldLog={true} //output detailed logs
-                        KeepBrs={false} //extra won't save extra br as :br
-                        DebounceSyncDelay={2000} //delay before the text is converted
-                        ref={EditorRef}/>
+                <MagicDraftEditor SourceData={dataSource}
+                                  DaemonShouldLog={true} //output detailed logs
+                                  KeepBrs={false} //extra won't save extra br as :br
+                                  DebounceSyncDelay={2000} //delay before the text is converted
+                                  ref={EditorRef}/>
             </main>
         </div>
     );

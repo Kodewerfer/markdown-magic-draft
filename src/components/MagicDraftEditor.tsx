@@ -1318,8 +1318,8 @@ function EditorActual(
     )
 }
 
-const Editor = forwardRef(EditorActual);
-export default Editor;
+const MagicDraftEditor = forwardRef(EditorActual);
+export default MagicDraftEditor;
 
 // the fallback render for any unknown or unspecified elements
 // Needed if the like of br is to be rendered normally.
