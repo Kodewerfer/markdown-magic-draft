@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Kodewerfer/markdown-magic-draft.git"
+    "url": "git+https://github.com/Kodewerfer/react-magic-draft"
   },
   "peerDependencies": {
     "react": "^18.2.0",
